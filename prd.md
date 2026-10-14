@@ -1,10 +1,12 @@
 # Mutual Aid Community Platform
 ## Product Requirements Document
 
-**Status:** MVP Definition  
+**Status:** MVP Definition; implementation decisions recorded
+
 **Platform:** Mobile-first Progressive Web App  
 **Initial validation target:** 1 community, 20 active members, 5 completed exchanges  
 **Working concept:** Private community mutual-aid and resource-sharing network
+**Agent execution plan:** [MVP execution plan](docs/MVP-EXECUTION-PLAN.md)
 
 ---
 
@@ -175,13 +177,15 @@ Early success should be measured using:
 
 The platform supports multiple independent communities.
 
-A user may eventually belong to multiple communities.
+A user may belong to multiple communities in MVP.
 
 For MVP, communities are:
 
 - private
 - invite-based
 - administrator-managed
+
+Section 44 is the functional MVP completion contract, including the help exchange addition. Supporting security, accessibility, and mobile requirements still apply. Other suggested screens and features are not separate MVP completion gates.
 
 Future community discovery may be added later.
 
@@ -203,9 +207,11 @@ The creator becomes the initial:
 
 MVP membership requires:
 
-1. an invitation or membership vouch code
+1. an administrator-issued invitation
 2. an account
 3. administrator approval
+
+An invite only allows a person to request membership. A vouch is a separate trust statement that an eligible existing member can submit for an applicant; it does not grant access or replace administrator approval.
 
 Full identity verification is explicitly excluded from MVP.
 
@@ -232,6 +238,8 @@ If a vouched member commits serious violations, the sponsor may receive a small 
 The effect should remain intentionally small.
 
 Members should not be destroyed reputationally because someone they vouched for later behaved badly.
+
+For MVP, vouches are visible trust statements with administrator-controlled eligibility and limits. They do not automatically change either person's score. Sponsor and applicant score effects are post-MVP.
 
 ---
 
@@ -279,11 +287,13 @@ Manual reputation changes must always create an audit record.
 
 # 6. Monthly Platform Fee
 
-MVP pricing:
+Planned pricing after MVP:
 
 **$5 per member per month**
 
-The fee provides access to the platform/community.
+The MVP includes a working Stripe subscription workflow in **test mode**. Live payment collection and production billing activation are the first planned work after MVP, and are not required to declare MVP complete. Test-mode payments do not make a member paid in the real world.
+
+Once production billing is activated after MVP, the fee provides access to the platform/community. During MVP, test checkout does not gate participation.
 
 This is not a fee for individual borrowing transactions.
 
@@ -375,7 +385,7 @@ Fields:
 
 ## 7.3 Request Something
 
-A member requests access to an item or resource.
+A member creates a **Need Post** seeking an item or resource from the community. This is distinct from a **Borrow Request**, which applies to a specific item listing and proposed borrowing period.
 
 Example:
 
@@ -391,13 +401,13 @@ Fields:
 - optional image
 - optional replacement-value range
 
-Members may respond by offering an existing listing or creating a new offer.
+Members may respond by linking an existing item listing or creating a new one. The Need Post author then submits a Borrow Request through the normal owner approval and item exchange flow.
 
 ---
 
 ## 7.4 Request Help
 
-A user requests another person's time or assistance.
+A member creates a **Need Post** seeking another person's time or assistance.
 
 Example:
 
@@ -412,6 +422,14 @@ Fields:
 - number of helpers needed
 - location
 - category
+
+---
+
+## 7.5 Help Exchanges
+
+A member can commit to an offer of help or respond to a help Need Post. Each committed helper creates a separate exchange, including when a Need Post asks for multiple helpers. The requester and helper each confirm completion before the exchange becomes completed and affects reputation. Help exchanges do not require item condition photos or a replacement value.
+
+If one participant does not confirm completion after seven days and reminders, an administrator reviews the exchange. It is not completed automatically.
 
 ---
 
@@ -539,7 +557,9 @@ Multiple competing requests may be submitted to the community for voting.
 
 Future feature based on defined reputation criteria.
 
-For MVP, the owner may select the allocation style.
+For MVP, the owner reviews Borrow Requests and chooses whom to approve. The domain should leave a clear extension point for other allocation policies, but First Approved and Community Vote allocation behavior are post-MVP. This Community Vote is distinct from the MVP Community Disciplinary Vote.
+
+Several Borrow Requests for overlapping dates may remain pending, but the system must prevent approval of overlapping exchanges for the same item.
 
 ---
 
@@ -563,6 +583,8 @@ At handoff, users should be encouraged to record:
 
 The application should support camera uploads directly from mobile devices.
 
+Condition photos are prompted for but optional at handoff and return. A normal exchange may be completed without photos. The borrower's condition and replacement-value acknowledgment is required.
+
 The borrower confirms:
 
 > The item was received in the documented condition.
@@ -580,6 +602,10 @@ Upon return:
 
 An uneventful return should take only a few taps.
 
+Photo uploads remain optional. Both parties must confirm the return condition or report a discrepancy.
+
+A disagreement opens a dispute. If one party has not responded after seven days and reminders, an administrator reviews the record; the platform does not silently complete the exchange.
+
 ---
 
 # 15. Borrower Responsibility Agreement
@@ -591,6 +617,10 @@ Before approval becomes active, borrowers acknowledge:
 - condition expectations
 - responsibility to communicate damage
 - expectation that negligent damage should be repaired or otherwise resolved with the owner
+
+Owner approval reserves the item's dates. The Borrow Request becomes an active exchange only when the borrower acknowledges these terms. If the borrower has not acknowledged within 48 hours, approval expires and the dates reopen.
+
+Either party may cancel before handoff with a recorded reason. Cancellation alone does not automatically reduce reputation. Problems after handoff proceed through return or dispute.
 
 This is not platform insurance.
 
@@ -640,13 +670,17 @@ Payment cannot:
 
 The interface should visually distinguish gratitude from a rental price.
 
+MVP shows optional suggested gratitude or maintenance text on a listing but provides no in-app gratitude payment flow.
+
 ---
 
 # 18. Solidarity Score
 
 The Solidarity Score is one of the central product systems.
 
-Each user receives a:
+Each member receives a **Community Solidarity Score** for each community they belong to. Each person also receives a **Global Solidarity Score** derived from their community scores.
+
+Both scores use a:
 
 **0–100 Solidarity Score**
 
@@ -655,6 +689,10 @@ A new member begins approximately in the middle as:
 **50 — Unproven**
 
 The precise starting value should remain configurable.
+
+**Unproven** is the displayed standing until a person completes an exchange. After their first completed exchange, the score thresholds determine their title.
+
+The Global Solidarity Score weights each community's score by the person's count of completed exchanges in that community. One completed item or help exchange counts once for each participant. For example, 400 completed exchanges in one community and 20 in another give those communities a 20:1 influence on the global score. Posts, thank-yous, and vouches do not add to that weight. Communities with no completed exchanges contribute no weight. A person with no completed exchanges across all communities displays **50 — Unproven** globally. Show the completed exchange count beside each score. Round the weighted average to the nearest integer, with halves rounded up.
 
 ---
 
@@ -799,23 +837,31 @@ Potential negative signals:
 
 Weights should be configurable and implemented centrally rather than scattered throughout application logic.
 
+For MVP, use the sample weights in Section 40 as initial centrally configured values. Community scores start at 50 and are clamped to 0–100. Every score change records its source. Only one thank-you per completed exchange may carry a reputation effect. Administrator adjustments require a reason and an audit record.
+
 ---
 
 # 23. Reputation and Owner Discretion
 
 Owners may:
 
-- view another member's Solidarity Score
+- view another member's Community Solidarity Score for their shared community and Global Solidarity Score
 - inspect reputation details
 - inspect completed exchange count
 - inspect unresolved disputes
 - inspect vouches
-- require a minimum score
+- require a minimum Community Solidarity Score in the listing's community
 - decline a request because of insufficient trust history
 
 Example:
 
-> Minimum Solidarity Score: 65
+> Minimum Community Solidarity Score: 65
+
+Owners can also see the borrower's Global Solidarity Score and the number of completed exchanges behind it when making a decision.
+
+An unresolved dispute or confirmed serious violation must appear as a separate prominent trust indicator when a member requests an item, even if their Global Solidarity Score changes little because the incident occurred in a lower-volume community.
+
+Across community boundaries, the indicator may disclose incident type and status but not the other community's identity, private evidence, or messages unless the viewer belongs to that community.
 
 Owners may make trust decisions using behavior recorded within the platform.
 
@@ -868,6 +914,8 @@ Possible resolutions:
 
 The platform records the outcome.
 
+Either exchange participant may report a dispute while an exchange is active or within 30 days after completion. Administrators review submitted evidence and record an outcome.
+
 ---
 
 # 26. Serious Misconduct
@@ -895,6 +943,8 @@ Possible consequences:
 
 Communities may vote to suspend or remove a member.
 
+For MVP, the Community Disciplinary Vote is an administrator-initiated removal vote. Administrators retain separate authority to suspend a member temporarily. The accused member may view the allegation and submit a response before the vote closes.
+
 The playful UI label may be:
 
 **Send to the Gulag**
@@ -921,10 +971,12 @@ Example:
 
 ```text
 Minimum turnout: 30%
-Removal threshold: 66%
+Removal threshold: two-thirds of votes cast
 ```
 
-MVP may initially use fixed sensible defaults.
+MVP uses 30% minimum turnout and a two-thirds removal threshold.
+
+Eligible voters are approved, unsuspended community members at vote opening, excluding the accused. Round the 30% turnout requirement up to a whole voter. Removal passes when at least two-thirds of votes cast favor removal. The administrator records and enacts the result.
 
 The accused user should be able to view the allegation and submit a response.
 
@@ -946,6 +998,8 @@ Administrators can:
 
 Admin actions should create immutable audit records.
 
+Removing a member immediately prevents new community activity. Existing exchanges, disputes, and their records remain accessible to the participants and community administrators until resolved.
+
 ---
 
 # 29. Private Messaging
@@ -956,6 +1010,8 @@ Users may privately communicate regarding:
 - handoff logistics
 - help requests
 - scheduling
+
+Any two approved members who share a community may start a private conversation scoped to that community. Only conversation participants can read it unless they submit selected messages as dispute evidence.
 
 Private messages are not generally visible to administrators.
 
@@ -1080,9 +1136,7 @@ MVP notification events:
 - community vote opened
 - vote ending soon
 
-Push notifications should be implemented through PWA capabilities when practical.
-
-Email may act as fallback.
+MVP requires in-app notifications and email for time-sensitive exchange, dispute, and vote events. PWA push notifications remain optional.
 
 ---
 
@@ -1231,6 +1285,8 @@ subscriptions
 admin_actions
 ```
 
+Borrow Requests and Need Posts must be distinguishable domain concepts even if they share storage.
+
 ---
 
 # 38. Key Entity Relationships
@@ -1289,7 +1345,7 @@ Sensitive operations should occur server-side.
 
 # 40. Reputation Architecture Requirement
 
-The Solidarity Score should never be computed through frontend-only logic.
+Community and Global Solidarity Scores should never be computed through frontend-only logic.
 
 Use a server-controlled reputation event system.
 
@@ -1320,9 +1376,23 @@ UNRESOLVED_DAMAGE      -10
 THEFT_CONFIRMED        -30
 ```
 
+MVP event rules:
+
+| Event | Recipient | Points | Trigger |
+| --- | --- | ---: | --- |
+| Successful item share | Owner | +2 | Completed item exchange |
+| Successful return | Borrower | +1 | Completed item exchange |
+| Completed help | Helper | +3 | Completed help exchange |
+| Positive thank-you | Recipient | +1 | At most one reputation-bearing thank-you per completed exchange |
+| Late return | Borrower | -2 | Administrator verifies the late return |
+| Unresolved damage | Responsible member | -10 | Administrator verifies unresolved damage |
+| Confirmed theft | Responsible member | -30 | Administrator confirms theft |
+
+Creating posts or listings, receiving help, and vouching have no automatic point effects in MVP. A reversed event is corrected by appending a compensating event with a reason and link to the original; verified history is preserved.
+
 The exact weights should remain configurable.
 
-The displayed score is computed from verified events.
+Each Community Solidarity Score is computed from verified events in that community. The Global Solidarity Score is derived from community scores with interaction-count weighting. Both computations are server-controlled and explainable.
 
 ---
 
@@ -1399,21 +1469,21 @@ MVP is complete when a group can:
 1. create a private community
 2. invite another user
 3. approve that user
-4. collect platform membership payment
+4. complete the platform membership subscription workflow in Stripe test mode
 5. create an item listing
 6. create a help offer
-7. create an item request
-8. create a help request
+7. create an item Need Post
+8. create a help Need Post
 9. browse community activity
-10. request a listed item
+10. submit a Borrow Request for a listed item
 11. approve a borrower
-12. examine borrower reputation
+12. examine borrower community and global reputation
 13. require minimum reputation
 14. schedule a handoff
-15. upload handoff photos
+15. be prompted to upload optional handoff photos
 16. acknowledge condition/replacement value
 17. record return
-18. upload return photos
+18. be prompted to upload optional return photos
 19. complete exchange
 20. modify reputation based on outcome
 21. publicly thank another member
@@ -1423,7 +1493,10 @@ MVP is complete when a group can:
 25. participate in a disciplinary vote
 26. suspend/remove a member
 27. privately message another participant
-28. view transparent reputation history
+28. view transparent community and global reputation history
+29. commit to a help offer or Need Post and complete a help exchange with confirmation from both participants
+
+Production payment collection is the first planned capability after MVP and is not an MVP completion gate.
 
 ---
 
@@ -1439,7 +1512,7 @@ Alice creates:
 
 ### Step 2
 
-Alice sends Bob a vouch/invite code.
+Alice sends Bob an invite. An eligible member may separately vouch for Bob.
 
 ### Step 3
 
@@ -1451,7 +1524,7 @@ Alice approves Bob.
 
 ### Step 5
 
-Bob pays the $5 monthly membership fee.
+Bob may complete the $5 monthly membership subscription flow in Stripe test mode. His community access does not depend on test checkout.
 
 ### Step 6
 
@@ -1477,8 +1550,9 @@ Alice views:
 
 ```text
 Bob
-Solidarity: 58 — Comrade
-12 interactions
+Community Solidarity Score: 50 — Unproven
+Global Solidarity Score: 50 — Unproven
+0 completed exchanges
 No unresolved disputes
 ```
 
@@ -1714,6 +1788,8 @@ Only after answering these questions should the platform expand materially.
 
 Implementation should proceed vertically rather than by building every backend primitive before usable functionality exists.
 
+Use the blockers in the [MVP execution plan](docs/MVP-EXECUTION-PLAN.md) for actual implementation order. The sequence below is illustrative.
+
 The recommended sequence is:
 
 ```text
@@ -1739,7 +1815,7 @@ Disputes
 ↓
 Admin governance
 ↓
-Billing
+Billing in Stripe test mode
 ↓
 Polish + PWA
 ```
