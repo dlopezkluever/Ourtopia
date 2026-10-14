@@ -25,7 +25,7 @@ The product should feel substantially more casual than Airbnb, Turo, or a rental
 
 It should feel closer to:
 
-> “People in my community helping one another, with software handling the annoying coordination and trust problems.”
+> “People in my community helping one another, with software handling the annoy3ng coordination and trust problems.”
 
 The product should not require users to monetize their possessions or labor.
 
@@ -117,6 +117,8 @@ The underlying concepts should use neutral internal names such as:
 
 This keeps the architecture reusable if later communities prefer different terminology.
 
+
+### **For UI Design**: please use Shadcn with the --preset b4iB4lDuK  
 ---
 
 # 3. Product Goals
@@ -1523,6 +1525,8 @@ If this complete workflow functions cleanly on mobile, the primary MVP loop work
 ---
 
 # 46. UX Principle: Casual Until Something Goes Wrong
+
+### **For UI Design**: please use Shadcn with the --preset b4iB4lDuK 
 
 This should guide the entire implementation.
 
