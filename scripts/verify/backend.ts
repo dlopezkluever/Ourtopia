@@ -129,3 +129,34 @@ export function receipt(name: string, result: unknown) {
   mkdirSync(directory, { recursive: true });
   writeFileSync(`${directory}/${name}.json`, JSON.stringify({ utc: new Date().toISOString(), head: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(), dirty: execFileSync('git', ['status', '--porcelain'], { encoding: 'utf8' }).trim().length > 0, backend: config.url, result }, null, 2));
 }
+
+export async function addActiveMember(owner: Awaited<ReturnType<typeof actor>>, communityId: string, label = 'member') {
+  const member = await actor({ label });
+  const application = await applyInvite(member, (await issueInvite(owner, communityId, member.email)).id);
+  const decision = await decideApplication(owner, application.id);
+  if (decision.error) throw decision.error;
+  return member;
+}
+
+export const conversationRow = z.object({ id: z.uuid(), community_id: z.uuid(), participant_low: z.uuid(), participant_high: z.uuid(), started_by: z.uuid(), created_at: z.string() });
+export const messageRow = z.object({ id: z.uuid(), conversation_id: z.uuid(), community_id: z.uuid(), author_id: z.uuid(), intent_id: z.uuid(), body: z.string(), created_at: z.string() });
+
+export async function startConversation(starter: Awaited<ReturnType<typeof actor>>, communityId: string, participantId: string, intent = randomUUID()) {
+  const result = await starter.client.rpc('start_conversation', { p_intent_id: intent, p_community_id: communityId, p_participant_id: participantId });
+  if (result.error) throw result.error;
+  return conversationRow.parse(result.data);
+}
+
+export async function sendMessage(author: Awaited<ReturnType<typeof actor>>, conversationId: string, body: string, intent = randomUUID()) {
+  const result = await author.client.rpc('send_message', { p_intent_id: intent, p_conversation_id: conversationId, p_body: body });
+  if (result.error) throw result.error;
+  return messageRow.parse(result.data);
+}
+
+export async function conversationFixture(label = 'conversation') {
+  const { owner, community } = await membershipFixture(label);
+  const first = await addActiveMember(owner, community.id, `${label}-first`);
+  const second = await addActiveMember(owner, community.id, `${label}-second`);
+  const conversation = await startConversation(first, community.id, second.id);
+  return { owner, community, first, second, conversation };
+}
