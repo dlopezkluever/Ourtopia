@@ -229,15 +229,25 @@ test('lane 8 ordinary clients cannot forge roles memberships or Community identi
   await capture(page, info, 8);
 });
 
-test('lane 9 lost creation response recovers committed result by retry', async ({ page }, info) => {
+test('lane 9 lost creation response recovers by retry and discards stale pre-commit snapshots', async ({ page }, info) => {
   const owner = await actor();
   let outage = false;
+  let holdAccessHints = false;
+  let subscribe!: () => void;
+  const subscribed = new Promise<void>(resolve => { subscribe = resolve; });
   const sockets: WebSocketRoute[] = [];
   await page.routeWebSocket('**/realtime/v1/websocket*', ws => {
     if (outage) { ws.close({ code: 1011, reason: 'realtime outage' }); return; }
-    sockets.push(ws); ws.connectToServer();
+    sockets.push(ws);
+    const server = ws.connectToServer();
+    server.onMessage(message => {
+      const [, , , event, payload] = JSON.parse(String(message));
+      if (!holdAccessHints || event !== 'postgres_changes') ws.send(message);
+      if (event === 'system' && payload.status === 'ok' && payload.extension === 'postgres_changes') subscribe();
+    });
   });
   await signIn(page, owner.email);
+  await subscribed;
   const lose = async (route: Route) => { await route.fetch(); await route.abort('failed'); };
   // First Community: the creator's access hint rediscovers the committed Community without any retry.
   await page.route('**/rest/v1/rpc/create_community', lose);
@@ -261,12 +271,68 @@ test('lane 9 lost creation response recovers committed result by retry', async (
   expect(page.url()).toContain(before.data![1].id);
   expect((await owner.client.from('communities').select('id').order('created_at')).data).toEqual(before.data);
   expect((await owner.client.from('memberships').select('role,status')).data).toEqual([{ role: 'administrator', status: 'active' }, { role: 'administrator', status: 'active' }]);
-  // Slow response: the creator's access hint lands before the create response while Community reads lag behind it.
   await page.getByRole('button', { name: 'Create another Community' }).click();
-  await page.route('**/rest/v1/rpc/create_community', async route => { const response = await route.fetch(); await new Promise(resolve => setTimeout(resolve, 2000)); await route.fulfill({ response }); });
-  await page.route('**/rest/v1/communities*', async route => { await new Promise(resolve => setTimeout(resolve, 4000)); await route.continue(); });
-  await createInBrowser(page, 'Slow Response Circle');
-  await page.unrouteAll({ behavior: 'ignoreErrors' });
+  holdAccessHints = true;
+  let captureStale!: () => void;
+  const staleCaptured = new Promise<void>(resolve => { captureStale = resolve; });
+  let releaseStale!: () => void;
+  const staleReleased = new Promise<void>(resolve => { releaseStale = resolve; });
+  let settleCommand!: () => void;
+  const commandSettled = new Promise<void>(resolve => { settleCommand = resolve; });
+  let releaseRemaining!: () => void;
+  const remainingReleased = new Promise<void>(resolve => { releaseRemaining = resolve; });
+  let staleRequest: ReturnType<Route['request']> | undefined;
+  let freshReads = 0;
+  let holdRemaining = false;
+  await page.route('**/rest/v1/communities*', async route => {
+    if (!staleRequest) {
+      staleRequest = route.request();
+      const response = await route.fetch();
+      expect(response.ok()).toBe(true);
+      expect(communitySchema.array().parse(await response.json()).map(home => ({ id: home.id }))).toEqual(before.data);
+      captureStale();
+      await staleReleased;
+      await route.fulfill({ response });
+    } else if (!holdRemaining) {
+      freshReads++;
+      await commandSettled;
+      const response = await route.fetch();
+      expect(response.ok()).toBe(true);
+      expect(communitySchema.array().parse(await response.json()).map(home => home.name)).toContain('Slow Response Circle');
+      const finished = page.waitForEvent('requestfinished', request => request === route.request());
+      await route.fulfill({ response });
+      await finished;
+      freshReads--;
+    } else {
+      await remainingReleased;
+      await route.continue();
+    }
+  });
+  try {
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await staleCaptured;
+    await page.getByLabel('Community name').fill('Slow Response Circle');
+    await page.getByRole('button', { name: 'Create Community', exact: true }).click();
+    await expect(page).toHaveURL(/\/communities\/[0-9a-f-]+$/);
+    settleCommand();
+    await expect(page.getByRole('heading', { name: 'Welcome to Slow Response Circle.' })).toBeVisible();
+    await expect.poll(() => freshReads).toBe(0);
+    holdRemaining = true;
+    const finished = page.waitForEvent('requestfinished', request => request === staleRequest);
+    releaseStale();
+    await finished;
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    await expect(page.getByRole('heading', { name: 'Welcome to Slow Response Circle.' })).toBeVisible();
+    await expect(page.getByText('Administrator · Active member')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Community unavailable.' })).toHaveCount(0);
+    await expect(page.getByLabel('Community name')).toHaveCount(0);
+  } finally {
+    holdAccessHints = false;
+    releaseStale();
+    settleCommand();
+    releaseRemaining();
+    await page.unrouteAll({ behavior: 'wait' });
+  }
   // Realtime fails while the post-create read is in flight; the channel error must re-read rather than only invalidate it.
   await page.getByRole('button', { name: 'Create another Community' }).click();
   let committed = false;
