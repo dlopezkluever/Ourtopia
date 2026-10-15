@@ -427,9 +427,9 @@ Fields:
 
 ## 7.5 Help Exchanges
 
-A member can commit to an offer of help or respond to a help Need Post. Each committed helper creates a separate exchange, including when a Need Post asks for multiple helpers. The requester and helper each confirm completion before the exchange becomes completed and affects reputation. Help exchanges do not require item condition photos or a replacement value.
+A member can commit to an offer of help or respond to a help Need Post. Each committed helper creates a separate exchange, including when a Need Post asks for multiple helpers. The requester and helper each confirm ordinary completion before the exchange affects reputation. Help exchanges do not require item condition photos or a replacement value.
 
-If one participant does not confirm completion after seven days and reminders, an administrator reviews the exchange. It is not completed automatically.
+If one participant does not confirm completion after seven days and reminders, an administrator reviews the exchange. It is not completed automatically. The administrator may verify completion from one participant's confirmation and supporting evidence of work, with a recorded reason and no unresolved conflicting account. Otherwise the administrator closes it without completion.
 
 ---
 
@@ -602,9 +602,9 @@ Upon return:
 
 An uneventful return should take only a few taps.
 
-Photo uploads remain optional. Both parties must confirm the return condition or report a discrepancy.
+Photo uploads remain optional. Both parties confirm the return condition for ordinary completion or report a discrepancy.
 
-A disagreement opens a dispute. If one party has not responded after seven days and reminders, an administrator reviews the record; the platform does not silently complete the exchange.
+A disagreement opens a dispute. If one party has not responded after seven days and reminders, an administrator reviews the record; the platform does not silently complete the exchange. The administrator may verify completion from the recorded Handoff and Return, one participant's Return confirmation, and cited evidence of Return and condition when no unresolved disagreement remains. Otherwise the administrator closes it without completion.
 
 ---
 
@@ -1265,9 +1265,8 @@ messages
 conversations
 conversation_members
 
-reputation_scores
 reputation_events
-reputation_components
+qualifying_interactions
 
 thank_yous
 
@@ -1286,6 +1285,7 @@ admin_actions
 ```
 
 Borrow Requests and Need Posts must be distinguishable domain concepts even if they share storage.
+This table list is illustrative. ADRs 0002–0008 define the records needed for transactions, reservations, help slots, evidence, and background work.
 
 ---
 
@@ -1315,10 +1315,10 @@ Listing
  └── generates Exchange Requests
 
 Exchange
- ├── has Owner
- ├── has Borrower
- ├── references Listing
- ├── contains Condition Evidence
+ ├── belongs to Community
+ ├── has item Owner and Borrower or help Requester and Helper
+ ├── references its source Listing or Need Post
+ ├── has kind-specific details and event history
  └── may create Dispute
 ```
 
