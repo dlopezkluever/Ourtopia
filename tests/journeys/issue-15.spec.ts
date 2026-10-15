@@ -111,7 +111,7 @@ test('lane 5 realtime hints contain identities and the browser performs a fresh 
   page.on('websocket', socket => socket.on('framereceived', frame => {
     const value = frame.payload.toString();
     if (value.includes(`messages-${f.first.id}`) && value.includes('phx_reply') && value.includes('"status":"ok"')) subscribed = true;
-    if (value.includes('postgres_changes') && value.includes('notification_hints')) frames.push(value);
+    if (value.includes('"event":"postgres_changes"') && value.includes('notification_hints')) frames.push(value);
   }));
   await open(page, f.first.email, f.conversation.id); await expect.poll(() => subscribed).toBe(true);
   const read = page.waitForResponse(response => response.url().includes('/rest/v1/messages?') && response.status() === 200);
