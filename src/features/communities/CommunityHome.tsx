@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { ArrowRight, House, LockKeyhole, Plus, Sprout, Users } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
 import { supabase } from '../../lib/supabase/client';
@@ -13,41 +13,43 @@ export function CommunityHome({ user }: { user: User }) {
   const [error, setError] = useState('');
   const [intent, setIntent] = useState(() => sessionStorage.getItem(`create-intent-${user.id}`) ?? crypto.randomUUID());
   const requestedId = location.pathname.startsWith('/communities/') ? location.pathname.split('/')[2] : undefined;
+  const generation = useRef(0);
   const current = requestedId ? communities.find(community => community.id === requestedId) : communities[0];
 
   useEffect(() => {
     let active = true;
-    let generation = 0;
     async function load() {
-      const request = ++generation;
+      const request = ++generation.current;
       const { data, error } = await supabase.from('communities').select('*').order('created_at');
-      if (!active || request !== generation) return;
+      if (!active || request !== generation.current) return;
       if (error) { setCommunities([]); setError(error.message); }
       else setCommunities(communitySchema.array().parse(data));
       setLoading(false);
     }
     void load();
+    // Access changes and lost channels drop cached Communities; routine refreshes re-read through RLS in place so typed input survives.
+    const revalidate = () => { void load(); };
     const refresh = () => { setCommunities([]); setLoading(true); void load(); };
     const channel = supabase.channel(`membership-access-${user.id}`).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'membership_access_hints', filter: `user_id=eq.${user.id}` }, refresh);
     async function connect() {
       const { data, error } = await supabase.auth.getSession();
       if (!active) return;
-      if (error || !data.session) { ++generation; setCommunities([]); setLoading(true); return; }
+      if (error || !data.session) { ++generation.current; setCommunities([]); setLoading(true); return; }
       await supabase.realtime.setAuth(data.session.access_token);
       if (!active) return;
       channel.subscribe(status => {
         if (!active) return;
-        if (status === 'SUBSCRIBED') refresh();
+        if (status === 'SUBSCRIBED') revalidate();
         else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
-          ++generation; setCommunities([]); setLoading(true);
+          ++generation.current; setCommunities([]); setLoading(true);
         }
       });
     }
     void connect();
-    window.addEventListener('focus', refresh);
-    const visibility = () => { if (document.visibilityState === 'visible') refresh(); };
+    window.addEventListener('focus', revalidate);
+    const visibility = () => { if (document.visibilityState === 'visible') revalidate(); };
     document.addEventListener('visibilitychange', visibility);
-    return () => { active = false; void supabase.removeChannel(channel); window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', visibility); };
+    return () => { active = false; void supabase.removeChannel(channel); window.removeEventListener('focus', revalidate); document.removeEventListener('visibilitychange', visibility); };
   }, [user.id]);
 
   async function create(event: FormEvent<HTMLFormElement>) {
@@ -61,6 +63,7 @@ export function CommunityHome({ user }: { user: User }) {
       const { data, error } = await supabase.rpc('create_community', { p_intent_id: intent, p_name: parsed.data.name, p_description: parsed.data.description });
       if (error) throw error;
       const community = communitySchema.parse(data);
+      ++generation.current; // discard reads that started before this commit
       setCommunities(previous => [...previous.filter(row => row.id !== community.id), community]);
       history.replaceState({}, '', `/communities/${community.id}`);
       sessionStorage.removeItem(`create-intent-${user.id}`);

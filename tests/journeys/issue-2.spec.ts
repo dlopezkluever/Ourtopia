@@ -204,6 +204,10 @@ test('lane 10 mobile touch and desktop keyboard registration and home are usable
   await expect(page.getByLabel('Community name')).toBeVisible();
   await page.getByLabel('Community name').focus();
   await page.keyboard.type('Accessible Together');
+  await page.evaluate(() => { window.dispatchEvent(new Event('focus')); document.dispatchEvent(new Event('visibilitychange')); });
+  await page.waitForLoadState('networkidle');
+  await expect(page.getByLabel('Community name')).toHaveValue('Accessible Together');
+  await page.getByLabel('Community name').focus();
   await page.keyboard.press('Tab');
   await expect(page.getByLabel('A little about your Community')).toBeFocused();
   await page.keyboard.press('Tab');
