@@ -6,11 +6,13 @@ import { copyFileSync, existsSync, mkdirSync, symlinkSync, unlinkSync, writeFile
 import { join, resolve } from 'node:path';
 import { cpus, loadavg, totalmem, freemem } from 'node:os';
 import { chromium, expect, type Page } from '@playwright/test';
-import { actor, createCommunity, password } from './backend';
+import { activeMember, actor, createCommunity, password } from './backend';
+import { z } from 'zod';
+import { standingSchema } from '../../src/features/reputation/model';
 import { communitySchema } from '../../src/features/communities/model';
 
 const { values } = parseArgs({ options: { issue: { type: 'string' }, base: { type: 'string' }, head: { type: 'string' }, pairs: { type: 'string', default: '10' } } });
-if (values.issue === '3') await verifyIssue3(values);
+if (values.issue === '3' || values.issue === '4') await verifyIssue3(values);
 else await verifyIssue2(values);
 
 type PerfArguments = { issue?: string; base?: string; head?: string; pairs?: string };
@@ -110,7 +112,7 @@ try {
 }
 
 async function verifyIssue3(values: PerfArguments) {
-assert.equal(values.issue, '3');
+assert.ok(values.issue === '3' || values.issue === '4');
 const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
 assert.equal(values.head, head);
 assert.ok(values.base);
@@ -164,9 +166,10 @@ async function login(page: Page, email: string) {
 type Sample = { index: number; side: string; readinessMs: number; queryMs: number; communityId: string };
 const samples: Sample[] = [];
 const actions: { index: number; inviteMs: number; applyMs: number; approveMs: number; visibleMs: number; applicationId: string; membershipStatus: string }[] = [];
+const profiles: { index: number; queryMs: number; visibleMs: number; subjectId: string }[] = [];
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH ?? (process.platform === 'win32' ? 'C:/Program Files/Google/Chrome/Application/chrome.exe' : undefined) });
 function persist(extra: unknown = {}) {
-  writeFileSync(`${directory}/samples.json`, JSON.stringify({ utc: new Date().toISOString(), head, base: values.base, startup, samples, actions, host: { cores: cpus().length, totalMemory: totalmem(), freeMemory: freemem(), loadAverage: loadavg() }, extra }, null, 2));
+  writeFileSync(`${directory}/samples.json`, JSON.stringify({ utc: new Date().toISOString(), head, base: values.base, startup, samples, actions, profiles, host: { cores: cpus().length, totalMemory: totalmem(), freeMemory: freemem(), loadAverage: loadavg() }, extra }, null, 2));
 }
 try {
   addTrunk();
@@ -195,7 +198,24 @@ try {
         assert.deepEqual(query.data, [community]);
         samples.push({ index, side, readinessMs, queryMs, communityId: community.id });
         persist({ phase: 'paired reads', errors: 0 });
-        if (side === 'head') {
+        if (side === 'head' && values.issue === '4') {
+          const subject = await activeMember(owner, String(community.id), 'perf-profile-subject');
+          const queryStart = performance.now();
+          const profile = await owner.client.rpc('member_profile', { p_community_id: String(community.id), p_subject: subject.id });
+          const queryMs = performance.now() - queryStart;
+          assert.equal(profile.error, null);
+          assert.deepEqual(z.object({ local: standingSchema }).parse(profile.data).local, { score: 50, title: 'Unproven', completedInteractions: 0 });
+          await page.goto(`/communities/${community.id}/members`);
+          const member = page.getByRole('link', { name: subject.email, exact: true });
+          await expect(member).toBeVisible();
+          const start = performance.now();
+          await member.click();
+          await expect(page.getByRole('heading', { name: subject.email, exact: true })).toBeVisible();
+          await expect(page.getByRole('region', { name: 'Global Solidarity Score', exact: true })).toContainText('0 completed Exchanges');
+          profiles.push({ index, queryMs, visibleMs: performance.now() - start, subjectId: subject.id });
+          persist({ phase: 'profile read and visible persisted standing', errors: 0 });
+        }
+        if (side === 'head' && values.issue === '3') {
           let start = performance.now();
           const invite = await owner.client.rpc('issue_invite', { p_intent_id: randomUUID(), p_community_id: community.id, p_email: applicant.email });
           const inviteMs = performance.now() - start;
@@ -249,6 +269,18 @@ try {
   const summary = (side: string) => ({ readinessMedianMs: median(samples.filter(row => row.side === side).map(row => row.readinessMs)), queryMedianMs: median(samples.filter(row => row.side === side).map(row => row.queryMs)) });
   const baseline = summary('trunk');
   const current = summary('head');
+  if (values.issue === '4') {
+    assert.equal(profiles.length, count);
+    const added = { queryMedianMs: median(profiles.map(row => row.queryMs)), visibleMedianMs: median(profiles.map(row => row.visibleMs)) };
+    const ordered = profiles.map(row => row.queryMs).sort((a, b) => a - b);
+    const queryP95Ms = ordered[Math.ceil(ordered.length * .95) - 1];
+    const checks = { comparableReadiness: current.readinessMedianMs <= Math.max(1.2 * baseline.readinessMedianMs, baseline.readinessMedianMs + 100), comparableRead: current.queryMedianMs <= Math.max(1.2 * baseline.queryMedianMs, baseline.queryMedianMs + 100), visible: added.visibleMedianMs <= 2000, query: queryP95Ms <= 3000, startup: Object.values(startup).every(value => value <= 60000) };
+    persist({ errors: 0, pairs: count, baseline, head: current, added, queryP95Ms, checks, mode: 'Local Vite development, serial Chrome, equivalent persisted authorized Community reload and read. Profile UI absent on trunk. Added profile read and visible state use absolute budgets. No mutating P04 command or provider wait.' });
+    writeFileSync(`${directory}/report.md`, `P04 budget probe at ${head}.\n\n${count} alternating trunk/head pairs against ${values.base}. No speedup claim. Shared authorized home reload and Community read use equivalent persisted fixtures. Profile is absent on trunk.\n\nTrunk ${JSON.stringify(baseline)}. Head ${JSON.stringify(current)}. Added profile ${JSON.stringify(added)}. Profile query p95 ${queryP95Ms} ms. Checks ${JSON.stringify(checks)}.\n\nEvery timed profile read returned literal 50 Unproven and zero completions, and every timed navigation rendered that persisted standing. Zero failed samples. Samples include all runs and host memory. Local browser reload, HTTP and rendering bound these development measurements. Production throughput is not measured. No provider wait or mutating P04 command exists.\n`);
+    assert.ok(Object.values(checks).every(Boolean), JSON.stringify(checks));
+    console.log(JSON.stringify({ baseline, head: current, added, queryP95Ms, checks }));
+    return;
+  }
   const added = { inviteMedianMs: median(actions.map(row => row.inviteMs)), applyMedianMs: median(actions.map(row => row.applyMs)), approveMedianMs: median(actions.map(row => row.approveMs)), visibleMedianMs: median(actions.map(row => row.visibleMs)) };
   const queries = samples.filter(row => row.side === 'head').map(row => row.queryMs).sort((a, b) => a - b);
   const queryP95Ms = queries[Math.ceil(queries.length * .95) - 1];
