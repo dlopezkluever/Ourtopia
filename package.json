@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --host 127.0.0.1 --port 5173",
+    "dev": "node scripts/verify/local-env.mjs --dev",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b",
     "lint": "eslint .",
@@ -14,7 +14,7 @@
     "verify:perf": "tsx scripts/verify/perf.ts",
     "verify:secrets": "node scripts/verify/secrets.mjs",
     "db:start": "supabase start",
-    "db:reset": "node scripts/verify/migrations.mjs --disposable-project ourtopia-issue-2",
+    "db:reset": "node scripts/verify/local-env.mjs --reset",
     "db:types": "node scripts/verify/database-types.mjs",
     "db:env": "node scripts/verify/local-env.mjs"
   },

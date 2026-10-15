@@ -49,3 +49,8 @@ The UI uses shadcn preset `b4iB4lDuK`, generated with `shadcn init --template vi
 ## Stop or roll back local work
 
 Stop Vite with Ctrl+C. Run `npx supabase stop --project-id ourtopia-issue-2` to stop this backend. Keep its volumes to preserve local state. Reverting the application commit rolls back the app. For a disposable database, switch to the predecessor checkout and reset its local schema. Shared environments require a reviewed forward migration; never delete or rewrite an applied migration.
+
+Parallel lanes use uncommitted overrides in supabase/config.toml for a unique ourtopia-issue-N project and port block.
+Set Auth site_url and redirect URLs to the lane app URL and set APP_PORT to that port (default 5173).
+Run local-env.mjs after starting the lane; it reads API and inbox ports from config.
+Use migrations.mjs --disposable-project with that exact project id. Never commit lane config overrides.

@@ -19,10 +19,15 @@ const config = z.object({
   url: process.env.VITE_SUPABASE_URL,
   anon: process.env.VITE_SUPABASE_ANON_KEY,
   service: process.env.SUPABASE_SERVICE_ROLE_KEY,
-  mailbox: process.env.TEST_MAILBOX_URL ?? 'http://127.0.0.1:55324',
+  mailbox: process.env.TEST_MAILBOX_URL ?? `http://127.0.0.1:${/\[local_smtp\][\s\S]*?^port\s*=\s*(\d+)/m.exec(readFileSync('supabase/config.toml', 'utf8'))?.[1]}`,
   secret: process.env.TEST_JWT_SECRET,
 });
 if (!['localhost', '127.0.0.1'].includes(new URL(config.url).hostname)) throw new Error('Verification requires a disposable local backend.');
+const laneConfig = readFileSync('supabase/config.toml', 'utf8');
+const laneProject = /^project_id\s*=\s*"([^"]+)"/m.exec(laneConfig)?.[1];
+const laneApiPort = /\[api\][\s\S]*?^port\s*=\s*(\d+)/m.exec(laneConfig)?.[1];
+const laneInboxPort = /\[local_smtp\][\s\S]*?^port\s*=\s*(\d+)/m.exec(laneConfig)?.[1];
+if (!/^ourtopia-issue-\d+$/.test(laneProject ?? '') || new URL(config.url).port !== laneApiPort || new URL(config.mailbox).port !== laneInboxPort) throw new Error('Verification environment must match this disposable lane config.');
 
 export const backendUrl = config.url;
 export const anonKey = config.anon;
@@ -50,6 +55,29 @@ export async function actor({ verified = true, label = 'actor' } = {}) {
 
 export async function createCommunity(client: ReturnType<typeof publicClient>, intent = randomUUID(), name = 'Maple Street Neighbors') {
   return client.rpc('create_community', { p_intent_id: intent, p_name: name, p_description: 'A little more possible together.' });
+}
+
+export async function membershipFixture(label = 'membership') {
+  const owner = await actor({ label: `${label}-admin` });
+  const applicant = await actor({ label: `${label}-applicant` });
+  const community = z.object({ id: z.uuid(), name: z.string() }).parse((await createCommunity(owner.client, randomUUID(), `${label} circle`)).data);
+  return { owner, applicant, community };
+}
+
+export async function issueInvite(owner: Awaited<ReturnType<typeof actor>>, communityId: string, email: string, intent = randomUUID()) {
+  const result = await owner.client.rpc('issue_invite', { p_intent_id: intent, p_community_id: communityId, p_email: email });
+  if (result.error) throw result.error;
+  return z.object({ id: z.uuid(), community_id: z.uuid(), expires_at: z.string(), recipient_email: z.string() }).parse(result.data);
+}
+
+export async function applyInvite(applicant: Awaited<ReturnType<typeof actor>>, inviteId: string, intent = randomUUID()) {
+  const result = await applicant.client.rpc('redeem_invite', { p_intent_id: intent, p_invite_id: inviteId });
+  if (result.error) throw result.error;
+  return z.object({ id: z.uuid(), community_id: z.uuid(), status: z.literal('pending'), applicant_id: z.uuid() }).parse(result.data);
+}
+
+export async function decideApplication(owner: Awaited<ReturnType<typeof actor>>, applicationId: string, decision: 'approved' | 'rejected' = 'approved', reason = '', intent = randomUUID()) {
+  return owner.client.rpc('decide_membership', { p_intent_id: intent, p_application_id: applicationId, p_decision: decision, p_reason: reason });
 }
 
 // Realtime starts delivering database changes several seconds after a reset; wait until a probe change arrives.

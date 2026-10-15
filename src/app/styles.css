@@ -127,3 +127,17 @@ textarea { resize: vertical; line-height: 1.7; }
     @apply bg-background text-foreground; }
   html {
     @apply font-sans; } }
+ .membership-page { max-width: 850px; margin: 0 auto; padding: 2rem 1rem 4rem; }
+ .membership-page > .eyebrow { display: block; margin-top: 2rem; }
+ .membership-page h1 { font-size: clamp(2rem, 5vw, 3rem); }
+ .membership-page h2, .membership-admin h2 { margin-top: 2rem; }
+ .membership-card { padding: 1.25rem; border: 1px solid #d8ded5; border-radius: 1rem; margin: 1rem 0; background: #fffdf7; overflow-wrap: anywhere; }
+ .membership-card h3 { margin-top: 0; }
+ .membership-card form { display: grid; gap: .75rem; }
+ .membership-card input, .membership-card textarea, .membership-card select { width: 100%; min-width: 0; padding: .7rem; border: 1px solid #b5bfaf; border-radius: .5rem; font: inherit; background: white; color: #263b2e; }
+ .membership-card label { display: block; margin: .8rem 0 .4rem; }
+ .membership-card button { margin-top: .8rem; white-space: normal; height: auto; min-height: 44px; }
+ .membership-admin { margin-top: 2rem; }
+ .delivery-row { display: flex; gap: 1rem; align-items: center; justify-content: space-between; padding: .8rem 0; border-bottom: 1px solid #d8ded5; flex-wrap: wrap; overflow-wrap: anywhere; }
+ .header-right { flex-wrap: wrap; }
+ :focus-visible { outline: 3px solid #38684a; outline-offset: 3px; }

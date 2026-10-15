@@ -71,6 +71,26 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"invites": {
+                  Row: {
+                    "community_id": string,"community_name": string,"created_at": string,"expires_at": string,"id": string,"issued_by": string,"recipient_email": string,"redeemed_at": string | null,"redeemed_by": string | null
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "community_id": string,"community_name": string,"created_at"?: string,"expires_at": string,"id"?: string,"issued_by": string,"recipient_email": string,"redeemed_at"?: string | null,"redeemed_by"?: string | null
+                  }
+                  Update: {
+                    "community_id"?: string,"community_name"?: string,"created_at"?: string,"expires_at"?: string,"id"?: string,"issued_by"?: string,"recipient_email"?: string,"redeemed_at"?: string | null,"redeemed_by"?: string | null
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "invites_community_id_fkey"
+      columns: ["community_id"]
+isOneToOne: false
+      referencedRelation: "communities"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"membership_access_hints": {
                   Row: {
                     "community_id": string,"id": string,"user_id": string
@@ -90,6 +110,58 @@ isOneToOne: false
       referencedRelation: "communities"
       referencedColumns: ["id"]
     }
+                  ]
+                },"membership_applications": {
+                  Row: {
+                    "applicant_email": string,"applicant_id": string,"application_event_id": string,"community_id": string,"community_name": string,"created_at": string,"decided_at": string | null,"decided_by": string | null,"decision_event_id": string | null,"id": string,"invite_id": string,"reason": string | null,"status": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "applicant_email": string,"applicant_id": string,"application_event_id": string,"community_id": string,"community_name": string,"created_at"?: string,"decided_at"?: string | null,"decided_by"?: string | null,"decision_event_id"?: string | null,"id"?: string,"invite_id": string,"reason"?: string | null,"status"?: string
+                  }
+                  Update: {
+                    "applicant_email"?: string,"applicant_id"?: string,"application_event_id"?: string,"community_id"?: string,"community_name"?: string,"created_at"?: string,"decided_at"?: string | null,"decided_by"?: string | null,"decision_event_id"?: string | null,"id"?: string,"invite_id"?: string,"reason"?: string | null,"status"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "membership_applications_application_event_id_fkey"
+      columns: ["application_event_id"]
+isOneToOne: false
+      referencedRelation: "community_events"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "membership_applications_community_id_fkey"
+      columns: ["community_id"]
+isOneToOne: false
+      referencedRelation: "communities"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "membership_applications_decision_event_id_fkey"
+      columns: ["decision_event_id"]
+isOneToOne: true
+      referencedRelation: "community_events"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "membership_applications_invite_id_community_id_fkey"
+      columns: ["invite_id","community_id"]
+isOneToOne: false
+      referencedRelation: "invites"
+      referencedColumns: ["id","community_id"]
+    }
+                  ]
+                },"membership_settings": {
+                  Row: {
+                    "invite_lifetime": string,"singleton": boolean
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "invite_lifetime"?: string,"singleton"?: boolean
+                  }
+                  Update: {
+                    "invite_lifetime"?: string,"singleton"?: boolean
+                  }
+                  Relationships: [
+
                   ]
                 },"memberships": {
                   Row: {
@@ -111,17 +183,136 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"notification_attempts": {
+                  Row: {
+                    "error": string | null,"finished_at": string | null,"id": string,"number": number,"outbox_id": string,"started_at": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "error"?: string | null,"finished_at"?: string | null,"id": string,"number": number,"outbox_id": string,"started_at"?: string
+                  }
+                  Update: {
+                    "error"?: string | null,"finished_at"?: string | null,"id"?: string,"number"?: number,"outbox_id"?: string,"started_at"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "notification_attempts_outbox_id_fkey"
+      columns: ["outbox_id"]
+isOneToOne: false
+      referencedRelation: "notification_outbox"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"notification_hints": {
+                  Row: {
+                    "id": string,"recipient_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "id"?: string,"recipient_id": string
+                  }
+                  Update: {
+                    "id"?: string,"recipient_id"?: string
+                  }
+                  Relationships: [
+
+                  ]
+                },"notification_outbox": {
+                  Row: {
+                    "application_id": string | null,"attempts": number,"channel": string,"claim_token": string | null,"community_id": string,"created_at": string,"delivered_at": string | null,"event_id": string,"id": string,"kind": string,"last_error": string | null,"lease_until": string | null,"next_attempt_at": string,"recipient_id": string,"state": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "application_id"?: string | null,"attempts"?: number,"channel": string,"claim_token"?: string | null,"community_id": string,"created_at"?: string,"delivered_at"?: string | null,"event_id": string,"id"?: string,"kind": string,"last_error"?: string | null,"lease_until"?: string | null,"next_attempt_at"?: string,"recipient_id": string,"state"?: string
+                  }
+                  Update: {
+                    "application_id"?: string | null,"attempts"?: number,"channel"?: string,"claim_token"?: string | null,"community_id"?: string,"created_at"?: string,"delivered_at"?: string | null,"event_id"?: string,"id"?: string,"kind"?: string,"last_error"?: string | null,"lease_until"?: string | null,"next_attempt_at"?: string,"recipient_id"?: string,"state"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "notification_outbox_application_id_fkey"
+      columns: ["application_id"]
+isOneToOne: false
+      referencedRelation: "membership_applications"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "notification_outbox_community_id_fkey"
+      columns: ["community_id"]
+isOneToOne: false
+      referencedRelation: "communities"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "notification_outbox_event_id_fkey"
+      columns: ["event_id"]
+isOneToOne: false
+      referencedRelation: "community_events"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"notifications": {
+                  Row: {
+                    "application_id": string | null,"created_at": string,"id": string,"kind": string,"outbox_id": string,"recipient_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "application_id"?: string | null,"created_at"?: string,"id"?: string,"kind": string,"outbox_id": string,"recipient_id": string
+                  }
+                  Update: {
+                    "application_id"?: string | null,"created_at"?: string,"id"?: string,"kind"?: string,"outbox_id"?: string,"recipient_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "notifications_application_id_fkey"
+      columns: ["application_id"]
+isOneToOne: false
+      referencedRelation: "membership_applications"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "notifications_outbox_id_fkey"
+      columns: ["outbox_id"]
+isOneToOne: true
+      referencedRelation: "notification_outbox"
+      referencedColumns: ["id"]
+    }
+                  ]
                 }
           }
           Views: {
             [_ in never]: never
           }
           Functions: {
-            "create_community":
+            "can_read_invite":
+{ Args: { "p_invite_id": string }; Returns: boolean
+                           },
+"claim_notification":
+{ Args: { "p_outbox_id"?: string }; Returns: Json
+                           },
+"create_community":
 { Args: { "p_description"?: string,"p_intent_id": string,"p_name": string }; Returns: Json
+                           },
+"decide_membership":
+{ Args: { "p_application_id": string,"p_decision": string,"p_intent_id": string,"p_reason"?: string }; Returns: Json
+                           },
+"finish_notification":
+{ Args: { "p_claim_token": string,"p_error"?: string,"p_outbox_id": string }; Returns: Json
                            },
 "is_active_member":
 { Args: { "target_community": string }; Returns: boolean
+                           },
+"is_community_administrator":
+{ Args: { "p_community_id": string }; Returns: boolean
+                           },
+"issue_invite":
+{ Args: { "p_community_id": string,"p_email": string,"p_intent_id": string }; Returns: Json
+                           },
+"redeem_invite":
+{ Args: { "p_intent_id": string,"p_invite_id": string }; Returns: Json
+                           },
+"require_current_membership":
+{ Args: { "p_administrator"?: boolean,"p_community_id": string }; Returns: undefined
+                           },
+"retry_notification":
+{ Args: { "p_intent_id": string,"p_outbox_id": string }; Returns: Json
                            }
           }
           Enums: {
