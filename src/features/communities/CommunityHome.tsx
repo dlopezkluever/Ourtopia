@@ -42,9 +42,7 @@ export function CommunityHome({ user }: { user: User }) {
       channel.subscribe(status => {
         if (!active) return;
         if (status === 'SUBSCRIBED') revalidate();
-        else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
-          ++generation.current; setCommunities([]); setLoading(true);
-        }
+        else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') refresh();
       });
     }
     void connect();

@@ -1,4 +1,4 @@
-import { test, expect, type Page, type Route, type TestInfo } from '@playwright/test';
+import { test, expect, type Page, type Route, type TestInfo, type WebSocketRoute } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -172,6 +172,12 @@ test('lane 8 ordinary clients cannot forge roles memberships or Community identi
 
 test('lane 9 lost creation response recovers committed result by retry', async ({ page }, info) => {
   const owner = await actor();
+  let outage = false;
+  const sockets: WebSocketRoute[] = [];
+  await page.routeWebSocket('**/realtime/v1/websocket*', ws => {
+    if (outage) { ws.close({ code: 1011, reason: 'realtime outage' }); return; }
+    sockets.push(ws); ws.connectToServer();
+  });
   await signIn(page, owner.email);
   const lose = async (route: Route) => { await route.fetch(); await route.abort('failed'); };
   // First Community: the creator's access hint rediscovers the committed Community without any retry.
@@ -201,6 +207,24 @@ test('lane 9 lost creation response recovers committed result by retry', async (
   await page.route('**/rest/v1/rpc/create_community', async route => { const response = await route.fetch(); await new Promise(resolve => setTimeout(resolve, 2000)); await route.fulfill({ response }); });
   await page.route('**/rest/v1/communities*', async route => { await new Promise(resolve => setTimeout(resolve, 4000)); await route.continue(); });
   await createInBrowser(page, 'Slow Response Circle');
+  await page.unrouteAll({ behavior: 'ignoreErrors' });
+  // Realtime fails while the post-create read is in flight; the channel error must re-read rather than only invalidate it.
+  await page.getByRole('button', { name: 'Create another Community' }).click();
+  let committed = false;
+  await page.route('**/rest/v1/rpc/create_community', async route => { const response = await route.fetch(); committed = true; await route.fulfill({ response }); });
+  await page.route('**/rest/v1/communities*', async route => {
+    const response = await route.fetch();
+    if (committed) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+      if (!outage) { outage = true; for (const ws of sockets) ws.close({ code: 1011, reason: 'realtime outage' }); }
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+    await route.fulfill({ response });
+  });
+  await createInBrowser(page, 'Channel Outage Circle');
+  await expect.poll(() => outage).toBe(true);
+  await page.waitForTimeout(3000);
+  await expect(page.getByRole('heading', { name: 'Welcome to Channel Outage Circle.' })).toBeVisible();
   await page.unrouteAll({ behavior: 'ignoreErrors' });
   await capture(page, info, 9);
 });
