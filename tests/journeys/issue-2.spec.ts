@@ -181,6 +181,40 @@ test('lane 7 unrelated direct URL and REST queries disclose no private Community
   await expect(page.getByRole('heading', { name: 'Community unavailable.' })).toBeVisible();
   await expect(page.getByText('Held Response Circle')).toHaveCount(0);
   await page.unrouteAll({ behavior: 'ignoreErrors' });
+  // Same ordering with no access hint delivered: only a channel-failure read learns of the revocation.
+  let dropHints = false; let outage = false; const sockets: WebSocketRoute[] = [];
+  await page.routeWebSocket('**/realtime/v1/websocket*', ws => {
+    if (outage) { ws.close({ code: 1011, reason: 'realtime outage' }); return; }
+    sockets.push(ws);
+    const server = ws.connectToServer();
+    server.onMessage(message => { if (!(dropHints && String(message).includes('membership_access_hints'))) ws.send(message); });
+  });
+  await page.goto('/');
+  await expect(page.getByLabel('Community name')).toBeVisible();
+  let commitUnheard!: (id: string) => void; const unheardCommitted = new Promise<string>(resolve => { commitUnheard = resolve; });
+  let releaseUnheard!: () => void; const unheardReleased = new Promise<void>(resolve => { releaseUnheard = resolve; });
+  await page.route('**/rest/v1/rpc/create_community', async route => { const response = await route.fetch(); commitUnheard(communitySchema.parse(await response.json()).id); await unheardReleased; await route.fulfill({ response }); });
+  let outageAt = Infinity; let readsAfterOutage = 0; let slowUnheard = false;
+  await page.route('**/rest/v1/communities*', async route => {
+    const startedAt = Date.now();
+    if (slowUnheard) await new Promise(resolve => setTimeout(resolve, 3000));
+    const response = await route.fetch(); await route.fulfill({ response });
+    if (startedAt > outageAt) readsAfterOutage++;
+  });
+  dropHints = true;
+  await page.getByLabel('Community name').fill('Unheard Revocation Circle');
+  await page.getByRole('button', { name: 'Create Community', exact: true }).click();
+  const unheardId = await unheardCommitted;
+  expect((await admin.from('memberships').update({ status: 'removed' }).eq('community_id', unheardId).eq('user_id', owner.id)).error).toBeNull();
+  outageAt = Date.now(); outage = true;
+  for (const ws of sockets) await ws.close({ code: 1011, reason: 'realtime outage' });
+  await expect.poll(() => readsAfterOutage).toBeGreaterThan(0);
+  slowUnheard = true; releaseUnheard();
+  await page.waitForTimeout(1500);
+  expect(await page.getByText('Unheard Revocation Circle').count()).toBe(0);
+  expect(await page.getByText('Administrator · Active member').count()).toBe(0);
+  await expect(page.getByRole('heading', { name: 'Community unavailable.' })).toBeVisible();
+  await page.unrouteAll({ behavior: 'ignoreErrors' });
 });
 
 test('lane 8 ordinary clients cannot forge roles memberships or Community identity', async ({ page }, info) => {
