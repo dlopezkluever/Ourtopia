@@ -1,7 +1,9 @@
-﻿import { test } from 'node:test';
+import { before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { actor, admin, anonKey, createCommunity, publicClient, receipt } from '../../scripts/verify/backend';
+import { actor, admin, anonKey, createCommunity, publicClient, realtimeReady, receipt } from '../../scripts/verify/backend';
+
+before(() => realtimeReady(), { timeout: 70000 });
 import { communitySchema } from '../../src/features/communities/model';
 
 test('anonymous and unrelated accounts discover no protected records; foreign administrator has no special access', async () => {

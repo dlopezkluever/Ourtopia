@@ -52,6 +52,29 @@ export async function createCommunity(client: ReturnType<typeof publicClient>, i
   return client.rpc('create_community', { p_intent_id: intent, p_name: name, p_description: 'A little more possible together.' });
 }
 
+// Realtime starts delivering database changes several seconds after a reset; wait until a probe change arrives.
+export async function realtimeReady(timeoutMs = 60000) {
+  const probe = await actor({ label: 'realtime-probe' });
+  const community = z.object({ id: z.uuid() }).parse((await createCommunity(probe.client)).data);
+  const session = await probe.client.auth.getSession();
+  await probe.client.realtime.setAuth(session.data.session?.access_token ?? anonKey);
+  let delivered = false;
+  const channel = probe.client.channel(`realtime-probe-${randomUUID()}`).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'community_events', filter: `community_id=eq.${community.id}` }, change => { if (change.new.kind === 'realtime_probe') delivered = true; });
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('Realtime probe did not subscribe.')), timeoutMs);
+      channel.subscribe(status => { if (status === 'SUBSCRIBED') { clearTimeout(timeout); resolve(); } });
+    });
+    const deadline = Date.now() + timeoutMs;
+    while (!delivered) {
+      if (Date.now() > deadline) throw new Error(`Realtime delivered no changes within ${timeoutMs}ms.`);
+      const { error } = await admin.from('community_events').insert({ community_id: community.id, actor_id: probe.id, intent_id: randomUUID(), kind: 'realtime_probe' });
+      if (error) throw error;
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+  } finally { await probe.client.removeChannel(channel); probe.client.realtime.disconnect(); }
+}
+
 const messageList = z.object({ messages: z.array(z.object({ ID: z.string() })) });
 const messageDetail = z.object({ HTML: z.string().optional(), Text: z.string().optional() });
 export async function mailboxLink(email: string, type: 'signup' | 'recovery') {

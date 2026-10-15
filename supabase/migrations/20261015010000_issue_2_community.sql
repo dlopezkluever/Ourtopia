@@ -46,7 +46,7 @@ as $$
     where community_id = target_community and user_id = auth.uid() and status = 'active'
   );
 $$;
-revoke all on function public.is_active_member(uuid) from public;
+revoke all on function public.is_active_member(uuid) from public, anon;
 grant execute on function public.is_active_member(uuid) to authenticated;
 
 alter table public.communities enable row level security;
@@ -103,7 +103,7 @@ begin
   return outcome;
 end;
 $$;
-revoke all on function public.create_community(uuid, text, text) from public;
+revoke all on function public.create_community(uuid, text, text) from public, anon;
 grant execute on function public.create_community(uuid, text, text) to authenticated;
 
 alter publication supabase_realtime add table public.community_events;
