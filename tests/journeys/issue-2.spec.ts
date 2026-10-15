@@ -147,6 +147,15 @@ test('lane 7 unrelated direct URL and REST queries disclose no private Community
   expect((await outsider.client.from('memberships').select('*').eq('community_id', home.id)).data).toEqual([]);
   expect((await outsider.client.from('community_events').select('*').eq('community_id', home.id)).data).toEqual([]);
   await capture(page, info, 7);
+  await page.getByRole('button', { name: 'Sign out' }).click();
+  await signIn(page, owner.email);
+  await expect(page.getByRole('heading', { name: `Welcome to ${home.name}.` })).toBeVisible();
+  const revoked = await admin.from('memberships').update({ status: 'removed' }).eq('community_id', home.id).eq('user_id', owner.id);
+  expect(revoked.error).toBeNull();
+  await expect(page.getByRole('heading', { name: `Welcome to ${home.name}.` })).toHaveCount(0);
+  await expect(page.getByText(home.name, { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel('Community name')).toBeVisible();
+  await page.screenshot({ path: info.outputPath('lane-7-revoked.png'), fullPage: true });
 });
 
 test('lane 8 ordinary clients cannot forge roles memberships or Community identity', async ({ page }, info) => {

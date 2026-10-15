@@ -71,6 +71,26 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"membership_access_hints": {
+                  Row: {
+                    "community_id": string,"id": string,"user_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "community_id": string,"id"?: string,"user_id": string
+                  }
+                  Update: {
+                    "community_id"?: string,"id"?: string,"user_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "membership_access_hints_community_id_fkey"
+      columns: ["community_id"]
+isOneToOne: false
+      referencedRelation: "communities"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"memberships": {
                   Row: {
                     "community_id": string,"created_at": string,"role": string,"status": string,"user_id": string

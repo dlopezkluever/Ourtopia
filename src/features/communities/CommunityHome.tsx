@@ -17,16 +17,33 @@ export function CommunityHome({ user }: { user: User }) {
 
   useEffect(() => {
     let active = true;
+    let generation = 0;
     async function load() {
+      const request = ++generation;
       const { data, error } = await supabase.from('communities').select('*').order('created_at');
-      if (!active) return;
+      if (!active || request !== generation) return;
       if (error) { setCommunities([]); setError(error.message); }
       else setCommunities(communitySchema.array().parse(data));
       setLoading(false);
     }
     void load();
-    const channel = supabase.channel(`community-access-${user.id}`).on('postgres_changes', { event: '*', schema: 'public', table: 'memberships', filter: `user_id=eq.${user.id}` }, () => { setCommunities([]); void load(); }).subscribe();
-    const refresh = () => { setCommunities([]); void load(); };
+    const refresh = () => { setCommunities([]); setLoading(true); void load(); };
+    const channel = supabase.channel(`membership-access-${user.id}`).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'membership_access_hints', filter: `user_id=eq.${user.id}` }, refresh);
+    async function connect() {
+      const { data, error } = await supabase.auth.getSession();
+      if (!active) return;
+      if (error || !data.session) { ++generation; setCommunities([]); setLoading(true); return; }
+      await supabase.realtime.setAuth(data.session.access_token);
+      if (!active) return;
+      channel.subscribe(status => {
+        if (!active) return;
+        if (status === 'SUBSCRIBED') refresh();
+        else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          ++generation; setCommunities([]); setLoading(true);
+        }
+      });
+    }
+    void connect();
     window.addEventListener('focus', refresh);
     const visibility = () => { if (document.visibilityState === 'visible') refresh(); };
     document.addEventListener('visibilitychange', visibility);

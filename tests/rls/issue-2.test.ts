@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+﻿import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { actor, admin, anonKey, createCommunity, publicClient, receipt } from '../../scripts/verify/backend';
@@ -53,7 +53,7 @@ test('realtime delivers owner hint and never discloses it to anonymous or foreig
   for (const [label, client] of [['owner', owner.client], ['outsider', outsider.client], ['anonymous', publicClient()]] satisfies ['owner' | 'outsider' | 'anonymous', ReturnType<typeof publicClient>][]) {
     const session = await client.auth.getSession();
     await client.realtime.setAuth(session.data.session?.access_token ?? anonKey);
-    const channel = client.channel(`privacy-${label}-${randomUUID()}`).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'community_events', filter: `community_id=eq.${created.id}` }, () => { seen[label]++; });
+    const channel = client.channel(`privacy-${label}-${randomUUID()}`).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'community_events', filter: `community_id=eq.${created.id}` }, change => { if (label !== 'owner' || change.new.kind !== 'community_created') seen[label]++; });
     channel.on('system', {}, payload => { receipt(`realtime-system-${label}`, payload); });
     channels.push({ client, channel });
     await new Promise<void>((resolve, reject) => {
@@ -77,5 +77,45 @@ test('realtime delivers owner hint and never discloses it to anonymous or foreig
     await new Promise(resolve => setTimeout(resolve, 1500));
     assert.deepEqual(seen, { owner: 1, outsider: 0, anonymous: 0 });
     receipt('rls-realtime', { ...seen, afterRemovalAdditionalOwnerEvents: 0, afterRemovalVisibleCommunities: 0 });
+  } finally { await Promise.all(channels.map(async ({ client, channel }) => { await client.removeChannel(channel); client.realtime.disconnect(); })); }
+});
+
+test('membership revocation reaches only the affected member as a content-free access hint', { timeout: 25000 }, async () => {
+  const owner = await actor();
+  const outsider = await actor();
+  const created = communitySchema.parse((await createCommunity(owner.client)).data);
+  const seen = { owner: 0, outsider: 0, anonymous: 0 };
+  const payloads: Record<string, unknown>[] = [];
+  const channels = [];
+  for (const [label, client] of [['owner', owner.client], ['outsider', outsider.client], ['anonymous', publicClient()]] satisfies ['owner' | 'outsider' | 'anonymous', ReturnType<typeof publicClient>][]) {
+    const session = await client.auth.getSession();
+    await client.realtime.setAuth(session.data.session?.access_token ?? anonKey);
+    const channel = client.channel(`access-${label}-${randomUUID()}`).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'membership_access_hints', filter: `user_id=eq.${owner.id}` }, change => { seen[label]++; if (label === 'owner') payloads.push(change.new); });
+    channels.push({ client, channel });
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error(`${label} realtime did not subscribe.`)), 10000);
+      channel.subscribe(status => { if (status === 'SUBSCRIBED') { clearTimeout(timeout); resolve(); } if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') { clearTimeout(timeout); reject(new Error(`${label} subscription ${status}`)); } });
+    });
+  }
+  try {
+    // Realtime can still deliver the hint committed by creation; count only hints caused by revocation.
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    Object.assign(seen, { owner: 0, outsider: 0, anonymous: 0 }); payloads.length = 0;
+    const removed = await admin.from('memberships').update({ status: 'removed' }).eq('community_id', created.id).eq('user_id', owner.id);
+    assert.equal(removed.error, null);
+    const deadline = Date.now() + 8000;
+    while (seen.owner === 0 && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 100));
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    assert.deepEqual(seen, { owner: 1, outsider: 0, anonymous: 0 });
+    assert.deepEqual(Object.keys(payloads[0]).sort(), ['community_id', 'id', 'user_id']);
+    assert.deepEqual((await owner.client.from('communities').select('*').eq('id', created.id)).data, []);
+    assert.deepEqual((await outsider.client.from('membership_access_hints').select('*').eq('user_id', owner.id)).data, []);
+    const anonymousRead = await publicClient().from('membership_access_hints').select('*').eq('user_id', owner.id);
+    assert.ok(anonymousRead.error?.code === '42501' || anonymousRead.data?.length === 0);
+    for (const client of [owner.client, outsider.client]) {
+      const forged = await client.from('membership_access_hints').insert({ user_id: owner.id, community_id: created.id });
+      assert.equal(forged.error?.code, '42501');
+    }
+    receipt('rls-membership-hints', { ...seen, payloadKeys: Object.keys(payloads[0]).sort(), outsiderRows: 0, clientWritesDenied: 2 });
   } finally { await Promise.all(channels.map(async ({ client, channel }) => { await client.removeChannel(channel); client.realtime.disconnect(); })); }
 });

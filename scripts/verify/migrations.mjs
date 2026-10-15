@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { readFileSync, readdirSync, mkdirSync, writeFileSync } from 'node:fs';
 
 assert.deepEqual(process.argv.slice(2), ['--disposable-project', 'ourtopia-issue-2']);
 const config = readFileSync('supabase/config.toml', 'utf8');
@@ -34,7 +34,8 @@ try {
   execFileSync('docker', ['start', ...services], { encoding: 'utf8' });
 }
 const versions = sql('select version from supabase_migrations.schema_migrations order by version');
-assert.equal(versions, '20261015010000');
+const expected = readdirSync('supabase/migrations').filter(name => name.endsWith('.sql')).map(name => name.split('_')[0]).sort().join('\n');
+assert.equal(versions, expected);
 mkdirSync('.pilot-evidence', { recursive: true });
 writeFileSync('.pilot-evidence/migrations.json', JSON.stringify({ utc: new Date().toISOString(), target: container, port: 55322, versions: versions.split('\n'), cleanReplay: true, predecessorVersion: '0; source-only predecessor has no application migrations', upgradePreservedSentinel: true, outputs }, null, 2));
-process.stdout.write(`Clean migration replay and empty-predecessor upgrade passed. Applied ${versions}.\n`);
+process.stdout.write(`Clean migration replay and empty-predecessor upgrade passed. Applied ${versions.split('\n').join(', ')}.\n`);
