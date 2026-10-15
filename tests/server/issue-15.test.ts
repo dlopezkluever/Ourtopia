@@ -151,3 +151,23 @@ test('a committed send appends one private audit event and one durable in-app no
   assert.equal((await admin.from('community_events').update({ kind: 'rewritten' }).eq('id', events.data?.[0].id)).error?.code, '55000');
   receipt('issue-15-audit-notice', { messageId: message.id, eventId: events.data?.[0].id, noticeId: notice.id, deliveryCount: 1, privateBodyInMetadata: false });
 });
+
+test('an audit failure rolls back the message, hints, intent and outbox in the send transaction', async () => {
+  const f = await conversationFixture('atomic-send');
+  const intent = randomUUID();
+  const collision = await admin.from('community_events').insert({ community_id: f.community.id, actor_id: f.first.id, intent_id: intent, kind: 'message_sent' }).select('id').single();
+  assert.equal(collision.error, null);
+  const hintsBefore = await admin.from('notification_hints').select('id').in('recipient_id', [f.first.id, f.second.id]);
+  assert.equal(hintsBefore.error, null);
+  const failed = await f.first.client.rpc('send_message', { p_intent_id: intent, p_conversation_id: f.conversation.id, p_body: 'This message must roll back.' });
+  assert.equal(failed.error?.code, '23505');
+  assert.deepEqual(await rows(f.second.client, f.conversation.id), []);
+  assert.deepEqual((await admin.from('command_intents').select('intent_id').eq('actor_id', f.first.id).eq('intent_id', intent)).data, []);
+  assert.deepEqual((await admin.from('notification_outbox').select('id').eq('event_id', collision.data?.id)).data, []);
+  const hintsAfter = await admin.from('notification_hints').select('id').in('recipient_id', [f.first.id, f.second.id]);
+  assert.equal(hintsAfter.error, null);
+  assert.deepEqual(hintsAfter.data, hintsBefore.data);
+  const committed = await sendMessage(f.first, f.conversation.id, 'A fresh intent commits normally.');
+  assert.deepEqual(await rows(f.second.client, f.conversation.id), [{ author_id: f.first.id, body: 'A fresh intent commits normally.' }]);
+  receipt('issue-15-send-rollback', { failedCode: '23505', survivingFailedMessages: 0, survivingFailedIntents: 0, survivingFailedNotices: 0, hintCountUnchanged: true, committedMessageId: committed.id });
+});

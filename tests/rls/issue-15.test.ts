@@ -64,14 +64,17 @@ test('realtime publishes recipient identities only and never private message bod
     for (const [label, client] of [['participant', f.second.client], ['administrator', f.owner.client], ['outsider', outsider.client], ['foreign', foreign.client], ['unrelated', unrelated.client], ['inactive', inactive.client]] satisfies [string, ReturnType<typeof publicClient>][]) {
       counts[label] = { messages: 0, hints: 0 };
       const session = await client.auth.getSession(); await client.realtime.setAuth(session.data.session?.access_token ?? anonKey);
-      const channel = client.channel(`p15-${randomUUID()}`)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `conversation_id=eq.${f.conversation.id}` }, () => counts[label].messages++)
+      const bodyChannel = client.channel(`p15-body-${randomUUID()}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `conversation_id=eq.${f.conversation.id}` }, () => counts[label].messages++);
+      const hintChannel = client.channel(`p15-hint-${randomUUID()}`)
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notification_hints', filter: `recipient_id=eq.${f.second.id}` }, change => { counts[label].hints++; hints.push(change.new); });
-      channels.push({ client, channel });
-      await new Promise<void>((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error(`${label} subscription timed out`)), 10000);
-        channel.subscribe(status => { if (status === 'SUBSCRIBED') { clearTimeout(timer); resolve(); } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') { clearTimeout(timer); reject(new Error(status)); } });
-      });
+      for (const channel of [bodyChannel, hintChannel]) {
+        channels.push({ client, channel });
+        await new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(() => reject(new Error(`${label} subscription timed out`)), 10000);
+          channel.subscribe(status => { if (status === 'SUBSCRIBED') { clearTimeout(timer); resolve(); } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') { clearTimeout(timer); reject(new Error(status)); } });
+        });
+      }
     }
     for (const count of Object.values(counts)) count.hints = 0;
     await sendMessage(f.first, f.conversation.id, 'This body must never be in a realtime payload.');

@@ -2,6 +2,7 @@ import { test, expect, type Page, type TestInfo } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { execFileSync, spawn } from 'node:child_process';
 import { copyFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { z } from 'zod';
 import { actor, addActiveMember, admin, applyInvite, conversationFixture, createCommunity, issueInvite, password, sendMessage, startConversation } from '../../scripts/verify/backend';
 
 async function signIn(page: Page, email: string) {
@@ -108,10 +109,12 @@ test('lane 4 a lost response retries the same send once and text cannot be edite
 
 test('lane 5 realtime hints contain identities and the browser performs a fresh authorized message read', async ({ page }, info) => {
   const f = await conversationFixture('hints'); let subscribed = false; const frames: string[] = [];
+  const wireFrame = z.tuple([z.unknown(), z.unknown(), z.string(), z.string(), z.unknown()]);
   page.on('websocket', socket => socket.on('framereceived', frame => {
     const value = frame.payload.toString();
     if (value.includes(`messages-${f.first.id}`) && value.includes('phx_reply') && value.includes('"status":"ok"')) subscribed = true;
-    if (value.includes('"event":"postgres_changes"') && value.includes('notification_hints')) frames.push(value);
+    const parsed = wireFrame.safeParse(JSON.parse(value));
+    if (parsed.success && parsed.data[3] === 'postgres_changes' && value.includes('notification_hints')) frames.push(value);
   }));
   await open(page, f.first.email, f.conversation.id); await expect.poll(() => subscribed).toBe(true);
   const read = page.waitForResponse(response => response.url().includes('/rest/v1/messages?') && response.status() === 200);
