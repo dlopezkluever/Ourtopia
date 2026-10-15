@@ -14,6 +14,7 @@ export function CommunityHome({ user }: { user: User }) {
   const [intent, setIntent] = useState(() => sessionStorage.getItem(`create-intent-${user.id}`) ?? crypto.randomUUID());
   const requestedId = location.pathname.startsWith('/communities/') ? location.pathname.split('/')[2] : undefined;
   const generation = useRef(0);
+  const reload = useRef<() => Promise<void>>(async () => {});
   const current = requestedId ? communities.find(community => community.id === requestedId) : communities[0];
 
   useEffect(() => {
@@ -26,6 +27,7 @@ export function CommunityHome({ user }: { user: User }) {
       else setCommunities(communitySchema.array().parse(data));
       setLoading(false);
     }
+    reload.current = load;
     void load();
     // Access changes and lost channels drop cached Communities; routine refreshes re-read through RLS in place so typed input survives.
     const revalidate = () => { void load(); };
@@ -63,8 +65,9 @@ export function CommunityHome({ user }: { user: User }) {
       const { data, error } = await supabase.rpc('create_community', { p_intent_id: intent, p_name: parsed.data.name, p_description: parsed.data.description });
       if (error) throw error;
       const community = communitySchema.parse(data);
-      ++generation.current; // discard reads that started before this commit
       setCommunities(previous => [...previous.filter(row => row.id !== community.id), community]);
+      setLoading(false);
+      void reload.current(); // supersedes reads that started before this commit and always settles loading
       history.replaceState({}, '', `/communities/${community.id}`);
       sessionStorage.removeItem(`create-intent-${user.id}`);
       setIntent(crypto.randomUUID()); setCreating(false);
@@ -72,7 +75,8 @@ export function CommunityHome({ user }: { user: User }) {
     finally { setBusy(false); }
   }
 
-  if (loading) return <p role="status" className="loading">Opening your Communities…</p>;
+  // The create form shows no Community data, so it stays mounted (with typed input) while access is re-read.
+  if (loading && !creating) return <p role="status" className="loading">Opening your Communities…</p>;
   if (!user.email_confirmed_at) return <section className="account-card"><h2>One small step first.</h2><p>Verify your email before creating a Community. Open the link in your inbox, then sign in again.</p></section>;
   if (requestedId && !current && !creating) return <section className="account-card"><LockKeyhole/><h2>Community unavailable.</h2><p>This private Community is only available to its active members.</p><a href="/">Back to your Communities</a></section>;
 
@@ -85,7 +89,7 @@ export function CommunityHome({ user }: { user: User }) {
       {current && <button type="button" className="text-button back" onClick={() => setCreating(false)}>Cancel</button>}
     </form></section></section>;
 
-  return <section className="community-layout"><aside className="sidebar"><span className="eyebrow">YOUR COMMUNITY</span><div className="community-monogram">{current.name.charAt(0).toUpperCase()}</div><h2>{current.name}</h2><span className="private-badge"><LockKeyhole size={13}/> Private Community</span><div className="sidebar-nav"><House size={18}/> Community home</div><button className="text-button" onClick={() => { history.replaceState({}, '', '/'); setCreating(true); }}><Plus size={16}/> Create another Community</button>
+  return <section className="community-layout"><aside className="sidebar"><span className="eyebrow">YOUR COMMUNITY</span><div className="community-monogram">{current.name.charAt(0).toUpperCase()}</div><h2>{current.name}</h2><span className="private-badge"><LockKeyhole size={13}/> Private Community</span><div className="sidebar-nav"><House size={18}/> Community home</div><button className="text-button" onClick={() => { history.replaceState({}, '', '/'); sessionStorage.removeItem(`create-intent-${user.id}`); setIntent(crypto.randomUUID()); setCreating(true); }}><Plus size={16}/> Create another Community</button>
     {communities.length > 1 && <nav aria-label="Your Communities">{communities.map(community => <a key={community.id} href={`/communities/${community.id}`}>{community.name}</a>)}</nav>}
   </aside><div className="home-content"><span className="eyebrow">A PLACE TO BEGIN</span><h1>Welcome to {current.name}.</h1><p className="home-description">{current.description || 'A small circle. A shared beginning. A little more possible, together.'}</p><div className="welcome-card"><div className="seed-art" aria-hidden="true"><Sprout size={70} strokeWidth={1.2}/></div><span className="private-badge">YOUR FIRST CHAPTER</span><h2>You’ve planted something good.</h2><p>Your private Community is ready. You’re its first active administrator.</p><div className="membership-proof"><span className="avatar">{user.email?.charAt(0).toUpperCase()}</span><div><strong>{user.email}</strong><span>Administrator · Active member</span></div><span className="active-dot"/></div></div><div className="home-footer"><LockKeyhole size={18}/><p>What happens here stays in your circle.<br/><span>Only active members can access this Community.</span></p></div><p className="created-date">Created {new Date(current.created_at).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}</p></div></section>;
 }

@@ -1,4 +1,4 @@
-import { test, expect, type Page, type TestInfo } from '@playwright/test';
+import { test, expect, type Page, type Route, type TestInfo } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -173,17 +173,35 @@ test('lane 8 ordinary clients cannot forge roles memberships or Community identi
 test('lane 9 lost creation response recovers committed result by retry', async ({ page }, info) => {
   const owner = await actor();
   await signIn(page, owner.email);
-  await page.route('**/rest/v1/rpc/create_community', async route => { await route.fetch(); await route.abort('failed'); });
+  const lose = async (route: Route) => { await route.fetch(); await route.abort('failed'); };
+  // First Community: the creator's access hint rediscovers the committed Community without any retry.
+  await page.route('**/rest/v1/rpc/create_community', lose);
   await page.getByLabel('Community name').fill('Resilient Neighbors');
   await page.getByRole('button', { name: 'Create Community', exact: true }).click();
-  await expect(page.getByRole('alert')).toBeVisible();
-  const before = await owner.client.from('communities').select('id');
-  expect(before.data).toHaveLength(1);
-  await page.unroute('**/rest/v1/rpc/create_community');
-  await page.getByRole('button', { name: 'Create Community', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Welcome to Resilient Neighbors.' })).toBeVisible();
-  expect((await owner.client.from('communities').select('id')).data).toEqual(before.data);
-  expect((await owner.client.from('memberships').select('role,status')).data).toEqual([{ role: 'administrator', status: 'active' }]);
+  const first = await owner.client.from('communities').select('id');
+  expect(first.data).toHaveLength(1);
+  // Another Community: the open form survives the access hint, so only a same-intent retry can reveal the result.
+  await page.getByRole('button', { name: 'Create another Community' }).click();
+  await page.getByLabel('Community name').fill('Second Harvest');
+  await page.getByRole('button', { name: 'Create Community', exact: true }).click();
+  await expect(page.getByRole('alert')).toBeVisible();
+  const before = await owner.client.from('communities').select('id').order('created_at');
+  expect(before.data).toHaveLength(2);
+  await expect(page.getByRole('heading', { name: 'Welcome to Second Harvest.' })).toBeHidden();
+  await expect(page.getByLabel('Community name')).toHaveValue('Second Harvest');
+  await page.unroute('**/rest/v1/rpc/create_community', lose);
+  await page.getByRole('button', { name: 'Create Community', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Welcome to Second Harvest.' })).toBeVisible();
+  expect(page.url()).toContain(before.data![1].id);
+  expect((await owner.client.from('communities').select('id').order('created_at')).data).toEqual(before.data);
+  expect((await owner.client.from('memberships').select('role,status')).data).toEqual([{ role: 'administrator', status: 'active' }, { role: 'administrator', status: 'active' }]);
+  // Slow response: the creator's access hint lands before the create response while Community reads lag behind it.
+  await page.getByRole('button', { name: 'Create another Community' }).click();
+  await page.route('**/rest/v1/rpc/create_community', async route => { const response = await route.fetch(); await new Promise(resolve => setTimeout(resolve, 2000)); await route.fulfill({ response }); });
+  await page.route('**/rest/v1/communities*', async route => { await new Promise(resolve => setTimeout(resolve, 4000)); await route.continue(); });
+  await createInBrowser(page, 'Slow Response Circle');
+  await page.unrouteAll({ behavior: 'ignoreErrors' });
   await capture(page, info, 9);
 });
 
