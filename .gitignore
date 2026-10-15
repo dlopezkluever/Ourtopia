@@ -1,5 +1,12 @@
 .agents
-
 .claude
-
 skills-lock.json
+node_modules/
+dist/
+.env*
+!.env.example
+.pilot-evidence/
+test-results/
+playwright-report/
+supabase/.temp/
+*.tsbuildinfo
