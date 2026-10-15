@@ -1,6 +1,6 @@
 # MVP execution plan
 
-This document turns [the PRD](../prd.md) into implementation work. Section 44 of the PRD is the functional completion contract. [The glossary](../GLOSSARY.md) defines domain terms; [ADR 0001](./adr/0001-global-and-community-reputation.md) records the two-score reputation decision. If a task conflicts with those sources, resolve the conflict in the PRD and this plan before coding.
+This document turns [the PRD](../prd.md) into implementation work. Section 44 of the PRD is the functional completion contract. [The glossary](../GLOSSARY.md) defines domain terms; [ADR 0001](./adr/0001-global-and-community-reputation.md) records the two-score reputation decision. [ADRs 0002–0008](./adr/) define the shared implementation boundaries. If a task conflicts with those sources, resolve the conflict in the PRD and this plan before coding.
 
 ## Starting point and delivery rule
 
@@ -26,20 +26,20 @@ Keep allocation behind one server-side policy boundary that receives the listing
 | Flow | Required transitions and constraints |
 | --- | --- |
 | Borrow Request | Pending → owner-approved, awaiting borrower acknowledgment → active → handed off → return awaiting confirmations → completed or disputed. Owner approval reserves dates for 48 hours; expiry releases them. Multiple requests may be pending, but overlapping approved reservations for one item are rejected atomically. |
-| Item handoff | Borrower acknowledges return date, condition, and replacement value before activation. Prompt for photos at handoff and return; uploads are optional. Both parties confirm return condition. A disagreement opens a dispute. Seven days of silence after reminders sends the case to administrator review, never automatic completion. |
+| Item handoff | Borrower acknowledges return date, condition, and replacement value before activation. Prompt for photos at handoff and return; uploads are optional. Both parties confirm return condition. A disagreement opens a dispute. Seven days of silence after reminders sends the case to administrator review, never automatic completion. Administrator verified completion needs a recorded Handoff and Return, one participant's Return confirmation, no unresolved condition disagreement, and a reasoned decision citing the evidence. Otherwise the administrator closes without completion. |
 | Cancellation | Either party may cancel before handoff with a recorded reason and no automatic score loss. Problems after handoff enter return or dispute. |
-| Help | One committed helper produces one exchange, including when a Need Post asks for several helpers. Both requester and helper confirm completion. Seven days of silence after reminders sends it to administrator review. |
+| Help | One committed helper produces one exchange, including when a Need Post asks for several helpers. Both requester and helper confirm ordinary completion. Seven days of silence after reminders sends it to administrator review. Administrator verified completion needs one participant's confirmation, supporting Exchange records or submitted evidence of work, no unresolved conflicting account, and a reasoned decision. Otherwise the administrator closes without completion. |
 | Dispute | Either participant may open one while an exchange is active or within 30 days after completion. The administrator records evidence, responses, and outcome, and can close a stalled exchange after review. A later correction adds a linked compensating event. |
 
 ### Reputation calculation
 
 Community Solidarity Score is `clamp(50 + sum(verified reputation event points), 0, 100)`. A completed item or help exchange counts once for each participant in that community. For communities with at least one completed exchange, Global Solidarity Score is the completed-exchange-count-weighted average of their community scores, rounded to the nearest integer with halves rounded up. Communities with no completed exchanges carry zero global weight. With no completed exchanges anywhere, the global display is **50 — Unproven**. Display **Unproven** in either context until its first completed exchange; thereafter use the configured title thresholds from PRD §21. Display the underlying counts.
 
-Initial automatic events are owner successful share `+2`, borrower successful return `+1`, helper completed help `+3`, and recipient positive thank-you `+1` for at most one thank-you per exchange. Only an administrator can verify late return `−2`, unresolved damage `−10`, or confirmed theft `−30`. A score event has a unique source and recipient so retries cannot award it twice. Posts, receiving help, and vouches carry no automatic points. Corrections append a reasoned, linked compensating event. Unresolved disputes and confirmed serious violations also appear as separate trust indicators; the global average never hides them.
+Initial automatic events are owner successful share `+2`, borrower successful return `+1`, helper completed help `+3`, and recipient positive thank-you `+1` for at most one thank-you per exchange. Only an administrator can verify late return `−2`, unresolved damage `−10`, or confirmed theft `−30`. The rule, source, and recipient identify an automatic event so retries cannot award it twice. Posts, receiving help, and vouches carry no automatic points. Corrections append a reasoned, linked compensating event. Unresolved disputes and confirmed serious violations also appear as separate trust indicators; the global average never hides them.
 
 ### Implementation defaults
 
-These defaults fill operational gaps without changing the agreed product decisions. Keep them centrally configured so a later pilot adjustment is small: invites expire after seven days; a member may vouch for up to three applicants in a rolling year when an administrator grants eligibility; a disciplinary vote stays open for seven days; listing availability uses explicit date ranges without recurrence. Store timestamps in UTC and display them in the viewer's local time. A deadline is enforced server-side, including after a client disconnects.
+These defaults fill operational gaps without changing the agreed product decisions. Keep them centrally configured so a later pilot adjustment is small: invites expire after seven days; a member may vouch for up to three applicants in a rolling year when an administrator grants eligibility; a disciplinary vote stays open for seven days; listing availability uses explicit date ranges without recurrence. Store timestamps in UTC and display them in the viewer's local time. Store item reservation calendar dates as defined in ADR 0004. A deadline is enforced server-side, including after a client disconnects.
 
 ## Slices
 
@@ -57,7 +57,7 @@ Work the dependency frontier: any slice whose blockers are complete may start. E
 | 08 | Item reputation and thank-yous | 07 | Completed item loans update transparent scores; participants may thank each other. |
 | 09 | Item Need Posts | 04, 05 | An open item need leads through a listing to a Borrow Request. |
 | 10 | Help offers and Help Need Posts | 02, 03 | Member posts an offer or need and commits to help. |
-| 11 | Help completion and reputation | 10, 08 | Both parties confirm help; each helper's exchange and score update independently. |
+| 11 | Help completion and reputation | 10, 08 | Both parties confirm ordinary help completion; administrator review handles a missing confirmation under the evidence rules. Each helper's outcome and score update independently. |
 | 12 | Vouches | 02 | Eligible member vouches for an applicant without granting access. |
 | 13 | Private messages | 02 | Approved members coordinate privately. |
 | 14 | Disputes and administration | 07, 11, 13 | Participant reports an issue; administrator reviews evidence and records a decision. |
@@ -106,6 +106,7 @@ Work the dependency frontier: any slice whose blockers are complete may start. E
 
 - Either participant records a return with optional photos. Both confirm condition for an ordinary completion; a discrepancy opens a dispute route.
 - Upcoming and overdue returns produce in-app and email notices. Seven days after one party fails to respond despite reminders, an administrator review item appears; the exchange remains incomplete.
+- The administrator may verify completion only from a recorded Handoff and Return, one participant's Return confirmation, and cited evidence of Return and condition without an unresolved disagreement. Otherwise the administrator records `closed_without_completion` with a reason. Neither path follows from silence alone.
 - A completed exchange increments each participant's completed-exchange count exactly once. Duplicate confirmations and stale requests do not change the result.
 
 ### 08 — Item reputation and thank-yous
@@ -129,8 +130,9 @@ Work the dependency frontier: any slice whose blockers are complete may start. E
 
 ### 11 — Help completion and reputation
 
-- Requester and helper each confirm completed help. Only then does the helper receive `+3`, each participant gain one completed exchange, and the global score recalculate.
+- Requester and helper each confirm ordinary completed help. Completion then gives the helper `+3`, gives each participant one Qualifying Interaction, and updates the global score. The administrator verification path below has the same once-only effects when its evidence requirements are met.
 - A silent counterparty produces reminders and administrator review after seven days, never automatic completion. Each helper's outcome is independent.
+- Administrator verified completion requires one participant's confirmation, supporting Exchange records or submitted evidence of work, no unresolved conflicting account, and a reasoned decision. Without those facts, the administrator closes the Help Exchange without completion and records why.
 - The requester gains no points merely for receiving help. Thank-yous use the same once-per-exchange rule as item loans.
 
 ### 12 — Vouches
@@ -161,6 +163,7 @@ Work the dependency frontier: any slice whose blockers are complete may start. E
 
 - A member can start, complete, and inspect a `$5/month` subscription in Stripe test mode. Server-verified webhook events, rather than client assertions, update test subscription status.
 - Checkout failure, retry, cancellation, and duplicate webhook delivery produce stable status. A test subscription never blocks or grants community participation during MVP.
+- The webhook handler verifies the signature over the raw body, stores each Stripe event ID uniquely with processing state, and links Stripe customer and subscription IDs to the account. A single writer per subscription reconciles against Stripe's current subscription object, so out-of-order events cannot restore stale status. Duplicate processed delivery returns the prior result; a pending or failed receipt remains retryable.
 - Live keys are absent from the MVP environment. Activating real collection is documented as the first post-MVP deployment task.
 
 ### 17 — Pilot delivery and acceptance
