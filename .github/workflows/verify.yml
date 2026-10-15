@@ -8,7 +8,7 @@ permissions:
 jobs:
   issue-2:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
@@ -25,8 +25,12 @@ jobs:
       - run: node scripts/verify/local-env.mjs
       - run: node scripts/verify/migrations.mjs --disposable-project ourtopia-issue-2
       - run: npm run test:server -- tests/server/issue-2.test.ts
+      - run: npm run test:server -- tests/server/issue-3.test.ts
       - run: npm run test:rls -- tests/rls/issue-2.test.ts
+      - run: npm run test:rls -- tests/rls/issue-3.test.ts
       - run: npm run test:journey -- tests/journeys/issue-2.spec.ts
+      - run: npm run test:journey -- tests/journeys/issue-3.spec.ts
       - run: npm run verify:perf -- --issue 2 --base 2af28e7a06db971e8e5fbbf01b0b8bda07f81c76 --head $(git rev-parse HEAD) --pairs 10
+      - run: npm run verify:perf -- --issue 3 --base a0eff460f5707d128141857d275f21c1a111ac1c --head $(git rev-parse HEAD) --pairs 10
       - if: always()
         run: npx supabase stop --project-id ourtopia-issue-2

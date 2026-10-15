@@ -3,10 +3,12 @@ import { ArrowRight, House, LockKeyhole, Plus, Sprout, Users } from 'lucide-reac
 import type { User } from '@supabase/supabase-js';
 import { supabase } from '../../lib/supabase/client';
 import { Button } from '../../components/ui/button';
+import { MembershipAdmin } from '../membership/MembershipAdmin';
 import { communityInput, communitySchema, type Community } from './model';
 
 export function CommunityHome({ user }: { user: User }) {
   const [communities, setCommunities] = useState<Community[]>([]);
+  const [memberships, setMemberships] = useState<{ community_id: string; role: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -21,9 +23,10 @@ export function CommunityHome({ user }: { user: User }) {
     let active = true;
     async function load() {
       const request = ++generation.current;
-      const { data, error } = await supabase.from('communities').select('*').order('created_at');
+      const [{ data, error }, membershipResult] = await Promise.all([supabase.from('communities').select('*').order('created_at'), supabase.from('memberships').select('community_id,role').eq('user_id', user.id).eq('status', 'active')]);
       if (!active || request !== generation.current) return;
-      if (error) { setCommunities([]); setError(error.message); }
+      setMemberships(membershipResult.data ?? []);
+      if (error || membershipResult.error) { setCommunities([]); setError(error?.message ?? membershipResult.error?.message ?? ''); }
       else setCommunities(communitySchema.array().parse(data));
       setLoading(false);
     }
@@ -31,7 +34,7 @@ export function CommunityHome({ user }: { user: User }) {
     void load();
     // Access changes and lost channels drop cached Communities; routine refreshes re-read through RLS in place so typed input survives.
     const revalidate = () => { void load(); };
-    const refresh = () => { setCommunities([]); setLoading(true); void load(); };
+    const refresh = () => { setMemberships([]); setCommunities([]); setLoading(true); void load(); };
     const channel = supabase.channel(`membership-access-${user.id}`).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'membership_access_hints', filter: `user_id=eq.${user.id}` }, refresh);
     async function connect() {
       const { data, error } = await supabase.auth.getSession();
@@ -47,9 +50,10 @@ export function CommunityHome({ user }: { user: User }) {
     }
     void connect();
     window.addEventListener('focus', revalidate);
+    window.addEventListener('popstate', refresh);
     const visibility = () => { if (document.visibilityState === 'visible') revalidate(); };
     document.addEventListener('visibilitychange', visibility);
-    return () => { active = false; void supabase.removeChannel(channel); window.removeEventListener('focus', revalidate); document.removeEventListener('visibilitychange', visibility); };
+    return () => { active = false; void supabase.removeChannel(channel); window.removeEventListener('focus', revalidate); window.removeEventListener('popstate', refresh); document.removeEventListener('visibilitychange', visibility); };
   }, [user.id]);
 
   async function create(event: FormEvent<HTMLFormElement>) {
@@ -87,7 +91,12 @@ export function CommunityHome({ user }: { user: User }) {
       {current && <button type="button" className="text-button back" onClick={() => setCreating(false)}>Cancel</button>}
     </form></section></section>;
 
+  const administrator = memberships.find(member => member.community_id === current.id)?.role === 'administrator';
   return <section className="community-layout"><aside className="sidebar"><span className="eyebrow">YOUR COMMUNITY</span><div className="community-monogram">{current.name.charAt(0).toUpperCase()}</div><h2>{current.name}</h2><span className="private-badge"><LockKeyhole size={13}/> Private Community</span><div className="sidebar-nav"><House size={18}/> Community home</div><button className="text-button" onClick={() => { history.replaceState({}, '', '/'); sessionStorage.removeItem(`create-intent-${user.id}`); setIntent(crypto.randomUUID()); setCreating(true); }}><Plus size={16}/> Create another Community</button>
-    {communities.length > 1 && <nav aria-label="Your Communities">{communities.map(community => <a key={community.id} href={`/communities/${community.id}`}>{community.name}</a>)}</nav>}
-  </aside><div className="home-content"><span className="eyebrow">A PLACE TO BEGIN</span><h1>Welcome to {current.name}.</h1><p className="home-description">{current.description || 'A small circle. A shared beginning. A little more possible, together.'}</p><div className="welcome-card"><div className="seed-art" aria-hidden="true"><Sprout size={70} strokeWidth={1.2}/></div><span className="private-badge">YOUR FIRST CHAPTER</span><h2>You’ve planted something good.</h2><p>Your private Community is ready. You’re its first active administrator.</p><div className="membership-proof"><span className="avatar">{user.email?.charAt(0).toUpperCase()}</span><div><strong>{user.email}</strong><span>Administrator · Active member</span></div><span className="active-dot"/></div></div><div className="home-footer"><LockKeyhole size={18}/><p>What happens here stays in your circle.<br/><span>Only active members can access this Community.</span></p></div><p className="created-date">Created {new Date(current.created_at).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}</p></div></section>;
+    {communities.length > 1 && <nav aria-label="Your Communities">{communities.map(community => <a key={community.id} href={`/communities/${community.id}`} onClick={event => {
+      if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+      event.preventDefault(); history.pushState({}, '', `/communities/${community.id}`);
+      setMemberships([]); setCommunities([]); setLoading(true); void reload.current();
+    }}>{community.name}</a>)}</nav>}
+  </aside><div className="home-content"><span className="eyebrow">A PLACE TO BEGIN</span><h1>Welcome to {current.name}.</h1><p className="home-description">{current.description || 'A small circle. A shared beginning. A little more possible, together.'}</p><div className="welcome-card"><div className="seed-art" aria-hidden="true"><Sprout size={70} strokeWidth={1.2}/></div><span className="private-badge">YOUR FIRST CHAPTER</span><h2>You’ve planted something good.</h2><p>{administrator ? 'Your private Community is ready. You’re its first active administrator.' : 'Your private Community is ready. You’re an active member.'}</p><div className="membership-proof"><span className="avatar">{user.email?.charAt(0).toUpperCase()}</span><div><strong>{user.email}</strong><span>{administrator ? 'Administrator · Active member' : 'Member · Active member'}</span></div><span className="active-dot"/></div></div>{administrator && <MembershipAdmin key={current.id} communityId={current.id} userId={user.id}/>}<div className="home-footer"><LockKeyhole size={18}/><p>What happens here stays in your circle.<br/><span>Only active members can access this Community.</span></p></div><p className="created-date">Created {new Date(current.created_at).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}</p></div></section>;
 }
