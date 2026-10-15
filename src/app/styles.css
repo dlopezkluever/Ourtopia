@@ -141,3 +141,17 @@ textarea { resize: vertical; line-height: 1.7; }
  .delivery-row { display: flex; gap: 1rem; align-items: center; justify-content: space-between; padding: .8rem 0; border-bottom: 1px solid #d8ded5; flex-wrap: wrap; overflow-wrap: anywhere; }
  .header-right { flex-wrap: wrap; }
  :focus-visible { outline: 3px solid #38684a; outline-offset: 3px; }
+ .billing-page { max-width: 760px; margin: 3rem auto; padding: 0 1.25rem; }
+ .billing-page > .eyebrow { display: block; margin-top: 2rem; }
+ .billing-page h1 { font-size: clamp(2.4rem, 6vw, 4rem); line-height: 1.05; margin: 1rem 0; }
+ .billing-intro { max-width: 34rem; line-height: 1.7; }
+ .billing-access { padding: 1rem 1.25rem; background: #e7eee3; border-radius: 12px; margin: 1.5rem 0; }
+ .billing-access p { margin: .5rem 0 0; }
+ .billing-card { border: 1px solid #d7d9ce; border-radius: 18px; padding: clamp(1.25rem, 5vw, 2.5rem); background: #fffdf8; margin: 1.5rem 0; }
+ .billing-badge { font-size: .75rem; letter-spacing: .1em; color: #405b3a; font-weight: 700; }
+ .billing-card h2 { font-size: 3rem; margin: 1rem 0; }
+ .billing-card small { font-size: 1rem; font-weight: 400; }
+ .billing-card label { display: block; margin: 1.5rem 0 .5rem; }
+ .billing-card select { width: 100%; min-height: 44px; padding: .6rem; border: 1px solid #777e6f; border-radius: 8px; background: white; }
+ .billing-actions { display: flex; flex-wrap: wrap; gap: .75rem; margin-top: 1.25rem; }
+ @media (max-width: 600px) { .billing-actions > button { width: 100%; } }

@@ -34,6 +34,12 @@ export const anonKey = config.anon;
 const options = { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } };
 export const admin = createClient(config.url, config.service, options);
 export function publicClient() { return createClient(config.url, config.anon, options); }
+export function stripeWorker() {
+  const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url');
+  const payload = `${encode({ alg: 'HS256', typ: 'JWT' })}.${encode({ role: 'stripe_worker', iss: `${config.url}/auth/v1`, exp: Math.floor(Date.now() / 1000) + 3600 })}`;
+  const token = `${payload}.${createHmac('sha256', config.secret).update(payload).digest('base64url')}`;
+  return createClient(config.url, config.anon, { ...options, global: { headers: { Authorization: `Bearer ${token}` } } });
+}
 export const password = 'Ourtopia-test-password-48!';
 
 export async function actor({ verified = true, label = 'actor' } = {}) {

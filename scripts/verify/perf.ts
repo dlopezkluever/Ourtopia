@@ -10,7 +10,8 @@ import { actor, createCommunity, password } from './backend';
 import { communitySchema } from '../../src/features/communities/model';
 
 const { values } = parseArgs({ options: { issue: { type: 'string' }, base: { type: 'string' }, head: { type: 'string' }, pairs: { type: 'string', default: '10' } } });
-if (values.issue === '3') await verifyIssue3(values);
+if (values.issue === '22') await (await import('../../supabase/functions/stripe-checkout/perf')).verifyBillingPerf(values);
+else if (values.issue === '3') await verifyIssue3(values);
 else await verifyIssue2(values);
 
 type PerfArguments = { issue?: string; base?: string; head?: string; pairs?: string };
