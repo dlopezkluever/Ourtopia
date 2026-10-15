@@ -156,6 +156,31 @@ test('lane 7 unrelated direct URL and REST queries disclose no private Community
   await expect(page.getByText(home.name, { exact: true })).toHaveCount(0);
   await expect(page.getByLabel('Community name')).toBeVisible();
   await page.screenshot({ path: info.outputPath('lane-7-revoked.png'), fullPage: true });
+  // Access lost while the create response is in flight: the late response must not republish the Community.
+  let commit!: (id: string) => void; const committed = new Promise<string>(resolve => { commit = resolve; });
+  let release!: () => void; const released = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/rest/v1/rpc/create_community', async route => { const response = await route.fetch(); commit(communitySchema.parse(await response.json()).id); await released; await route.fulfill({ response }); });
+  let revokedAt = Infinity; let readsAfterRevoke = 0; let slowReads = false;
+  await page.route('**/rest/v1/communities*', async route => {
+    const startedAt = Date.now();
+    if (slowReads) await new Promise(resolve => setTimeout(resolve, 3000));
+    const response = await route.fetch(); await route.fulfill({ response });
+    if (startedAt > revokedAt) readsAfterRevoke++;
+  });
+  await page.getByLabel('Community name').fill('Held Response Circle');
+  await page.getByRole('button', { name: 'Create Community', exact: true }).click();
+  const heldId = await committed;
+  revokedAt = Date.now();
+  expect((await admin.from('memberships').update({ status: 'removed' }).eq('community_id', heldId).eq('user_id', owner.id)).error).toBeNull();
+  await expect.poll(() => readsAfterRevoke).toBeGreaterThan(0);
+  expect((await owner.client.from('communities').select('id').eq('id', heldId)).data).toEqual([]);
+  slowReads = true; release();
+  await page.waitForTimeout(1500);
+  expect(await page.getByText('Held Response Circle').count()).toBe(0);
+  expect(await page.getByText('Administrator · Active member').count()).toBe(0);
+  await expect(page.getByRole('heading', { name: 'Community unavailable.' })).toBeVisible();
+  await expect(page.getByText('Held Response Circle')).toHaveCount(0);
+  await page.unrouteAll({ behavior: 'ignoreErrors' });
 });
 
 test('lane 8 ordinary clients cannot forge roles memberships or Community identity', async ({ page }, info) => {

@@ -15,6 +15,7 @@ export function CommunityHome({ user }: { user: User }) {
   const requestedId = location.pathname.startsWith('/communities/') ? location.pathname.split('/')[2] : undefined;
   const generation = useRef(0);
   const reload = useRef<() => Promise<void>>(async () => {});
+  const accessDecisions = useRef(0);
   const current = requestedId ? communities.find(community => community.id === requestedId) : communities[0];
 
   useEffect(() => {
@@ -32,7 +33,7 @@ export function CommunityHome({ user }: { user: User }) {
     // Access changes and lost channels drop cached Communities; routine refreshes re-read through RLS in place so typed input survives.
     const revalidate = () => { void load(); };
     const refresh = () => { setCommunities([]); setLoading(true); void load(); };
-    const channel = supabase.channel(`membership-access-${user.id}`).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'membership_access_hints', filter: `user_id=eq.${user.id}` }, refresh);
+    const channel = supabase.channel(`membership-access-${user.id}`).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'membership_access_hints', filter: `user_id=eq.${user.id}` }, () => { ++accessDecisions.current; refresh(); });
     async function connect() {
       const { data, error } = await supabase.auth.getSession();
       if (!active) return;
@@ -59,12 +60,16 @@ export function CommunityHome({ user }: { user: User }) {
     if (!parsed.success) { setError(parsed.error.issues.map(issue => issue.message).join(' ')); return; }
     setBusy(true);
     sessionStorage.setItem(`create-intent-${user.id}`, intent);
+    const decisionsBefore = accessDecisions.current;
     try {
       const { data, error } = await supabase.rpc('create_community', { p_intent_id: intent, p_name: parsed.data.name, p_description: parsed.data.description });
       if (error) throw error;
       const community = communitySchema.parse(data);
-      setCommunities(previous => [...previous.filter(row => row.id !== community.id), community]);
-      setLoading(false);
+      // An access change that arrived mid-command outranks this response, so only a fresh read may publish it.
+      if (accessDecisions.current === decisionsBefore) {
+        setCommunities(previous => [...previous.filter(row => row.id !== community.id), community]);
+        setLoading(false);
+      } else setLoading(true);
       void reload.current(); // supersedes reads that started before this commit and always settles loading
       history.replaceState({}, '', `/communities/${community.id}`);
       sessionStorage.removeItem(`create-intent-${user.id}`);
