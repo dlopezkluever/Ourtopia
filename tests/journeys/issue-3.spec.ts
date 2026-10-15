@@ -134,9 +134,22 @@ test('lane 4 expired consumed and unverified Invites fail with no access and no 
   const f = await membershipFixture('expired');
   const invite = await issueInvite(f.owner, f.community.id, f.applicant.email);
   expect((await admin.from('invites').update({ expires_at: new Date(Date.now() - 1000).toISOString() }).eq('id', invite.id)).error).toBeNull();
-  await signIn(page, f.applicant.email); await page.goto(`/membership?invite=${invite.id}`);
+  await signIn(page, f.applicant.email);
+  let releaseInitialRead!: () => void;
+  let initialReadStarted!: () => void;
+  const initialRead = new Promise<void>(resolve => { releaseInitialRead = resolve; });
+  const readStarted = new Promise<void>(resolve => { initialReadStarted = resolve; });
+  await page.route('**/rest/v1/membership_applications*', async route => {
+    const response = await route.fetch(); initialReadStarted(); await initialRead; await route.fulfill({ response });
+  });
+  await page.goto(`/membership?invite=${invite.id}`);
+  await readStarted;
   await page.getByRole('button', { name: 'Apply with Invite', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('expired');
+  releaseInitialRead();
+  await expect(page.getByRole('heading', { name: 'Your applications', exact: true })).toBeVisible();
+  await expect(page.getByRole('alert')).toContainText('expired');
+  await page.unrouteAll({ behavior: 'ignoreErrors' });
   expect((await f.applicant.client.from('invites').select('*').eq('id', invite.id)).data).toEqual([]);
   const fresh = await issueInvite(f.owner, f.community.id, f.applicant.email);
   await applyInBrowser(page, fresh.id);
