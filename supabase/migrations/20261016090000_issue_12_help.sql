@@ -268,7 +268,7 @@ begin
     value := (p_fields->>p_key)::timestamptz;
   exception when others then value := null;
   end;
-  if value is null or jsonb_typeof(p_fields->p_key) <> 'string' then
+  if value is null or not isfinite(value) or jsonb_typeof(p_fields->p_key) <> 'string' then
     raise exception using errcode = '22023', message = p_label || ' needs a valid date and time.';
   end if;
   return value;

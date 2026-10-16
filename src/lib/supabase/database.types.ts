@@ -137,6 +137,148 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"help_commitments": {
+                  Row: {
+                    "community_id": string,"created_at": string,"decided_at": string | null,"exchange_id": string | null,"id": string,"listing_id": string | null,"member_id": string,"need_post_id": string | null,"note": string,"status": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "community_id": string,"created_at"?: string,"decided_at"?: string | null,"exchange_id"?: string | null,"id"?: string,"listing_id"?: string | null,"member_id": string,"need_post_id"?: string | null,"note"?: string,"status"?: string
+                  }
+                  Update: {
+                    "community_id"?: string,"created_at"?: string,"decided_at"?: string | null,"exchange_id"?: string | null,"id"?: string,"listing_id"?: string | null,"member_id"?: string,"need_post_id"?: string | null,"note"?: string,"status"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "help_commitments_community_id_fkey"
+      columns: ["community_id"]
+isOneToOne: false
+      referencedRelation: "communities"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "help_commitments_exchange_id_fkey"
+      columns: ["exchange_id"]
+isOneToOne: true
+      referencedRelation: "exchanges"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "help_commitments_listing_id_community_id_fkey"
+      columns: ["listing_id","community_id"]
+isOneToOne: false
+      referencedRelation: "help_listings"
+      referencedColumns: ["id","community_id"]
+    },{
+      foreignKeyName: "help_commitments_need_post_id_community_id_fkey"
+      columns: ["need_post_id","community_id"]
+isOneToOne: false
+      referencedRelation: "help_need_posts"
+      referencedColumns: ["id","community_id"]
+    }
+                  ]
+                },"help_exchange_details": {
+                  Row: {
+                    "cancel_reason": string | null,"cancelled_at": string | null,"cancelled_by": string | null,"commitment_id": string,"community_id": string,"created_at": string,"duration_minutes": number | null,"exchange_id": string,"meeting_point": string | null,"scheduled_at": string | null,"scheduled_by": string | null,"slot_id": string | null,"starts_at": string | null
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "cancel_reason"?: string | null,"cancelled_at"?: string | null,"cancelled_by"?: string | null,"commitment_id": string,"community_id": string,"created_at"?: string,"duration_minutes"?: number | null,"exchange_id": string,"meeting_point"?: string | null,"scheduled_at"?: string | null,"scheduled_by"?: string | null,"slot_id"?: string | null,"starts_at"?: string | null
+                  }
+                  Update: {
+                    "cancel_reason"?: string | null,"cancelled_at"?: string | null,"cancelled_by"?: string | null,"commitment_id"?: string,"community_id"?: string,"created_at"?: string,"duration_minutes"?: number | null,"exchange_id"?: string,"meeting_point"?: string | null,"scheduled_at"?: string | null,"scheduled_by"?: string | null,"slot_id"?: string | null,"starts_at"?: string | null
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "help_exchange_details_commitment_id_fkey"
+      columns: ["commitment_id"]
+isOneToOne: true
+      referencedRelation: "help_commitments"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "help_exchange_details_community_id_fkey"
+      columns: ["community_id"]
+isOneToOne: false
+      referencedRelation: "communities"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "help_exchange_details_exchange_id_fkey"
+      columns: ["exchange_id"]
+isOneToOne: true
+      referencedRelation: "exchanges"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "help_exchange_details_slot_id_fkey"
+      columns: ["slot_id"]
+isOneToOne: true
+      referencedRelation: "help_slots"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"help_listings": {
+                  Row: {
+                    "availability": string,"category": string,"community_id": string,"created_at": string,"description": string,"geographic_constraints": string,"id": string,"owner_id": string,"scheduling_preferences": string,"skill": string,"skill_level": string,"status": string,"title": string,"updated_at": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "availability": string,"category": string,"community_id": string,"created_at"?: string,"description"?: string,"geographic_constraints": string,"id"?: string,"owner_id": string,"scheduling_preferences"?: string,"skill": string,"skill_level": string,"status"?: string,"title": string,"updated_at"?: string
+                  }
+                  Update: {
+                    "availability"?: string,"category"?: string,"community_id"?: string,"created_at"?: string,"description"?: string,"geographic_constraints"?: string,"id"?: string,"owner_id"?: string,"scheduling_preferences"?: string,"skill"?: string,"skill_level"?: string,"status"?: string,"title"?: string,"updated_at"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "help_listings_community_id_fkey"
+      columns: ["community_id"]
+isOneToOne: false
+      referencedRelation: "communities"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"help_need_posts": {
+                  Row: {
+                    "category": string,"community_id": string,"created_at": string,"description": string,"duration_minutes": number,"helpers_needed": number,"id": string,"location": string,"owner_id": string,"starts_at": string,"status": string,"title": string,"updated_at": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "category": string,"community_id": string,"created_at"?: string,"description"?: string,"duration_minutes": number,"helpers_needed": number,"id"?: string,"location": string,"owner_id": string,"starts_at": string,"status"?: string,"title": string,"updated_at"?: string
+                  }
+                  Update: {
+                    "category"?: string,"community_id"?: string,"created_at"?: string,"description"?: string,"duration_minutes"?: number,"helpers_needed"?: number,"id"?: string,"location"?: string,"owner_id"?: string,"starts_at"?: string,"status"?: string,"title"?: string,"updated_at"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "help_need_posts_community_id_fkey"
+      columns: ["community_id"]
+isOneToOne: false
+      referencedRelation: "communities"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"help_slots": {
+                  Row: {
+                    "closed_at": string | null,"community_id": string,"created_at": string,"exchange_id": string,"helper_id": string,"id": string,"need_post_id": string,"place": number,"status": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "closed_at"?: string | null,"community_id": string,"created_at"?: string,"exchange_id": string,"helper_id": string,"id"?: string,"need_post_id": string,"place": number,"status"?: string
+                  }
+                  Update: {
+                    "closed_at"?: string | null,"community_id"?: string,"created_at"?: string,"exchange_id"?: string,"helper_id"?: string,"id"?: string,"need_post_id"?: string,"place"?: number,"status"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "help_slots_exchange_id_fkey"
+      columns: ["exchange_id"]
+isOneToOne: true
+      referencedRelation: "exchanges"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "help_slots_need_post_id_community_id_fkey"
+      columns: ["need_post_id","community_id"]
+isOneToOne: false
+      referencedRelation: "help_need_posts"
+      referencedColumns: ["id","community_id"]
+    }
+                  ]
                 },"invites": {
                   Row: {
                     "community_id": string,"community_name": string,"created_at": string,"expires_at": string,"id": string,"issued_by": string,"recipient_email": string,"redeemed_at": string | null,"redeemed_by": string | null
@@ -493,14 +635,29 @@ isOneToOne: false
             [_ in never]: never
           }
           Functions: {
-            "can_read_conversation":
+            "accept_help_commitment":
+{ Args: { "p_commitment_id": string,"p_intent_id": string }; Returns: Json
+                           },
+"can_read_conversation":
 { Args: { "p_conversation_id": string,"p_message_at"?: string }; Returns: boolean
+                           },
+"can_read_exchange":
+{ Args: { "p_exchange_id": string }; Returns: boolean
+                           },
+"can_read_help_commitment":
+{ Args: { "p_commitment_id": string }; Returns: boolean
                            },
 "can_read_invite":
 { Args: { "p_invite_id": string }; Returns: boolean
                            },
+"cancel_help_exchange":
+{ Args: { "p_exchange_id": string,"p_intent_id": string,"p_reason": string }; Returns: Json
+                           },
 "claim_notification":
 { Args: { "p_outbox_id"?: string }; Returns: Json
+                           },
+"commit_help":
+{ Args: { "p_intent_id": string,"p_note"?: string,"p_post_id": string,"p_post_kind": string }; Returns: Json
                            },
 "conversation_candidates":
 { Args: { "p_community_id": string }; Returns: {
@@ -515,14 +672,26 @@ isOneToOne: false
 "create_community":
 { Args: { "p_description"?: string,"p_intent_id": string,"p_name": string }; Returns: Json
                            },
+"create_help_post":
+{ Args: { "p_community_id": string,"p_fields": Json,"p_intent_id": string,"p_post_kind": string }; Returns: Json
+                           },
 "decide_membership":
 { Args: { "p_application_id": string,"p_decision": string,"p_intent_id": string,"p_reason"?: string }; Returns: Json
+                           },
+"edit_help_post":
+{ Args: { "p_fields": Json,"p_intent_id": string,"p_post_id": string,"p_post_kind": string }; Returns: Json
                            },
 "finish_notification":
 { Args: { "p_claim_token": string,"p_error"?: string,"p_outbox_id": string }; Returns: Json
                            },
 "global_trust":
 { Args: { "p_subject": string }; Returns: Json
+                           },
+"help_board":
+{ Args: { "p_category"?: string,"p_community_id": string,"p_post_kind"?: string,"p_search"?: string }; Returns: Json[]
+                           },
+"help_post":
+{ Args: { "p_post_id": string,"p_post_kind": string }; Returns: Json
                            },
 "is_active_member":
 { Args: { "target_community": string }; Returns: boolean
@@ -541,6 +710,9 @@ isOneToOne: false
 "member_profile":
 { Args: { "p_community_id": string,"p_subject": string }; Returns: Json
                            },
+"my_help_exchanges":
+{ Args: Record<PropertyKey, never>; Returns: Json[]
+                           },
 "my_reputation":
 { Args: Record<PropertyKey, never>; Returns: Json
                            },
@@ -553,6 +725,9 @@ isOneToOne: false
 "retry_notification":
 { Args: { "p_intent_id": string,"p_outbox_id": string }; Returns: Json
                            },
+"schedule_help_exchange":
+{ Args: { "p_exchange_id": string,"p_fields": Json,"p_intent_id": string }; Returns: Json
+                           },
 "send_message":
 { Args: { "p_body": string,"p_conversation_id": string,"p_intent_id": string }; Returns: Json
                            },
@@ -561,6 +736,9 @@ isOneToOne: false
                            },
 "start_conversation":
 { Args: { "p_community_id": string,"p_intent_id": string,"p_participant_id": string }; Returns: Json
+                           },
+"withdraw_help_post":
+{ Args: { "p_intent_id": string,"p_post_id": string,"p_post_kind": string }; Returns: Json
                            }
           }
           Enums: {

@@ -247,6 +247,7 @@ function HelpPostPage({ userId, communityId, kind, postId, version, go, onChange
     {back}
     <span className={`help-kind help-kind-${post.postKind}`}>{postKindLabels[post.postKind]} · {helpCategories[post.category]}{post.status === 'withdrawn' ? ' · Withdrawn' : ''}</span>
     <h2 id="post-title">{post.title}</h2>
+    {!viewerActive && <p className="notice" role="note">Your Community access ended. You can view and cancel your existing help obligation.</p>}
     <p className="help-by">{viewerIsOwner ? 'You posted this' : `Posted by ${post.ownerEmail}`}</p>
     {post.description && <p className="help-description">{post.description}</p>}
     {post.postKind === 'listing' ? <dl className="help-facts">

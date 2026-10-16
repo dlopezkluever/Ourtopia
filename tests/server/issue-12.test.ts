@@ -101,8 +101,8 @@ test('Help Listing owner acceptance creates one committed help Exchange with the
   const outbox = await admin.from('notification_outbox').select('id,recipient_id,channel,kind').eq('community_id', f.community.id).like('kind', 'help_%').order('kind').order('channel');
   assert.deepEqual(outbox.data?.map(({ recipient_id, channel, kind }) => [kind, channel, recipient_id]), [
     ['help_commitment_accepted', 'email', requester.id], ['help_commitment_accepted', 'in_app', requester.id],
-    ['help_commitment_offered', 'email', f.author.id], ['help_commitment_offered', 'in_app', f.author.id],
-    ['help_commitment_offered', 'email', f.author.id], ['help_commitment_offered', 'in_app', f.author.id],
+    ['help_commitment_offered', 'email', f.author.id], ['help_commitment_offered', 'email', f.author.id],
+    ['help_commitment_offered', 'in_app', f.author.id], ['help_commitment_offered', 'in_app', f.author.id],
   ]);
   const inApp = outbox.data?.find(item => item.kind === 'help_commitment_accepted' && item.channel === 'in_app');
   assert.ok(inApp);
@@ -131,6 +131,9 @@ test('a two-helper Need Post accepts helpers independently, schedules one, and c
   const view = helpExchangeSchema.parse(scheduled.data);
   assert.deepEqual([view.state, new Date(view.startsAt ?? '').toISOString(), view.durationMinutes, view.meetingPoint], ['scheduled', fields.starts_at, 90, 'Side gate on Maple Street']);
   assert.equal((await schedule(first, e1.id, helpScheduleFields({ starts_at: new Date(Date.now() - 1000).toISOString() }))).error?.code, '22023');
+  for (const starts_at of ['infinity', '-infinity']) {
+    assert.equal((await schedule(first, e1.id, helpScheduleFields({ starts_at }))).error?.code, '22023', 'a schedule must have a finite instant');
+  }
   assert.deepEqual((await admin.from('notification_outbox').select('recipient_id').eq('kind', 'help_scheduled').eq('channel', 'in_app').eq('community_id', f.community.id)).data, [{ recipient_id: f.author.id }]);
   const owned = await detail(f.author, 'need_post', need.id);
   assert.deepEqual(owned.exchanges.map(row => [row.helperId, row.place, row.state]), [[first.id, 1, 'scheduled'], [second.id, 2, 'committed']], 'per-helper status');
@@ -246,6 +249,40 @@ test('kind constraints reject item-only fields and states for help, and Communit
   assert.deepEqual(scope, { listing: '42501', exchange: '42501', detail: '42501', commitment: '42501', deleteListing: '42501', deleteDetail: '42501' });
   assert.deepEqual((await admin.from('exchanges').select('state,community_id').eq('id', exchange.id)).data, [{ state: 'committed', community_id: f.community.id }]);
   receipt('issue-12-kind', { rejected: Object.fromEntries(Object.entries(rejected).map(([key, value]) => [key, value.error?.code])), itemState: '23514', itemEvent: '23514', itemDetail: '23514', scope });
+});
+
+test('edit, withdrawal, schedule, and cancellation replay exactly and reject changed intent payloads', async () => {
+  const f = await helpFixture('command-replay', 1);
+  const [requester] = f.members;
+  const listing = await createHelpPost(f.author, f.community.id, 'listing', helpListingFields());
+  const edit = { p_intent_id: randomUUID(), p_post_kind: 'listing', p_post_id: listing.id, p_fields: helpListingFields({ title: 'Updated moving help' }) };
+  const edited = await f.author.client.rpc('edit_help_post', edit);
+  assert.equal(edited.error, null);
+  assert.deepEqual((await f.author.client.rpc('edit_help_post', edit)).data, edited.data);
+  assert.equal((await f.author.client.rpc('edit_help_post', { ...edit, p_fields: helpListingFields() })).error?.code, '23505');
+  const exchange = await acceptHelp(f.author, await commitHelp(requester, 'listing', listing.id));
+  const fields = helpScheduleFields();
+  const scheduleIntent = randomUUID();
+  const scheduled = await schedule(requester, exchange.id, fields, scheduleIntent);
+  assert.equal(scheduled.error, null);
+  assert.deepEqual((await schedule(requester, exchange.id, fields, scheduleIntent)).data, scheduled.data);
+  assert.equal((await schedule(requester, exchange.id, { ...fields, meeting_point: 'Another gate' }, scheduleIntent)).error?.code, '23505');
+  const cancelIntent = randomUUID();
+  const cancelled = await cancel(requester, exchange.id, 'Unavailable now', cancelIntent);
+  assert.equal(cancelled.error, null);
+  assert.deepEqual((await cancel(requester, exchange.id, 'Unavailable now', cancelIntent)).data, cancelled.data);
+  assert.equal((await cancel(requester, exchange.id, 'Different reason', cancelIntent)).error?.code, '23505');
+  const withdraw = { p_intent_id: randomUUID(), p_post_kind: 'listing', p_post_id: listing.id };
+  const withdrawn = await f.author.client.rpc('withdraw_help_post', withdraw);
+  assert.equal(withdrawn.error, null);
+  assert.deepEqual((await f.author.client.rpc('withdraw_help_post', withdraw)).data, withdrawn.data);
+  const otherListing = await createHelpPost(f.author, f.community.id, 'listing', helpListingFields({ title: 'Another moving offer' }));
+  assert.equal((await f.author.client.rpc('withdraw_help_post', { ...withdraw, p_post_id: otherListing.id })).error?.code, '23505');
+  assert.equal((await f.author.client.rpc('withdraw_help_post', { ...withdraw, p_post_id: randomUUID() })).error?.code, '42501', 'unknown source is denied before returning any intent result');
+  assert.equal((await admin.from('exchange_events').select('id').eq('exchange_id', exchange.id)).data?.length, 3);
+  assert.equal((await admin.from('memberships').update({ status: 'removed' }).eq('community_id', f.community.id).eq('user_id', f.author.id)).error, null);
+  assert.equal((await f.author.client.rpc('edit_help_post', edit)).error?.code, '42501', 'current membership guards even a prior successful intent');
+  receipt('issue-12-command-replay', { edit: 'stable', schedule: 'stable', cancel: 'stable', withdraw: 'stable', changedPayload: '23505', revokedReplay: '42501', exchangeEvents: 3 });
 });
 
 test('a forced late audit collision rolls back the whole acceptance', async () => {

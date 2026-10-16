@@ -136,26 +136,44 @@ test('realtime delivers only identity hints to the counterparty and publishes no
     await person.client.realtime.setAuth(session.data.session?.access_token ?? anonKey);
     const hints: Record<string, unknown>[] = [];
     const details: unknown[] = [];
-    const channel = person.client.channel(`help-rls-${randomUUID()}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notification_hints', filter: `recipient_id=eq.${person.id}` }, change => hints.push(change.new))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'help_exchange_details' }, change => details.push(change));
-    await new Promise<void>((resolve, reject) => {
+    const channels = [
+      person.client.channel(`help-hints-${randomUUID()}`)
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notification_hints', filter: `recipient_id=eq.${s.offerer.id}` }, change => hints.push(change.new)),
+      person.client.channel(`help-details-${randomUUID()}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'help_exchange_details' }, change => details.push(change)),
+    ];
+    for (const channel of channels) await new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => reject(new Error('Help channel did not subscribe.')), 20000);
-      channel.subscribe(status => { if (status === 'SUBSCRIBED') { clearTimeout(timeout); resolve(); } });
+      channel.subscribe(status => {
+        if (status === 'SUBSCRIBED') { clearTimeout(timeout); resolve(); }
+        else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') { clearTimeout(timeout); reject(new Error(status)); }
+      });
     });
-    return { hints, details, close: () => person.client.removeChannel(channel) };
+    return { hints, details, close: async () => { await Promise.all(channels.map(channel => person.client.removeChannel(channel))); person.client.realtime.disconnect(); } };
   };
-  const [participant, bystander] = [await listen(s.offerer), await listen(s.unrelated)];
-  const commitment = await commitHelp(s.first, 'listing', s.listing.id);
-  const exchange = await acceptHelp(s.offerer, commitment);
-  assert.equal((await s.first.client.rpc('schedule_help_exchange', { p_intent_id: randomUUID(), p_exchange_id: exchange.id, p_fields: helpScheduleFields() })).error, null);
-  const deadline = Date.now() + 15000;
-  while (participant.hints.length < 2 && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 250));
-  await new Promise(resolve => setTimeout(resolve, 1500));
+  const foreign = await actor({ label: 'help-rt-foreign' });
+  await createCommunity(foreign.client);
+  const pending = await actor({ label: 'help-rt-pending' });
+  await applyInvite(pending, (await issueInvite(s.owner, s.community.id, pending.email)).id);
+  assert.equal((await admin.from('memberships').update({ status: 'suspended' }).eq('community_id', s.community.id).eq('user_id', s.second.id)).error, null);
+  const listeners: Record<string, Awaited<ReturnType<typeof listen>>> = {};
   try {
+    for (const [name, person] of Object.entries({ participant: s.offerer, unrelated: s.unrelated, administrator: s.owner, foreign, pending, inactive: s.second, anonymous: { id: randomUUID(), client: publicClient() } })) {
+      listeners[name] = await listen(person);
+    }
+    const participant = listeners.participant;
+    const commitment = await commitHelp(s.first, 'listing', s.listing.id);
+    const exchange = await acceptHelp(s.offerer, commitment);
+    assert.equal((await s.first.client.rpc('schedule_help_exchange', { p_intent_id: randomUUID(), p_exchange_id: exchange.id, p_fields: helpScheduleFields() })).error, null);
+    const deadline = Date.now() + 15000;
+    while (participant.hints.length < 2 && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 250));
+    await new Promise(resolve => setTimeout(resolve, 1500));
     assert.ok(participant.hints.length >= 2, 'offer and schedule each hint the listing owner');
     assert.ok(participant.hints.every(hint => JSON.stringify(Object.keys(hint).sort()) === '["id","recipient_id"]'));
-    assert.deepEqual([bystander.hints.length, participant.details.length, bystander.details.length], [0, 0, 0]);
-  } finally { await participant.close(); await bystander.close(); }
-  receipt('issue-12-rls-realtime', { backend: backendUrl, participantHints: participant.hints.length, bystanderHints: 0, detailEvents: 0, hintKeys: ['id', 'recipient_id'] });
+    for (const [name, listener] of Object.entries(listeners)) {
+      assert.equal(listener.details.length, 0, `${name} receives no detail events`);
+      if (name !== 'participant') assert.equal(listener.hints.length, 0, `${name} receives no counterparty hints`);
+    }
+    receipt('issue-12-rls-realtime', { backend: backendUrl, actors: Object.fromEntries(Object.entries(listeners).map(([name, listener]) => [name, { hints: listener.hints.length, details: listener.details.length }])), hintKeys: ['id', 'recipient_id'] });
+  } finally { await Promise.all(Object.values(listeners).map(listener => listener.close())); }
 });

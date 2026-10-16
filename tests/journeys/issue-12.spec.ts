@@ -299,7 +299,16 @@ test('lane 9 another helper\'s logistics and foreign commitments are refused to 
   await page.getByRole('button', { name: 'Sign out' }).click(); await expect(page.getByLabel('Email address')).toBeVisible();
   await openPost(page, helper.email, path, 'Assemble shelves');
   await expect(exchangeRegion(page, f.author.email).getByText(/Door code 9921/)).toBeVisible();
-  await capture(page, info, 9, { needId: need.id, denied, participantSeesOwnLogistics: true });
+  expect((await admin.from('memberships').update({ status: 'removed' }).eq('community_id', f.community.id).eq('user_id', helper.id)).error).toBeNull();
+  await expect(page.getByRole('note').filter({ hasText: 'Your Community access ended.' })).toBeVisible();
+  await expect(exchangeRegion(page, f.author.email).getByText(/Door code 9921/)).toBeVisible();
+  await expect(exchangeRegion(page, f.author.email).getByRole('button', { name: /^(Save|Update) schedule$/ })).toHaveCount(0);
+  await expect(page.getByRole('search')).toHaveCount(0);
+  await exchangeRegion(page, f.author.email).getByLabel('Reason for cancelling', { exact: true }).fill('Resolve my prior obligation');
+  await exchangeRegion(page, f.author.email).getByRole('button', { name: 'Cancel help', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Help post unavailable.' })).toBeVisible();
+  await expect(page.getByText(/Door code 9921/)).toHaveCount(0);
+  await capture(page, info, 9, { needId: need.id, denied, participantSeesOwnLogistics: true, removedParticipant: 'own open obligation only; cancellation ends access' });
 });
 
 test('lane 10 create, accept, and schedule help by keyboard with accessible status and places', async ({ page }, info) => {
