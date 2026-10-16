@@ -4,6 +4,7 @@ export type Delivery = {
   recipient_email: string;
   channel: 'email' | 'in_app';
   kind: string;
+  reminder_id?: string | null;
 };
 
 export type DeliveryBackend = {
@@ -27,12 +28,17 @@ export async function deliverOne(backend: DeliveryBackend, sendEmail: EmailSende
   if (claimed.error) throw new Error(claimed.error.message);
   if (!claimed.data) return null;
   const item = claimed.data as Delivery;
+  if (item.reminder_id) {
+    const current = await backend.rpc('check_notification_claim', { p_outbox_id: item.id, p_claim_token: item.claim_token });
+    if (current.error) throw new Error(current.error.message);
+    if (!current.data) return null;
+  }
   let failure: string | null = null;
   try {
     if (item.channel === 'email') await sendEmail({
       to: item.recipient_email,
       subject: subjects[item.kind] ?? 'You have an Ourtopia notification',
-      text: item.kind.startsWith('help_') ? 'Sign in to Ourtopia to view the current status of your help Exchange.' : 'Sign in to Ourtopia to view your notification and current application status.',
+      text: item.kind.startsWith('help_') ? 'Sign in to Ourtopia to view the current status of your help Exchange.' : 'Sign in to Ourtopia to view your notification and current status.',
       idempotencyKey: item.id,
     });
   } catch {

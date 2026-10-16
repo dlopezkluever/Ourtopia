@@ -6,7 +6,9 @@ import { copyFileSync, existsSync, mkdirSync, rmSync, symlinkSync, unlinkSync, w
 import { join, resolve } from 'node:path';
 import { cpus, loadavg, totalmem, freemem } from 'node:os';
 import { chromium, expect, type Page } from '@playwright/test';
-import { activeMember, actor, commitHelp, createCommunity, createHelpPost, helpFixture, helpListingFields, membershipFixture, password, configureVouch, vouchFixture, admin } from './backend';
+import { activeMember, actor, commitHelp, createCommunity, createHelpPost, helpFixture, helpListingFields, membershipFixture, password, configureVouch, vouchFixture, admin, failedDelivery } from './backend';
+import { localDelivery } from '../../supabase/functions/notifications/local';
+import { deliverOne } from '../../supabase/functions/notifications/worker';
 import { z } from 'zod';
 import { vouchSchema } from '../../src/features/vouches/model';
 import { standingSchema } from '../../src/features/reputation/model';
@@ -17,13 +19,96 @@ import { conversationSchema, messageSchema } from '../../src/features/messages/m
 import { helpExchangeSchema, helpPostSchema } from '../../src/features/help/model';
 
 const { values } = parseArgs({ options: { issue: { type: 'string' }, base: { type: 'string' }, head: { type: 'string' }, pairs: { type: 'string', default: '10' } } });
-if (values.issue === '14') await verifyIssue14(values);
+if (values.issue === '23') await verifyIssue23(values);
+else if (values.issue === '14') await verifyIssue14(values);
 else if (values.issue === '12') await verifyIssue12(values);
 else if (values.issue === '15') await verifyIssue15(values);
 else if (values.issue === '3' || values.issue === '4' || values.issue === '5') await verifyIssue3(values);
 else await verifyIssue2(values);
 
 type PerfArguments = { issue?: string; base?: string; head?: string; pairs?: string };
+
+async function verifyIssue23(values: PerfArguments) {
+  const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+  assert.equal(values.head, head); assert.ok(values.base);
+  const base = values.base;
+  const pairs = Number(values.pairs); assert.ok(Number.isInteger(pairs) && pairs >= 10);
+  assert.equal(execFileSync('git', ['diff', base, head, '--', 'package-lock.json'], { encoding: 'utf8' }), '');
+  const tree = execFileSync('git', ['ls-tree', '-r', '--name-only', base], { encoding: 'utf8' }).split('\n');
+  assert.ok(!tree.some(path => path.startsWith('src/features/notification-delivery/')), 'Record the absent console before measuring added actions.');
+  const directory = `${process.env.EVIDENCE_DIR ?? '.pilot-evidence'}/perf`;
+  const root = resolve('.pilot-evidence', 'p23-perf-trunk');
+  mkdirSync(directory, { recursive: true });
+  for (const path of tree.filter(path => /^(src\/|vite.config.ts$|index.html$|package.json$)/.test(path))) {
+    const target = join(root, path); mkdirSync(resolve(target, '..'), { recursive: true });
+    writeFileSync(target, execFileSync('git', ['show', `${base}:${path}`]));
+  }
+  copyFileSync('.env.local', join(root, '.env.local'));
+  writeFileSync(join(root, 'perf.vite.config.ts'), "import { mergeConfig } from 'vite';\nimport config from './vite.config';\nexport default mergeConfig(config, { cacheDir: '.vite-perf-cache' });\n");
+  const servers: ReturnType<typeof spawn>[] = [];
+  const startup: number[] = [];
+  const samples: { index: number; side: string; readinessMs: number; queryMs: number }[] = [];
+  const actions: { index: number; commandMs: number; visibleMs: number; queryMs: number; providerMs: number; noticeId: string }[] = [];
+  const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH ?? (process.platform === 'win32' ? 'C:/Program Files/Google/Chrome/Application/chrome.exe' : undefined) });
+  const persist = (extra: unknown) => writeFileSync(`${directory}/samples.json`, JSON.stringify({ head, base, pairs, samples, actions, startup, host: { cores: cpus().length, totalMemory: totalmem(), freeMemory: freemem(), loadAverage: loadavg() }, extra }, null, 2));
+  async function serve(root: string, port: number, extra: string[] = []) {
+    const started = performance.now();
+    const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', root, ...extra, '--host', '127.0.0.1', '--port', String(port), '--strictPort'], { stdio: 'ignore', windowsHide: true }); servers.push(server);
+    const deadline = Date.now() + 60000;
+    while (Date.now() < deadline) {
+      assert.equal(server.exitCode, null, 'Probe server remains alive.');
+      if (await fetch(`http://127.0.0.1:${port}`).then(response => response.ok, () => false)) { startup.push(performance.now() - started); return; }
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    throw new Error('Probe startup exceeded 60 seconds.');
+  }
+  const trunkPort = Number(process.env.APP_PORT ?? 5173) + 1;
+  try {
+    await serve(root, trunkPort, ['--config', join(root, 'perf.vite.config.ts')]); await serve('.', trunkPort + 1);
+    const { client, send } = localDelivery();
+    for (let index = 0; index < pairs; index++) {
+      const f = await failedDelivery(`p23-perf-${index}`);
+      for (const [side, port] of [['trunk', trunkPort], ['head', trunkPort + 1]] satisfies [string, number][]) {
+        const context = await browser.newContext({ baseURL: `http://127.0.0.1:${port}`, viewport: { width: 1440, height: 1000 } });
+        try {
+          const page = await context.newPage(); await page.goto('/'); await page.getByLabel('Email address').fill(f.owner.email); await page.getByLabel('Password', { exact: true }).fill(password); await page.getByRole('button', { name: 'Sign in', exact: true }).last().click();
+          const home = page.getByRole('heading', { name: `Welcome to ${f.community.name}.` }); await expect(home).toBeVisible();
+          const start = performance.now(); await page.reload(); await expect(home).toBeVisible(); const readinessMs = performance.now() - start;
+          const readStart = performance.now(); const query = await f.owner.client.from('notification_outbox').select('id,state,attempts').eq('id', f.email.id); const queryMs = performance.now() - readStart;
+          assert.equal(query.error, null); assert.deepEqual(query.data, [{ id: f.email.id, state: 'failed', attempts: 1 }]); samples.push({ index, side, readinessMs, queryMs }); persist({ errors: 0 });
+          if (side === 'trunk') { await expect(page.getByRole('link', { name: 'Notice deliveries', exact: true })).toHaveCount(0); continue; }
+          await page.goto(`/deliveries?community=${f.community.id}`);
+          const card = page.getByRole('article', { name: `Membership approved email ${f.email.id}`, exact: true });
+          await expect(card.getByText('Retryable failure', { exact: true })).toBeVisible();
+          let commandStart = 0;
+          page.on('request', request => { if (request.url().includes('/rpc/retry_notification')) commandStart = performance.now(); });
+          const response = page.waitForResponse(response => response.url().includes('/rpc/retry_notification')).then(async response => { await response.finished(); assert.equal(response.status(), 200); return performance.now() - commandStart; });
+          const actionStart = performance.now(); await card.getByRole('button', { name: 'Retry delivery' }).click();
+          await expect(page.getByText('Retry requested. Delivery runs after the original workflow commits.', { exact: true })).toBeVisible(); const commandMs = await response;
+          let providerMs = 0; const delivered = await deliverOne(client, async message => { const started = performance.now(); try { await send(message); } finally { providerMs += performance.now() - started; } }, f.email.id) as { state: string }; assert.equal(delivered.state, 'delivered');
+          await page.getByRole('button', { name: 'Refresh deliveries' }).click(); await expect(card.getByText('Delivered', { exact: true })).toBeVisible();
+          const visibleMs = performance.now() - actionStart - providerMs;
+          const inspectStart = performance.now(); const inspected = await f.owner.client.rpc('inspect_notification_deliveries', { p_community_id: f.community.id }); const inspectMs = performance.now() - inspectStart;
+          assert.equal(inspected.error, null); assert.equal(inspected.data.find((row: { id: string }) => row.id === f.email.id).attempts, 2);
+          const membership = await f.applicant.client.from('memberships').select('status').eq('community_id', f.community.id).eq('user_id', f.applicant.id); assert.deepEqual(membership.data, [{ status: 'active' }]);
+          await page.reload(); await expect(card.getByText('Delivered', { exact: true })).toBeVisible();
+          actions.push({ index, commandMs, visibleMs, queryMs: inspectMs, providerMs, noticeId: f.email.id }); persist({ errors: 0 });
+        } finally { await context.close(); }
+      }
+    }
+    const median = (numbers: number[]) => { const sorted = [...numbers].sort((a, b) => a - b); const mid = Math.floor(sorted.length / 2); return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2; };
+    const summary = (side: string) => ({ readinessMs: median(samples.filter(row => row.side === side).map(row => row.readinessMs)), queryMs: median(samples.filter(row => row.side === side).map(row => row.queryMs)) });
+    const baseline = summary('trunk'); const current = summary('head');
+    const added = { commandMs: median(actions.map(row => row.commandMs)), visibleMs: median(actions.map(row => row.visibleMs)), providerMs: median(actions.map(row => row.providerMs)) };
+    const queries = [...samples.filter(row => row.side === 'head').map(row => row.queryMs), ...actions.map(row => row.queryMs)].sort((a, b) => a - b); const queryP95Ms = queries[Math.ceil(queries.length * .95) - 1];
+    const checks = { readiness: current.readinessMs <= Math.max(1.2 * baseline.readinessMs, baseline.readinessMs + 100), read: current.queryMs <= Math.max(1.2 * baseline.queryMs, baseline.queryMs + 100), command: added.commandMs <= 1000, visible: added.visibleMs <= 2000, query: queryP95Ms <= 3000, startup: startup.every(value => value <= 60000) };
+    const ranges = { readiness: [Math.min(...samples.map(row => row.readinessMs)), Math.max(...samples.map(row => row.readinessMs))], visible: [Math.min(...actions.map(row => row.visibleMs)), Math.max(...actions.map(row => row.visibleMs))] };
+    persist({ errors: 0, baseline, current, added, queryP95Ms, checks, ranges });
+    writeFileSync(`${directory}/report.md`, `P23 at ${head}, base ${base}.\n\n${pairs} alternating trunk-first pairs. Both sides reload the same authorized Community and read the same failed outbox entry under its administrator. Trunk already has membership-specific retry, whose persisted success is exercised by journey lane 1. It lacks the new console inspection and attempt-history flow. The added console journey uses absolute budgets. Provider HTTP waits are measured separately and subtracted from local visible time. Local claim and finish work remains inside the visible measurement. Every action verifies two attempts, active membership and delivered state after reload.\n\nBaseline ${JSON.stringify(baseline)}. Head ${JSON.stringify(current)}. Added ${JSON.stringify(added)}. Query p95 ${queryP95Ms} ms. Ranges ${JSON.stringify(ranges)}. Checks ${JSON.stringify(checks)}.\n\nLocal serial Chrome and Vite development probe, bounded by authenticated HTTP round trips and rendering. No production throughput or speedup claim. Raw timings, provider waits, zero-error assertions and host observations are in samples.json.\n`);
+    assert.ok(Object.values(checks).every(Boolean), JSON.stringify(checks)); process.stdout.write(`${JSON.stringify({ baseline, current, added, queryP95Ms, checks })}\n`);
+  } catch (error) { persist({ error: error instanceof Error ? error.message : String(error) }); throw error; }
+  finally { await browser.close(); await Promise.all(servers.map(server => new Promise<void>(resolve => { if (server.exitCode !== null) resolve(); else { server.once('exit', () => resolve()); server.kill(); } }))); }
+}
 
 async function verifyIssue15(values: PerfArguments) {
   const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();

@@ -25,6 +25,7 @@ jobs:
       - run: node scripts/verify/local-env.mjs
       - run: node scripts/verify/migrations.mjs --disposable-project ourtopia-issue-2
       - run: npm run test:server -- tests/server/issue-2.test.ts
+      - run: npm run test:server -- tests/server/issue-23.test.ts
       - run: npm run test:server -- tests/server/issue-3.test.ts
       - run: npm run test:server -- tests/server/issue-4.test.ts
       - run: npm run test:server -- tests/server/issue-5.test.ts
@@ -32,6 +33,7 @@ jobs:
       - run: npm run test:server -- tests/server/issue-12.test.ts
       - run: npm run test:server -- tests/server/issue-14.test.ts
       - run: npm run test:rls -- tests/rls/issue-2.test.ts
+      - run: npm run test:rls -- tests/rls/issue-23.test.ts
       - run: npm run test:rls -- tests/rls/issue-3.test.ts
       - run: npm run test:rls -- tests/rls/issue-4.test.ts
       - run: npm run test:rls -- tests/rls/issue-5.test.ts
@@ -39,6 +41,7 @@ jobs:
       - run: npm run test:rls -- tests/rls/issue-12.test.ts
       - run: npm run test:rls -- tests/rls/issue-14.test.ts
       - run: npm run test:journey -- tests/journeys/issue-2.spec.ts
+      - run: npm run test:journey -- tests/journeys/issue-23.spec.ts
       - run: npm run test:journey -- tests/journeys/issue-3.spec.ts
       - run: npm run test:journey -- tests/journeys/issue-4.spec.ts
       - run: npm run test:journey -- tests/journeys/issue-5.spec.ts
@@ -52,5 +55,6 @@ jobs:
       - run: npm run verify:perf -- --issue 15 --base 714ebbd222b19be1e6ca0457bb1bd82a232e8a6b --head $(git rev-parse HEAD) --pairs 10
       - run: npm run verify:perf -- --issue 12 --base 26e3bb37c7dbc7f14bdf95a36c8cd4b838dba413 --head $(git rev-parse HEAD) --pairs 10
       - run: npm run verify:perf -- --issue 14 --base 998b29ade3134035cf627dc1a1a8ee07cd504ab0 --head $(git rev-parse HEAD) --pairs 10
+      - run: npm run verify:perf -- --issue 23 --base 7aa1af9cf1dae27a32226bb0f52f408e29749aa2 --head $(git rev-parse HEAD) --pairs 10
       - if: always()
         run: npx supabase stop --project-id ourtopia-issue-2
