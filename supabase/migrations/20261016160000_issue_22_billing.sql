@@ -70,6 +70,13 @@ create policy billing_account_read on public.billing_accounts for select to auth
 create policy billing_job_read on public.billing_jobs for select to authenticated using (account_id = auth.uid());
 create policy billing_subscription_read on public.billing_subscriptions for select to authenticated using (account_id = auth.uid());
 
+-- Test billing audit is account business; other members and administrators do not read it.
+drop policy event_read on public.community_events;
+create policy event_read on public.community_events for select to authenticated
+  using (public.is_active_member(community_id) and kind not in ('conversation_started', 'message_sent',
+    'help_commitment_offered', 'help_commitment_accepted', 'help_scheduled', 'help_cancelled',
+    'test_billing_requested'));
+
 create function private.require_billing_membership(p_account_id uuid, p_community_id uuid)
 returns void language plpgsql security definer set search_path = '' as $$
 declare previous_subject text := current_setting('request.jwt.claim.sub', true);

@@ -11,6 +11,7 @@ test('own billing is private across actors and command-owned state rejects direc
   const unrelated = await actor({ label: 'billing-unrelated' });
   const unverified = await actor({ label: 'billing-unverified', verified: false });
   const peerAdministrator = await actor({ label: 'billing-peer-administrator' });
+  const peerMember = await actor({ label: 'billing-peer-member' });
   const pending = await actor({ label: 'billing-pending' });
   const rejected = await actor({ label: 'billing-rejected' });
   const removed = await actor({ label: 'billing-removed' });
@@ -19,6 +20,7 @@ test('own billing is private across actors and command-owned state rejects direc
   assert.equal(ownCommunity.error, null); assert.equal(foreignCommunity.error, null);
   assert.equal((await admin.from('memberships').insert([
     { community_id: ownCommunity.data.id, user_id: peerAdministrator.id, role: 'administrator', status: 'active' },
+    { community_id: ownCommunity.data.id, user_id: peerMember.id, role: 'member', status: 'active' },
     { community_id: ownCommunity.data.id, user_id: pending.id, role: 'member', status: 'pending' },
     { community_id: ownCommunity.data.id, user_id: rejected.id, role: 'member', status: 'rejected' },
     { community_id: ownCommunity.data.id, user_id: removed.id, role: 'member', status: 'removed' },
@@ -32,6 +34,12 @@ test('own billing is private across actors and command-owned state rejects direc
   for (const table of ['billing_accounts', 'billing_jobs', 'billing_subscriptions']) {
     assert.deepEqual((await peerAdministrator.client.from(table).select('*').eq('account_id', owner.id)).data, [], `${table} leaked to a same-Community administrator`);
   }
+  for (const peer of [{ label: 'administrator', client: peerAdministrator.client }, { label: 'member', client: peerMember.client }]) {
+    assert.deepEqual((await peer.client.from('community_events').select('kind,actor_id').eq('community_id', ownCommunity.data.id).eq('kind', 'test_billing_requested')).data, [], `test billing activity leaked to a same-Community ${peer.label}`);
+    assert.ok((await peer.client.from('community_events').select('id').eq('community_id', ownCommunity.data.id)).data?.length, `same-Community ${peer.label} lost ordinary Community events`);
+  }
+  assert.deepEqual((await owner.client.from('billing_jobs').select('account_id,kind')).data, [{ account_id: owner.id, kind: 'checkout' }]);
+  assert.equal((await owner.client.from('billing_subscriptions').select('status')).data?.[0]?.status, 'active');
   for (const client of denied) {
     for (const table of ['billing_accounts', 'billing_jobs', 'billing_subscriptions']) {
       const read = await client.from(table).select('*');
@@ -73,7 +81,7 @@ test('own billing is private across actors and command-owned state rejects direc
   assert.notEqual(peerRequest.data.job_id, result.data.job_id);
   assert.deepEqual((await peerAdministrator.client.from('billing_jobs').select('account_id')).data, [{ account_id: peerAdministrator.id }]);
   assert.deepEqual((await owner.client.from('memberships').select('role,status').eq('community_id', ownCommunity.data.id).eq('user_id', owner.id)).data, [{ role: 'administrator', status: 'active' }]);
-  receipt('issue-22-rls-boundaries', { actorClasses: ['owner', 'same-Community administrator', 'foreign administrator', 'pending', 'rejected', 'removed', 'unrelated', 'unverified', 'anonymous', 'stripe worker'], directWritesDenied: true, webhookCannotChangeRoles: true, peerAdministratorCreatesOnlyOwnJob: true });
+  receipt('issue-22-rls-boundaries', { actorClasses: ['owner', 'same-Community administrator', 'foreign administrator', 'pending', 'rejected', 'removed', 'unrelated', 'unverified', 'anonymous', 'stripe worker'], directWritesDenied: true, webhookCannotChangeRoles: true, peerAdministratorCreatesOnlyOwnJob: true, billingAuditHiddenFromPeers: true });
 });
 
 test('billing projections do not leak through realtime or Storage and revoked members retain only account status', async () => {
