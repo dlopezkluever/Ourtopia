@@ -136,8 +136,23 @@ test('lane 4 approved unpaid member retains ordinary Community access', async ({
   await page.getByRole('link', { name: 'Back to your Communities' }).click();
   await expect(page.getByRole('heading', { name: `Welcome to ${fixture.community.name}.` })).toBeVisible();
   expect((await fixture.member.client.from('communities').select('id').eq('id', fixture.community.id)).data).toEqual([{ id: fixture.community.id }]);
+  await page.getByRole('link', { name: 'Messages', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Inbox', exact: true })).toBeVisible();
+  await page.getByLabel('Community', { exact: true }).selectOption(fixture.community.id);
+  await page.getByLabel('Member', { exact: true }).selectOption(fixture.owner.id);
+  await page.getByRole('button', { name: 'Start conversation', exact: true }).click();
+  const body = 'An unpaid member can still message the circle.';
+  await page.getByLabel(`Message to ${fixture.owner.email}`, { exact: true }).fill(body);
+  await page.getByRole('button', { name: 'Send message', exact: true }).click();
+  await expect(page.getByText(body, { exact: true })).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: 'Sent' })).toBeVisible();
+  await expect.poll(async () => (await admin.from('messages').select('author_id,body').eq('author_id', fixture.member.id)).data).toEqual([{ author_id: fixture.member.id, body }]);
+  expect((await fixture.owner.client.from('messages').select('body').eq('author_id', fixture.member.id)).data).toEqual([{ body }]);
+  await page.getByRole('link', { name: 'Your standing', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Your Solidarity Scores' })).toBeVisible();
+  expect((await fixture.member.client.rpc('my_reputation')).error).toBeNull();
   expect(await persistedStatus(fixture.member.id)).toEqual([]);
-  await capture(page, info, 4, { approvedUnpaidAccess: true, activityScope: 'all ordinary activity available at this base is Community home and membership reads' });
+  await capture(page, info, 4, { approvedUnpaidAccess: true, activityScope: 'Community home, private messaging to the administrator and own standing at merged master e246904' });
 });
 
 test('lane 5 invalid and changed raw signatures and forged redirects cannot set status', async ({ page }, info) => {
