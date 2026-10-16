@@ -170,3 +170,80 @@ test('durable receipts, writer fencing, atomic rollback and semantic checkout in
   assert.ok((await worker.rpc('claim_stripe_receipt', { p_event_id: remaining })).data);
   receipt('issue-22-server', { semanticRetry: true, staleTokenDenied: true, invalidStatusRolledBack: true, pendingCrashReclaimed: true, failedRetry: true });
 });
+
+test('worker rechecks current membership before claims, customer links and completion', { skip: process.env.BILLING_LIGHTWEIGHT === '1' }, async () => {
+  const { actor, admin, createCommunity, stripeWorker, receipt } = await import('../../scripts/verify/backend');
+  const owner = await actor({ label: 'billing-revoked-worker' });
+  const community = await createCommunity(owner.client);
+  assert.equal(community.error, null);
+  const args = { p_intent_id: randomUUID(), p_community_id: community.data.id, p_kind: 'checkout' };
+  const requested = await owner.client.rpc('request_test_billing', args);
+  assert.equal(requested.error, null);
+  const worker = stripeWorker();
+  const claimed = await worker.rpc('claim_test_billing', { p_job_id: requested.data.job_id });
+  assert.equal(claimed.error, null);
+  const removed = await admin.from('memberships').update({ status: 'removed' }).eq('community_id', community.data.id).eq('user_id', owner.id);
+  assert.equal(removed.error, null);
+  assert.equal((await owner.client.rpc('request_test_billing', args)).error?.code, '42501');
+  const commands = [
+    { name: 'claim_test_billing', args: { p_job_id: requested.data.job_id } },
+    { name: 'link_test_customer', args: { p_job_id: requested.data.job_id, p_claim_token: claimed.data.claim_token, p_customer_id: 'cus_revoked_fixture' } },
+    { name: 'finish_test_billing', args: { p_job_id: requested.data.job_id, p_claim_token: claimed.data.claim_token, p_failed: true } },
+  ];
+  for (const command of commands) assert.equal((await worker.rpc(command.name, command.args)).error?.code, '42501', command.name);
+  assert.equal((await owner.client.from('billing_accounts').select('customer_id').single()).data?.customer_id, null);
+  assert.equal((await owner.client.from('billing_jobs').select('state').single()).data?.state, 'processing');
+  receipt('issue-22-worker-current-membership', { revokedClaimDenied: true, revokedLinkDenied: true, revokedFinishDenied: true, priorIntentDenied: true });
+});
+
+test('generated signatures traverse durable reconciliation without claiming real provider acceptance', { skip: process.env.BILLING_LIGHTWEIGHT === '1' }, async () => {
+  const { actor, admin, createCommunity, stripeWorker, receipt } = await import('../../scripts/verify/backend');
+  const owner = await actor({ label: 'billing-signed-integration' });
+  const community = await createCommunity(owner.client);
+  assert.equal(community.error, null);
+  const requested = await owner.client.rpc('request_test_billing', { p_intent_id: randomUUID(), p_community_id: community.data.id, p_kind: 'checkout' });
+  assert.equal(requested.error, null);
+  const worker = stripeWorker();
+  const claim = await worker.rpc('claim_test_billing', { p_job_id: requested.data.job_id });
+  assert.equal(claim.error, null);
+  const suffix = randomUUID().replaceAll('-', '');
+  const customer = `cus_${suffix}`;
+  const subscription = `sub_${suffix}`;
+  assert.equal((await worker.rpc('link_test_customer', { p_job_id: requested.data.job_id, p_claim_token: claim.data.claim_token, p_customer_id: customer })).error, null);
+  const backend: BillingBackend = { rpc: async (name, args) => {
+    const result = await worker.rpc(name, args);
+    if (result.error) throw result.error;
+    return result.data;
+  } };
+  let currentStatus = 'active';
+  let providerReads = 0;
+  let fail = false;
+  const stripe = new TestStripe('sk_test_fixture', async () => {
+    providerReads++;
+    if (fail) return new Response(null, { status: 503 });
+    return Response.json({ ...current(currentStatus), id: subscription, customer, metadata: { account_id: owner.id } });
+  });
+  const event = (id: string, created: number) => JSON.stringify({ id, type: 'customer.subscription.updated', livemode: false, created,
+    data: { object: { id: subscription, customer, status: 'stale_payload' } } });
+  const deliver = (raw: string, signature = sign(raw)) => acceptWebhook({ raw, signature, secret, backend, stripe });
+  const newer = event(`evt_${suffix}new`, 9999999999);
+  await assert.rejects(deliver(`${newer} `, sign(newer)), /signature/);
+  assert.deepEqual((await admin.from('stripe_receipts').select('event_id').eq('event_id', `evt_${suffix}new`)).data, []);
+  assert.equal(providerReads, 0);
+  const first = await deliver(newer);
+  assert.equal(providerReads, 1);
+  assert.deepEqual(await deliver(newer), first);
+  assert.equal(providerReads, 1);
+  currentStatus = 'canceled';
+  const older = event(`evt_${suffix}old`, 1);
+  fail = true;
+  await assert.rejects(deliver(older), /retryable/);
+  assert.equal((await admin.from('stripe_receipts').select('state').eq('event_id', `evt_${suffix}old`).single()).data?.state, 'failed');
+  assert.equal((await owner.client.from('billing_subscriptions').select('status').single()).data?.status, 'active');
+  fail = false;
+  await deliver(older);
+  assert.equal((await owner.client.from('billing_subscriptions').select('status').single()).data?.status, 'canceled');
+  assert.deepEqual((await admin.from('stripe_receipts').select('state,attempts').eq('event_id', `evt_${suffix}old`).single()).data, { state: 'processed', attempts: 2 });
+  assert.deepEqual((await owner.client.from('memberships').select('role,status').eq('user_id', owner.id)).data, [{ role: 'administrator', status: 'active' }]);
+  receipt('issue-22-signed-integration', { signature: 'generated HMAC over exact raw body', persistence: 'real Postgres', provider: 'controlled current-object fixture, not real Stripe acceptance', outOfOrderConverged: true, failedRetried: true, membershipUnchanged: true });
+});

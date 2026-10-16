@@ -5,7 +5,7 @@ import { actor, admin, applyInvite, backendUrl, createCommunity, decideApplicati
 import { TestStripe } from './provider';
 import type { BillingBackend } from './worker';
 
-export function realBillingConfig() {
+function billingEnvironment() {
   const values = { ...process.env };
   for (const file of ['.env.stripe.local', '.env.stripe-functions.local']) {
     try {
@@ -15,6 +15,16 @@ export function realBillingConfig() {
       }
     } catch (error) { if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error; }
   }
+  return values;
+}
+
+export function realBillingConfigured() {
+  const values = billingEnvironment();
+  return Boolean(values.STRIPE_TEST_SECRET_KEY && values.STRIPE_WEBHOOK_SECRET);
+}
+
+export function realBillingConfig() {
+  const values = billingEnvironment();
   if (!values.STRIPE_TEST_SECRET_KEY || !values.STRIPE_WEBHOOK_SECRET) throw new Error('Real Stripe test acceptance requires ignored STRIPE_TEST_SECRET_KEY and STRIPE_WEBHOOK_SECRET.');
   if (!values.STRIPE_TEST_SECRET_KEY.startsWith('sk_test_') || !values.STRIPE_WEBHOOK_SECRET.startsWith('whsec_')) throw new Error('Only Stripe test configuration is permitted.');
   return { key: values.STRIPE_TEST_SECRET_KEY, webhook: values.STRIPE_WEBHOOK_SECRET };

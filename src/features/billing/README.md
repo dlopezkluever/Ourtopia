@@ -12,11 +12,15 @@ Each subscription has one durable writer lease. The worker acquires a fresh clai
 
 The `stripe_worker` database role can execute only billing worker commands. It cannot read billing tables directly, mutate membership, or invoke membership and notice commands. Its private signed JWT is separate from the service-role credential. Neither credential enters the browser. The browser receives its own RLS-filtered projection, a test Checkout URL, and safe failure messages. Stripe events and writer leases have no client read grants and are absent from realtime publications. This slice introduces no Storage objects or billing notices.
 
+Before claiming a job, linking its customer, or finishing it, the worker rechecks the persisted requesting account's verified identity and current membership in the job's immutable Community. The private guard calls the upstream current-membership guard with that persisted account and keeps its membership lock through the transaction. Receipt reconciliation continues for retained account records after membership removal, so Stripe status remains inspectable without restoring Community access.
+
 ## Run the disposable test lane
 
 Use the coordinator's runtime lease before starting a backend or browser workload. Keep the issue-22 port override uncommitted. Follow the existing guarded migration recipe and regenerate database types after applying the final migration.
 
 Provide `STRIPE_TEST_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` through the ignored `.env.stripe.local` file. Use a Stripe test secret key. The signing secret must match the local Stripe CLI listener. Do not place either value in a Vite variable or a command argument.
+
+No price ID environment variable is required. The server creates the fixed USD 500 monthly price through Checkout's inline price data. Clients cannot choose the price or interval.
 
 1. Run `node supabase/functions/stripe-checkout/local-env.mjs --check` to print availability booleans only.
 2. Start the lane backend and run `node scripts/verify/local-env.mjs`.
@@ -26,6 +30,8 @@ Provide `STRIPE_TEST_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` through the ignored
 6. Run the app and the issue-22 browser suite. The real-provider lanes require actual Stripe test Checkout completion. A fake provider cannot pass this gate.
 
 Keep screenshots, trace archives, customer IDs, and subscription receipts under ignored `.pilot-evidence`. A test browser can use Stripe's published test card numbers. Never use real card details. Shut down the listener, function server and backend after the assigned workload.
+
+Without the two provider secrets, journey lanes 1, 2, 3, and 6 through 10 report `BLOCKED P22-STRIPE-TEST-CONFIG` as skipped. These skips do not pass the affected acceptance boxes. Lanes 4 and 5 still exercise unpaid Community access and forged redirects on both viewports. Lane 5 calls the production signature handler with generated invalid or body-changed signatures and proves that no backend command runs. Server tests additionally exercise signed receipt persistence and reconciliation against real Postgres with controlled provider responses. Those fixtures do not replace real test Checkout, hosted cancellation, or current-object provider acceptance.
 
 ## Production activation is the first post-MVP release
 

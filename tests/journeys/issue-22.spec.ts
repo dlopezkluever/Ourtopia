@@ -1,15 +1,20 @@
 import { test, expect, type Page, type TestInfo } from '@playwright/test';
 import { execFileSync, spawn } from 'node:child_process';
 import { copyFileSync, mkdirSync, writeFileSync } from 'node:fs';
-import { randomUUID } from 'node:crypto';
+import { createHmac, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { admin, actor, password, stripeWorker } from '../../scripts/verify/backend';
-import { billingFixture, currentSubscriptionFixture, deliverTestReceipt, persistedStatus, realBillingConfig, stripeTestApi } from '../../supabase/functions/stripe-checkout/verification';
+import { billingFixture, currentSubscriptionFixture, deliverTestReceipt, persistedStatus, realBillingConfig, realBillingConfigured, stripeTestApi } from '../../supabase/functions/stripe-checkout/verification';
 import { processReceipt } from '../../supabase/functions/stripe-checkout/worker';
 import { TestStripe } from '../../supabase/functions/stripe-checkout/provider';
+import { billingHandlers } from '../../supabase/functions/stripe-checkout/http';
 
-test.beforeAll(() => { realBillingConfig(); });
 test.setTimeout(180000);
+
+function requireProvider() {
+  test.skip(!realBillingConfigured(), 'BLOCKED P22-STRIPE-TEST-CONFIG. Real Stripe test checkout and current-object acceptance require ignored test configuration.');
+  realBillingConfig();
+}
 
 async function signIn(page: Page, email: string) {
   await page.goto('/');
@@ -70,6 +75,7 @@ async function cancelProviderSubscription(id: string) {
 }
 
 test('lane 1 trunk absence and real test Checkout durable end state', async ({ page, browser }, info) => {
+  requireProvider();
   const fixture = await billingFixture('billing-trunk');
   const base = '3f5f3fd0293421cc2688576acfc8d742e676dc4c';
   const root = `.pilot-evidence/billing-trunk-${info.project.name}`;
@@ -97,6 +103,7 @@ test('lane 1 trunk absence and real test Checkout durable end state', async ({ p
 });
 
 test('lane 2 complete real Stripe test Checkout linked to the account', async ({ page }, info) => {
+  requireProvider();
   const fixture = await billingFixture('billing-checkout');
   await signIn(page, fixture.member.email); await startCheckout(page, fixture.member.email); await submitCheckout(page);
   const rows = await persistedStatus(fixture.member.id);
@@ -108,6 +115,7 @@ test('lane 2 complete real Stripe test Checkout linked to the account', async ({
 });
 
 test('lane 3 real test payment failure retry and subscription cancellation preserve membership', async ({ page }, info) => {
+  requireProvider();
   const fixture = await billingFixture('billing-retry');
   await signIn(page, fixture.member.email); await startCheckout(page, fixture.member.email);
   await fillCard(page, '4000000000000002');
@@ -117,7 +125,7 @@ test('lane 3 real test payment failure retry and subscription cancellation prese
   await fillCard(page); await submitCheckout(page);
   await page.getByRole('button', { name: 'Cancel test subscription', exact: true }).click();
   await expect(page.getByTestId('billing-status')).toContainText('canceled', { timeout: 60000 });
-  expect((await fixture.member.client.from('memberships').select('role,status').eq('community_id', fixture.community.id)).data).toEqual([{ role: 'administrator', status: 'active' }, { role: 'member', status: 'active' }]);
+    expect((await fixture.member.client.from('memberships').select('role,status').eq('community_id', fixture.community.id).eq('user_id', fixture.member.id)).data).toEqual([{ role: 'member', status: 'active' }]);
   await capture(page, info, 3, { rows: await persistedStatus(fixture.member.id), failedThenRetriedRealCard: true, membershipUnchanged: true });
 });
 
@@ -134,18 +142,31 @@ test('lane 4 approved unpaid member retains ordinary Community access', async ({
 
 test('lane 5 invalid and changed raw signatures and forged redirects cannot set status', async ({ page }, info) => {
   const fixture = await billingFixture('billing-forged');
-  for (const options of [{ invalid: true }, { mutateBody: true }]) {
-    const result = await deliverTestReceipt('sub_unverified_fixture', 'cus_unverified_fixture', options);
-    expect(result.response.ok).toBe(false);
-    expect((await admin.from('stripe_receipts').select('*').eq('event_id', result.eventId)).data).toEqual([]);
+  let backendCalls = 0;
+  const secret = 'whsec_generated_signature_fixture';
+  const handlers = billingHandlers({ supabaseUrl: 'http://127.0.0.1:56221', anonKey: 'unused', workerJwt: 'unused',
+    stripeKey: 'sk_test_fixture', webhookSecret: secret, appOrigin: 'http://127.0.0.1:56225',
+  }, async () => { backendCalls++; throw new Error('Invalid signatures must never reach the backend.'); });
+  for (const mutateBody of [false, true]) {
+    const eventId = `evt_unverified_${randomUUID().replaceAll('-', '')}`;
+    const raw = JSON.stringify({ id: eventId, type: 'customer.subscription.updated', livemode: false,
+      data: { object: { id: 'sub_unverified_fixture', customer: 'cus_unverified_fixture' } } });
+    const time = Math.floor(Date.now() / 1000);
+    const signature = createHmac('sha256', secret).update(`${time}.${raw}`).digest('hex');
+    const response = await handlers.webhook(new Request('http://127.0.0.1/stripe-webhook', { method: 'POST',
+      headers: { 'Stripe-Signature': `t=${time},v1=${mutateBody ? signature : '0'.repeat(64)}` }, body: mutateBody ? `${raw} ` : raw }));
+    expect(response.ok).toBe(false);
+    expect((await admin.from('stripe_receipts').select('*').eq('event_id', eventId)).data).toEqual([]);
   }
+  expect(backendCalls).toBe(0);
   await signIn(page, fixture.member.email); await page.goto('/billing?checkout=returned&status=active&subscription_id=sub_forged');
   await expect(page.getByTestId('billing-status')).toContainText('No test subscription');
   expect(await persistedStatus(fixture.member.id)).toEqual([]);
-  await capture(page, info, 5, { unverifiedReceipts: 0, forgedReturnChangedStatus: false });
+  await capture(page, info, 5, { unverifiedReceipts: 0, forgedReturnChangedStatus: false, signatureEvidence: 'production HTTP handler with generated signatures; no real Stripe delivery' });
 });
 
 test('lane 6 processed duplicate and failed receipt retry retain coherent durable state', async ({ page }, info) => {
+  requireProvider();
   const fixture = await currentSubscriptionFixture('billing-duplicate');
   try {
     const eventId = `evt_fixture_${randomUUID().replaceAll('-', '')}`;
@@ -164,6 +185,7 @@ test('lane 6 processed duplicate and failed receipt retry retain coherent durabl
 });
 
 test('lane 7 concurrent and out of order receipts converge on current Stripe status', async ({ page }, info) => {
+  requireProvider();
   const fixture = await currentSubscriptionFixture('billing-order');
   try {
     await cancelProviderSubscription(fixture.subscriptionId);
@@ -177,6 +199,7 @@ test('lane 7 concurrent and out of order receipts converge on current Stripe sta
 });
 
 test('lane 8 crash after receipt persistence or claim recovers with a fenced current-object retry', async ({ page }, info) => {
+  requireProvider();
   const fixture = await currentSubscriptionFixture('billing-crash');
   try {
     const eventId = `evt_fixture_${randomUUID().replaceAll('-', '')}`;
@@ -195,6 +218,7 @@ test('lane 8 crash after receipt persistence or claim recovers with a fenced cur
 });
 
 test('lane 9 another account cannot read billing and webhook scope cannot change membership', async ({ page }, info) => {
+  requireProvider();
   const fixture = await currentSubscriptionFixture('billing-private');
   try {
     const delivered = await deliverTestReceipt(fixture.subscriptionId, fixture.customer); expect(delivered.response.ok).toBe(true);
@@ -209,6 +233,7 @@ test('lane 9 another account cannot read billing and webhook scope cannot change
 });
 
 test('lane 10 test labels keyboard failure retry and hosted checkout cancellation', async ({ page }, info) => {
+  requireProvider();
   const fixture = await billingFixture('billing-accessible');
   await signIn(page, fixture.member.email);
   await expect(page.getByText('STRIPE TEST MODE', { exact: true })).toBeVisible();

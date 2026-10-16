@@ -70,6 +70,20 @@ create policy billing_account_read on public.billing_accounts for select to auth
 create policy billing_job_read on public.billing_jobs for select to authenticated using (account_id = auth.uid());
 create policy billing_subscription_read on public.billing_subscriptions for select to authenticated using (account_id = auth.uid());
 
+create function private.require_billing_membership(p_account_id uuid, p_community_id uuid)
+returns void language plpgsql security definer set search_path = '' as $$
+declare previous_subject text := current_setting('request.jwt.claim.sub', true);
+begin
+  if not exists(select 1 from auth.users where id = p_account_id and email_confirmed_at is not null) then
+    raise exception using errcode = '42501', message = 'A verified billing account is required.';
+  end if;
+  perform set_config('request.jwt.claim.sub', p_account_id::text, true);
+  perform public.require_current_membership(p_community_id);
+  perform set_config('request.jwt.claim.sub', coalesce(previous_subject, ''), true);
+end;
+$$;
+revoke all on function private.require_billing_membership(uuid, uuid) from public, anon, authenticated, stripe_worker;
+
 create function public.request_test_billing(p_intent_id uuid, p_community_id uuid, p_kind text)
 returns jsonb language plpgsql security definer set search_path = '' as $$
 declare
@@ -127,6 +141,7 @@ declare job public.billing_jobs; customer text;
 begin
   select * into job from public.billing_jobs where id = p_job_id for update;
   if job.id is null then raise exception using errcode = '22023', message = 'Unknown billing job.'; end if;
+  perform private.require_billing_membership(job.account_id, job.community_id);
   if job.state = 'ready' then return to_jsonb(job); end if;
   if job.state = 'processing' and job.lease_until > clock_timestamp() then return null; end if;
   if job.created_at < now() - interval '22 hours' then
@@ -144,6 +159,8 @@ returns void language plpgsql security definer set search_path = '' as $$
 declare job public.billing_jobs;
 begin
   select * into job from public.billing_jobs where id = p_job_id for update;
+  if job.id is null then raise exception using errcode = '22023', message = 'Unknown billing job.'; end if;
+  perform private.require_billing_membership(job.account_id, job.community_id);
   if job.state <> 'processing' or job.claim_token is distinct from p_claim_token or job.lease_until <= clock_timestamp() then
     raise exception using errcode = '55000', message = 'The billing lease is no longer current.';
   end if;
@@ -157,6 +174,8 @@ returns jsonb language plpgsql security definer set search_path = '' as $$
 declare job public.billing_jobs;
 begin
   select * into job from public.billing_jobs where id = p_job_id for update;
+  if job.id is null then raise exception using errcode = '22023', message = 'Unknown billing job.'; end if;
+  perform private.require_billing_membership(job.account_id, job.community_id);
   if job.state = 'ready' then return to_jsonb(job); end if;
   if job.state <> 'processing' or job.claim_token is distinct from p_claim_token or job.lease_until <= clock_timestamp() then
     raise exception using errcode = '55000', message = 'The billing lease is no longer current.';
