@@ -28,17 +28,21 @@ jobs:
       - run: npm run test:server -- tests/server/issue-3.test.ts
       - run: npm run test:server -- tests/server/issue-4.test.ts
       - run: npm run test:server -- tests/server/issue-15.test.ts
+      - run: npm run test:server -- tests/server/issue-14.test.ts
       - run: npm run test:rls -- tests/rls/issue-2.test.ts
       - run: npm run test:rls -- tests/rls/issue-3.test.ts
       - run: npm run test:rls -- tests/rls/issue-4.test.ts
       - run: npm run test:rls -- tests/rls/issue-15.test.ts
+      - run: npm run test:rls -- tests/rls/issue-14.test.ts
       - run: npm run test:journey -- tests/journeys/issue-2.spec.ts
       - run: npm run test:journey -- tests/journeys/issue-3.spec.ts
       - run: npm run test:journey -- tests/journeys/issue-4.spec.ts
       - run: npm run test:journey -- tests/journeys/issue-15.spec.ts
+      - run: npm run test:journey -- tests/journeys/issue-14.spec.ts
       - run: npm run verify:perf -- --issue 2 --base 2af28e7a06db971e8e5fbbf01b0b8bda07f81c76 --head $(git rev-parse HEAD) --pairs 10
       - run: npm run verify:perf -- --issue 3 --base a0eff460f5707d128141857d275f21c1a111ac1c --head $(git rev-parse HEAD) --pairs 10
       - run: npm run verify:perf -- --issue 4 --base 3f5f3fd0293421cc2688576acfc8d742e676dc4c --head $(git rev-parse HEAD) --pairs 10
       - run: npm run verify:perf -- --issue 15 --base 714ebbd222b19be1e6ca0457bb1bd82a232e8a6b --head $(git rev-parse HEAD) --pairs 10
+      - run: npm run verify:perf -- --issue 14 --base e246904e579ef4231dd90e62be01f5c6f9abfd65 --head $(git rev-parse HEAD) --pairs 10
       - if: always()
         run: npx supabase stop --project-id ourtopia-issue-2

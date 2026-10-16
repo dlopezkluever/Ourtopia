@@ -138,6 +138,27 @@ export async function activeMember(owner: Awaited<ReturnType<typeof actor>>, com
   return member;
 }
 
+export async function pendingVouchApplicant(owner: Awaited<ReturnType<typeof actor>>, communityId: string, label = 'vouch-applicant') {
+  const applicant = await actor({ label });
+  const application = await applyInvite(applicant, (await issueInvite(owner, communityId, applicant.email)).id);
+  return { applicant, application };
+}
+
+export async function vouchFixture(label = 'vouch') {
+  const { owner, community } = await membershipFixture(label);
+  const sponsor = await activeMember(owner, community.id, `${label}-sponsor`);
+  const { applicant, application } = await pendingVouchApplicant(owner, community.id, `${label}-pending`);
+  return { owner, community, sponsor, applicant, application };
+}
+
+export async function configureVouch(owner: Awaited<ReturnType<typeof actor>>, communityId: string, sponsorId: string, limit = 3, eligible = true, intent = randomUUID()) {
+  return owner.client.rpc('configure_vouch', { p_intent_id: intent, p_community_id: communityId, p_sponsor_id: sponsorId, p_eligible: eligible, p_annual_limit: limit });
+}
+
+export async function submitVouch(sponsor: Awaited<ReturnType<typeof actor>>, applicationId: string, statement = 'I know this neighbor and trust them to contribute thoughtfully.', intent = randomUUID()) {
+  return sponsor.client.rpc('submit_vouch', { p_intent_id: intent, p_application_id: applicationId, p_statement: statement });
+}
+
 export const conversationRow = z.object({ id: z.uuid(), community_id: z.uuid(), participant_low: z.uuid(), participant_high: z.uuid(), started_by: z.uuid(), created_at: z.string() });
 export const messageRow = z.object({ id: z.uuid(), conversation_id: z.uuid(), community_id: z.uuid(), author_id: z.uuid(), intent_id: z.uuid(), body: z.string(), created_at: z.string() });
 
