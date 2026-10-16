@@ -23,7 +23,73 @@ export type Database = {
           }
         },"public": {
           Tables: {
-            "command_intents": {
+            "billing_accounts": {
+                  Row: {
+                    "account_id": string,"created_at": string,"customer_id": string | null
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "account_id": string,"created_at"?: string,"customer_id"?: string | null
+                  }
+                  Update: {
+                    "account_id"?: string,"created_at"?: string,"customer_id"?: string | null
+                  }
+                  Relationships: [
+
+                  ]
+                },"billing_jobs": {
+                  Row: {
+                    "account_id": string,"checkout_url": string | null,"claim_token": string | null,"community_id": string,"created_at": string,"expires_at": string | null,"id": string,"kind": string,"last_error": string | null,"lease_until": string | null,"session_id": string | null,"state": string,"subscription_id": string | null
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "account_id": string,"checkout_url"?: string | null,"claim_token"?: string | null,"community_id": string,"created_at"?: string,"expires_at"?: string | null,"id"?: string,"kind": string,"last_error"?: string | null,"lease_until"?: string | null,"session_id"?: string | null,"state"?: string,"subscription_id"?: string | null
+                  }
+                  Update: {
+                    "account_id"?: string,"checkout_url"?: string | null,"claim_token"?: string | null,"community_id"?: string,"created_at"?: string,"expires_at"?: string | null,"id"?: string,"kind"?: string,"last_error"?: string | null,"lease_until"?: string | null,"session_id"?: string | null,"state"?: string,"subscription_id"?: string | null
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "billing_jobs_account_id_fkey"
+      columns: ["account_id"]
+isOneToOne: false
+      referencedRelation: "billing_accounts"
+      referencedColumns: ["account_id"]
+    },{
+      foreignKeyName: "billing_jobs_community_id_fkey"
+      columns: ["community_id"]
+isOneToOne: false
+      referencedRelation: "communities"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"billing_subscriptions": {
+                  Row: {
+                    "account_id": string,"cancel_at_period_end": boolean,"customer_id": string,"reconciled_at": string,"status": string,"subscription_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "account_id": string,"cancel_at_period_end": boolean,"customer_id": string,"reconciled_at"?: string,"status": string,"subscription_id": string
+                  }
+                  Update: {
+                    "account_id"?: string,"cancel_at_period_end"?: boolean,"customer_id"?: string,"reconciled_at"?: string,"status"?: string,"subscription_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "billing_subscriptions_account_id_fkey"
+      columns: ["account_id"]
+isOneToOne: false
+      referencedRelation: "billing_accounts"
+      referencedColumns: ["account_id"]
+    },{
+      foreignKeyName: "billing_subscriptions_customer_id_fkey"
+      columns: ["customer_id"]
+isOneToOne: false
+      referencedRelation: "billing_accounts"
+      referencedColumns: ["customer_id"]
+    }
+                  ]
+                },"command_intents": {
                   Row: {
                     "actor_id": string,"command": string,"created_at": string,"intent_id": string,"payload": NonNullable<Json>,"result": NonNullable<Json>
                   }
@@ -275,6 +341,40 @@ isOneToOne: true
       referencedColumns: ["id"]
     }
                   ]
+                },"stripe_receipts": {
+                  Row: {
+                    "attempts": number,"customer_id": string | null,"event_id": string,"event_type": string,"fingerprint": string,"last_error": string | null,"processed_at": string | null,"received_at": string,"result": Json | null,"state": string,"subscription_id": string | null
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "attempts"?: number,"customer_id"?: string | null,"event_id": string,"event_type": string,"fingerprint": string,"last_error"?: string | null,"processed_at"?: string | null,"received_at"?: string,"result"?: Json | null,"state"?: string,"subscription_id"?: string | null
+                  }
+                  Update: {
+                    "attempts"?: number,"customer_id"?: string | null,"event_id"?: string,"event_type"?: string,"fingerprint"?: string,"last_error"?: string | null,"processed_at"?: string | null,"received_at"?: string,"result"?: Json | null,"state"?: string,"subscription_id"?: string | null
+                  }
+                  Relationships: [
+
+                  ]
+                },"stripe_writers": {
+                  Row: {
+                    "claim_token": string,"event_id": string,"lease_until": string,"subscription_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "claim_token": string,"event_id": string,"lease_until": string,"subscription_id": string
+                  }
+                  Update: {
+                    "claim_token"?: string,"event_id"?: string,"lease_until"?: string,"subscription_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "stripe_writers_event_id_fkey"
+      columns: ["event_id"]
+isOneToOne: false
+      referencedRelation: "stripe_receipts"
+      referencedColumns: ["event_id"]
+    }
+                  ]
                 }
           }
           Views: {
@@ -287,6 +387,12 @@ isOneToOne: true
 "claim_notification":
 { Args: { "p_outbox_id"?: string }; Returns: Json
                            },
+"claim_stripe_receipt":
+{ Args: { "p_event_id": string }; Returns: Json
+                           },
+"claim_test_billing":
+{ Args: { "p_job_id": string }; Returns: Json
+                           },
 "create_community":
 { Args: { "p_description"?: string,"p_intent_id": string,"p_name": string }; Returns: Json
                            },
@@ -295,6 +401,12 @@ isOneToOne: true
                            },
 "finish_notification":
 { Args: { "p_claim_token": string,"p_error"?: string,"p_outbox_id": string }; Returns: Json
+                           },
+"finish_stripe_receipt":
+{ Args: { "p_account_id"?: string,"p_cancel_at_period_end"?: boolean,"p_checkout_job_id"?: string,"p_claim_token": string,"p_event_id": string,"p_failed"?: boolean,"p_status"?: string }; Returns: Json
+                           },
+"finish_test_billing":
+{ Args: { "p_checkout_url"?: string,"p_claim_token": string,"p_expires_at"?: string,"p_failed"?: boolean,"p_job_id": string,"p_session_id"?: string }; Returns: Json
                            },
 "is_active_member":
 { Args: { "target_community": string }; Returns: boolean
@@ -305,8 +417,17 @@ isOneToOne: true
 "issue_invite":
 { Args: { "p_community_id": string,"p_email": string,"p_intent_id": string }; Returns: Json
                            },
+"link_test_customer":
+{ Args: { "p_claim_token": string,"p_customer_id": string,"p_job_id": string }; Returns: undefined
+                           },
+"receive_stripe_receipt":
+{ Args: { "p_customer_id": string,"p_event_id": string,"p_event_type": string,"p_fingerprint": string,"p_subscription_id": string }; Returns: Json
+                           },
 "redeem_invite":
 { Args: { "p_intent_id": string,"p_invite_id": string }; Returns: Json
+                           },
+"request_test_billing":
+{ Args: { "p_community_id": string,"p_intent_id": string,"p_kind": string }; Returns: Json
                            },
 "require_current_membership":
 { Args: { "p_administrator"?: boolean,"p_community_id": string }; Returns: undefined

@@ -282,7 +282,9 @@ test('an old subscription receipt cannot expire a newer open Checkout job', { sk
   await reconcile(firstJob, 'active');
   const completed = await finish(firstJob, firstClaim.data.claim_token);
   assert.equal(completed.subscription_id, subscription);
-  assert.ok(Date.parse(completed.expires_at) <= Date.now());
+  const consumed = await owner.client.from('billing_jobs').select('id').eq('id', firstJob).lte('expires_at', 'now');
+  assert.equal(consumed.error, null);
+  assert.deepEqual(consumed.data, [{ id: firstJob }]);
   await reconcile(firstJob, 'canceled');
   const nextJob = await requestJob();
   assert.notEqual(nextJob, firstJob);
