@@ -81,6 +81,8 @@ async function listingJourney(page: Page, browser: Browser, f: Awaited<ReturnTyp
     await other.page.getByRole('button', { name: 'Request this help', exact: true }).click();
     await expect(other.page.getByText(`Your offer is waiting for ${f.author.email} to accept.`)).toBeVisible();
     await page.reload();
+    await expect(page.getByRole('button', { name: `Accept ${requester.email}`, exact: true })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.getByRole('button', { name: `Accept ${requester.email}`, exact: true }).click();
     const region = exchangeRegion(page, requester.email);
     await expect(region.getByText('Committed', { exact: true })).toBeVisible();
@@ -95,7 +97,7 @@ async function listingJourney(page: Page, browser: Browser, f: Awaited<ReturnTyp
 }
 
 test('lane 1 fixed trunk lacks help and head commits one shared help Exchange with correct roles', async ({ page, browser }, info) => {
-  const base = 'e246904e579ef4231dd90e62be01f5c6f9abfd65';
+  const base = '26e3bb37c7dbc7f14bdf95a36c8cd4b838dba413';
   const root = `${process.env.EVIDENCE_DIR ?? '.pilot-evidence'}/trunk-12-${info.project.name}`;
   const paths = execFileSync('git', ['ls-tree', '-r', '--name-only', base], { encoding: 'utf8' }).split('\n').filter(path => /^(src\/|vite.config.ts$|index.html$|package.json$)/.test(path));
   for (const path of paths) {

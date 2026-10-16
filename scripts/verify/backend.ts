@@ -1,9 +1,9 @@
+import { helpExchangeSchema, helpPostSchema } from '../../src/features/help/model';
 import { createClient } from '@supabase/supabase-js';
 import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { createHmac, randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { helpExchangeSchema, helpPostSchema } from '../../src/features/help/model';
 
 for (const file of ['.env.local', '.env.test.local']) {
   try {
@@ -184,6 +184,37 @@ export async function seedIncident(communityId: string, subjectId: string, type:
   const result = await admin.from('trust_incidents').insert({ community_id: communityId, subject_id: subjectId, type, status, source_kind: 'fixture', source_id: randomUUID() }).select('id').single();
   if (result.error) throw result.error;
   return result.data.id;
+}
+
+export const drillDetails = {
+  title: "Alice's Makita drill", description: 'Cordless Makita drill with two batteries and charger.', category: 'tools', condition: 'Good. Light marks on the case.',
+  replacement_value: 180, pickup_notes: 'Meet at the front porch.', lending_conditions: 'Return with charged batteries.', minimum_score: 45,
+  gratitude: 'Optional $5 toward replacement bits. No priority benefit.', availability: [{ starts_on: '2027-01-10', ends_on: '2027-01-20' }, { starts_on: '2027-02-01', ends_on: '2027-02-05' }],
+};
+export async function listingFixture(label = 'listing') {
+  const f = await membershipFixture(label);
+  const alice = await activeMember(f.owner, f.community.id, `${label}-alice`);
+  const bob = await activeMember(f.owner, f.community.id, `${label}-bob`);
+  return { ...f, alice, bob };
+}
+export async function publishDrill(member: Awaited<ReturnType<typeof actor>>, communityId: string, details = drillDetails, intent = randomUUID()) {
+  const result = await member.client.rpc('save_listing', { p_intent_id: intent, p_community_id: communityId, p_listing_id: null, p_expected_version: 0, p_details: details });
+  if (result.error) throw result.error;
+  return z.object({ id: z.uuid(), community_id: z.uuid(), owner_id: z.uuid(), title: z.string(), status: z.string(), version: z.number(), replacement_value: z.number(), minimum_score: z.number() }).parse(result.data);
+}
+export const listingImageBytes = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==', 'base64');
+export async function prepareListingImage(member: Awaited<ReturnType<typeof actor>>, listingId: string) {
+  const result = await member.client.rpc('prepare_listing_image', { p_intent_id: randomUUID(), p_listing_id: listingId, p_image_id: randomUUID(), p_mime_type: 'image/png', p_byte_size: listingImageBytes.length });
+  if (result.error) throw result.error;
+  return z.object({ id: z.uuid(), object_path: z.string() }).parse(result.data);
+}
+export async function uploadListingImage(member: Awaited<ReturnType<typeof actor>>, listingId: string) {
+  const image = await prepareListingImage(member, listingId);
+  const uploaded = await member.client.storage.from('listing-images').upload(image.object_path, listingImageBytes, { contentType: 'image/png' });
+  if (uploaded.error) throw uploaded.error;
+  const completed = await member.client.rpc('complete_listing_image', { p_intent_id: randomUUID(), p_image_id: image.id });
+  if (completed.error) throw completed.error;
+  return image;
 }
 
 export const helpListingFields = (overrides: Record<string, unknown> = {}) => ({ title: 'Moving help with a van', description: 'I can lift and drive.', category: 'moving', skill: 'Lifting and van driving', skill_level: 'experienced', availability: 'Weekend mornings', geographic_constraints: 'Within 3 miles of Maple Street', scheduling_preferences: 'Two days notice', ...overrides });

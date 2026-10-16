@@ -276,7 +276,7 @@ function HelpPostPage({ userId, communityId, kind, postId, version, go, onChange
       <h3>Offers waiting for you</h3>
       {pending.length === 0 ? <p className="muted">No offers waiting.</p> : <ul className="help-offers" aria-label="Offers waiting">{pending.map(offer => <li key={offer.id}>
         <span><strong>{offer.memberEmail}</strong>{offer.note && <small>{offer.note}</small>}</span>
-        <Button className="primary-button" type="button" onClick={() => void run(() => supabase.rpc('accept_help_commitment', { p_intent_id: intentFor(memory, { accept: offer.id }), p_commitment_id: offer.id }))}>Accept {offer.memberEmail}</Button>
+        <Button className="primary-button" type="button" aria-label={`Accept ${offer.memberEmail}`} onClick={() => void run(() => supabase.rpc('accept_help_commitment', { p_intent_id: intentFor(memory, { accept: offer.id }), p_commitment_id: offer.id }))}>Accept</Button>
       </li>)}</ul>}
     </div>}
     {ownPending && <p className="notice" role="note">Your offer is waiting for {post.ownerEmail} to accept.</p>}
