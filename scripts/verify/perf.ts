@@ -10,11 +10,13 @@ import { activeMember, actor, createCommunity, membershipFixture, password } fro
 import { z } from 'zod';
 import { standingSchema } from '../../src/features/reputation/model';
 import { communitySchema } from '../../src/features/communities/model';
+import { drillDetails } from './backend';
+import { listingSchema } from '../../src/features/listings/model';
 import { conversationSchema, messageSchema } from '../../src/features/messages/model';
 
 const { values } = parseArgs({ options: { issue: { type: 'string' }, base: { type: 'string' }, head: { type: 'string' }, pairs: { type: 'string', default: '10' } } });
 if (values.issue === '15') await verifyIssue15(values);
-else if (values.issue === '3' || values.issue === '4') await verifyIssue3(values);
+else if (values.issue === '3' || values.issue === '4' || values.issue === '5') await verifyIssue3(values);
 else await verifyIssue2(values);
 
 type PerfArguments = { issue?: string; base?: string; head?: string; pairs?: string };
@@ -217,7 +219,7 @@ try {
 }
 
 async function verifyIssue3(values: PerfArguments) {
-assert.ok(values.issue === '3' || values.issue === '4');
+assert.ok(values.issue === '3' || values.issue === '4' || values.issue === '5');
 const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
 assert.equal(values.head, head);
 assert.ok(values.base);
@@ -227,15 +229,28 @@ const directory = `${process.env.EVIDENCE_DIR ?? '.pilot-evidence'}/perf`;
 mkdirSync(directory, { recursive: true });
 const base = values.base;
 assert.equal(execFileSync('git', ['cat-file', '-t', `${base}:package.json`], { encoding: 'utf8' }).trim(), 'blob', 'P03 needs the real P02 runtime baseline.');
-const trunkRoot = resolve('..', `perf-trunk-${values.issue}`);
+const trunkRoot = values.issue === '5' ? resolve('.pilot-evidence', 'perf-trunk-5') : resolve('..', `perf-trunk-${values.issue}`);
 const trunkModules = join(trunkRoot, 'node_modules');
 function removeTrunk() {
+  if (values.issue === '5') return;
   if (existsSync(trunkModules)) unlinkSync(trunkModules);
   if (existsSync(trunkRoot)) execFileSync('git', ['worktree', 'remove', '--force', trunkRoot], { stdio: 'inherit' });
   execFileSync('git', ['worktree', 'prune']);
   assert.ok(existsSync('node_modules/vite/package.json'), 'Trunk cleanup must not touch head dependencies.');
 }
 function addTrunk() {
+  if (values.issue === '5') {
+    assert.equal(execFileSync('git', ['diff', base, 'HEAD', '--', 'package-lock.json'], { encoding: 'utf8' }), '', 'Trunk requires identical dependencies.');
+    const paths = execFileSync('git', ['ls-tree', '-r', '--name-only', base], { encoding: 'utf8' }).split('\n').filter(path => /^(src\/|vite.config.ts$|index.html$|package.json$)/.test(path));
+    for (const path of paths) {
+      const target = join(trunkRoot, path);
+      mkdirSync(resolve(target, '..'), { recursive: true });
+      writeFileSync(target, execFileSync('git', ['show', `${base}:${path}`]));
+    }
+    copyFileSync('.env.local', join(trunkRoot, '.env.local'));
+    writeFileSync(join(trunkRoot, 'perf.vite.config.ts'), "import { mergeConfig } from 'vite';\nimport config from './vite.config';\nexport default mergeConfig(config, { cacheDir: '.vite-perf-cache' });\n");
+    return;
+  }
   removeTrunk();
   execFileSync('git', ['worktree', 'add', '--detach', trunkRoot, base], { stdio: 'inherit' });
   assert.equal(execFileSync('git', ['rev-parse', 'HEAD'], { cwd: trunkRoot, encoding: 'utf8' }).trim(), execFileSync('git', ['rev-parse', `${base}^{commit}`], { encoding: 'utf8' }).trim());
@@ -272,9 +287,10 @@ type Sample = { index: number; side: string; readinessMs: number; queryMs: numbe
 const samples: Sample[] = [];
 const actions: { index: number; inviteMs: number; applyMs: number; approveMs: number; visibleMs: number; applicationId: string; membershipStatus: string }[] = [];
 const profiles: { index: number; queryMs: number; visibleMs: number; subjectId: string }[] = [];
+const listings: { index: number; commandMs: number; queryMs: number; visibleMs: number; listingId: string }[] = [];
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH ?? (process.platform === 'win32' ? 'C:/Program Files/Google/Chrome/Application/chrome.exe' : undefined) });
 function persist(extra: unknown = {}) {
-  writeFileSync(`${directory}/samples.json`, JSON.stringify({ utc: new Date().toISOString(), head, base: values.base, startup, samples, actions, profiles, host: { cores: cpus().length, totalMemory: totalmem(), freeMemory: freemem(), loadAverage: loadavg() }, extra }, null, 2));
+  writeFileSync(`${directory}/samples.json`, JSON.stringify({ utc: new Date().toISOString(), head, base: values.base, startup, samples, actions, profiles, ...(values.issue === '5' ? { listings } : {}), host: { cores: cpus().length, totalMemory: totalmem(), freeMemory: freemem(), loadAverage: loadavg() }, extra }, null, 2));
 }
 try {
   addTrunk();
@@ -303,6 +319,28 @@ try {
         assert.deepEqual(query.data, [community]);
         samples.push({ index, side, readinessMs, queryMs, communityId: community.id });
         persist({ phase: 'paired reads', errors: 0 });
+        if (side === 'head' && values.issue === '5') {
+          await page.goto(`/communities/${community.id}/listings`);
+          await page.getByRole('button', { name: 'Share an item', exact: true }).click();
+          for (const [label, value] of [['Title', drillDetails.title], ['Description', drillDetails.description], ['Condition', drillDetails.condition], ['Estimated replacement value ($)', '180'], ['Minimum Community Solidarity Score', '45'], ['Available from 1', '2027-01-10'], ['Available through 1', '2027-01-20']] as const) await page.getByLabel(label, { exact: true }).fill(value);
+          let started = 0;
+          page.on('request', request => { if (request.url().includes('/rpc/save_listing')) started = performance.now(); });
+          const response = page.waitForResponse(response => response.url().includes('/rpc/save_listing')).then(response => { assert.equal(response.status(), 200); return { commandMs: performance.now() - started }; });
+          const actionStart = performance.now();
+          await page.getByRole('button', { name: 'Save Listing', exact: true }).click();
+          await expect(page.getByRole('heading', { name: drillDetails.title, exact: true })).toBeVisible();
+          const visibleMs = performance.now() - actionStart;
+          const saved = await response;
+          const readStart = performance.now();
+          const result = await owner.client.from('listings').select('*,listing_availability(starts_on,ends_on)').eq('community_id', String(community.id)).single();
+          const queryMs = performance.now() - readStart;
+          assert.equal(result.error, null);
+          const persisted = listingSchema.parse(result.data);
+          assert.equal(persisted.title, "Alice's Makita drill"); assert.equal(persisted.replacement_value, 180); assert.equal(persisted.minimum_score, 45); assert.equal(persisted.owner_id, owner.id);
+          await page.reload(); await expect(page.getByRole('heading', { name: drillDetails.title, exact: true })).toBeVisible();
+          listings.push({ index, commandMs: saved.commandMs, queryMs, visibleMs, listingId: persisted.id });
+          persist({ phase: 'Listing persisted and visible', errors: 0 });
+        }
         if (side === 'head' && values.issue === '4') {
           const subject = await activeMember(owner, String(community.id), 'perf-profile-subject');
           const queryStart = performance.now();
@@ -374,6 +412,18 @@ try {
   const summary = (side: string) => ({ readinessMedianMs: median(samples.filter(row => row.side === side).map(row => row.readinessMs)), queryMedianMs: median(samples.filter(row => row.side === side).map(row => row.queryMs)) });
   const baseline = summary('trunk');
   const current = summary('head');
+  if (values.issue === '5') {
+    assert.equal(listings.length, count);
+    const added = { commandMedianMs: median(listings.map(row => row.commandMs)), queryMedianMs: median(listings.map(row => row.queryMs)), visibleMedianMs: median(listings.map(row => row.visibleMs)) };
+    const ordered = listings.map(row => row.queryMs).sort((a,b) => a-b);
+    const queryP95Ms = ordered[Math.ceil(ordered.length * .95) - 1];
+    const checks = { comparableReadiness: current.readinessMedianMs <= Math.max(1.2 * baseline.readinessMedianMs, baseline.readinessMedianMs + 100), comparableRead: current.queryMedianMs <= Math.max(1.2 * baseline.queryMedianMs, baseline.queryMedianMs + 100), command: added.commandMedianMs <= 1000, visible: added.visibleMedianMs <= 2000, query: queryP95Ms <= 3000, startup: Object.values(startup).every(value => value <= 60000) };
+    persist({ errors: 0, pairs: count, baseline, head: current, added, queryP95Ms, checks, mode: 'Local Vite development, serial Chrome. Equivalent persisted Community reads and authenticated reloads. Listing publication is absent on trunk and uses absolute budgets. No provider wait. No throughput or speedup claim.' });
+    writeFileSync(`${directory}/report.md`, `P05 budget probe at ${head}.\n\n${count} interleaved trunk/head pairs. Trunk ${values.base} lacks Listing publication. Shared persisted Community reads and reloads use equivalent fixtures. Added publication measures the command response and visible durable detail, followed by direct RLS and reload assertions for the $180 drill and minimum score 45.\n\nBaseline ${JSON.stringify(baseline)}. Head ${JSON.stringify(current)}. Added ${JSON.stringify(added)}. Query p95 ${queryP95Ms} ms. Checks ${JSON.stringify(checks)}.\n\nZero failed samples. Raw samples retain host memory and every duration. Local HTTP, database command and browser rendering are timed. No saturation limiter was established. Optimization conclusions are inconclusive. No speedup or production-throughput claim.\n`);
+    assert.ok(Object.values(checks).every(Boolean), JSON.stringify(checks));
+    console.log(JSON.stringify({ baseline, head: current, added, queryP95Ms, checks }));
+    return;
+  }
   if (values.issue === '4') {
     assert.equal(profiles.length, count);
     const added = { queryMedianMs: median(profiles.map(row => row.queryMs)), visibleMedianMs: median(profiles.map(row => row.visibleMs)) };

@@ -157,6 +157,66 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"listing_availability": {
+                  Row: {
+                    "dates": unknown,"ends_on": string,"id": string,"listing_id": string,"starts_on": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "dates"?: never,"ends_on": string,"id"?: string,"listing_id": string,"starts_on": string
+                  }
+                  Update: {
+                    "dates"?: never,"ends_on"?: string,"id"?: string,"listing_id"?: string,"starts_on"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "listing_availability_listing_id_fkey"
+      columns: ["listing_id"]
+isOneToOne: false
+      referencedRelation: "listings"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"listing_images": {
+                  Row: {
+                    "byte_size": number,"created_at": string,"id": string,"listing_id": string,"mime_type": string,"object_path": string,"state": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "byte_size": number,"created_at"?: string,"id": string,"listing_id": string,"mime_type": string,"object_path": string,"state"?: string
+                  }
+                  Update: {
+                    "byte_size"?: number,"created_at"?: string,"id"?: string,"listing_id"?: string,"mime_type"?: string,"object_path"?: string,"state"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "listing_images_listing_id_fkey"
+      columns: ["listing_id"]
+isOneToOne: false
+      referencedRelation: "listings"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"listings": {
+                  Row: {
+                    "category": string,"community_id": string,"condition": string,"created_at": string,"description": string,"gratitude": string,"id": string,"lending_conditions": string,"minimum_score": number,"owner_id": string,"pickup_notes": string,"replacement_value": number,"status": string,"title": string,"type": string,"updated_at": string,"version": number
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "category": string,"community_id": string,"condition": string,"created_at"?: string,"description": string,"gratitude"?: string,"id"?: string,"lending_conditions": string,"minimum_score": number,"owner_id": string,"pickup_notes": string,"replacement_value": number,"status"?: string,"title": string,"type"?: string,"updated_at"?: string,"version"?: number
+                  }
+                  Update: {
+                    "category"?: string,"community_id"?: string,"condition"?: string,"created_at"?: string,"description"?: string,"gratitude"?: string,"id"?: string,"lending_conditions"?: string,"minimum_score"?: number,"owner_id"?: string,"pickup_notes"?: string,"replacement_value"?: number,"status"?: string,"title"?: string,"type"?: string,"updated_at"?: string,"version"?: number
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "listings_community_id_fkey"
+      columns: ["community_id"]
+isOneToOne: false
+      referencedRelation: "communities"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"membership_access_hints": {
                   Row: {
                     "community_id": string,"id": string,"user_id": string
@@ -502,6 +562,9 @@ isOneToOne: false
 "claim_notification":
 { Args: { "p_outbox_id"?: string }; Returns: Json
                            },
+"complete_listing_image":
+{ Args: { "p_image_id": string,"p_intent_id": string }; Returns: Json
+                           },
 "conversation_candidates":
 { Args: { "p_community_id": string }; Returns: {
               "email": string,"user_id": string
@@ -544,14 +607,23 @@ isOneToOne: false
 "my_reputation":
 { Args: Record<PropertyKey, never>; Returns: Json
                            },
+"prepare_listing_image":
+{ Args: { "p_byte_size": number,"p_image_id": string,"p_intent_id": string,"p_listing_id": string,"p_mime_type": string }; Returns: Json
+                           },
 "redeem_invite":
 { Args: { "p_intent_id": string,"p_invite_id": string }; Returns: Json
+                           },
+"remove_listing_image":
+{ Args: { "p_image_id": string,"p_intent_id": string }; Returns: Json
                            },
 "require_current_membership":
 { Args: { "p_administrator"?: boolean,"p_community_id": string }; Returns: undefined
                            },
 "retry_notification":
 { Args: { "p_intent_id": string,"p_outbox_id": string }; Returns: Json
+                           },
+"save_listing":
+{ Args: { "p_community_id": string,"p_details"?: Json,"p_expected_version"?: number,"p_intent_id": string,"p_listing_id"?: string }; Returns: Json
                            },
 "send_message":
 { Args: { "p_body": string,"p_conversation_id": string,"p_intent_id": string }; Returns: Json
@@ -561,6 +633,9 @@ isOneToOne: false
                            },
 "start_conversation":
 { Args: { "p_community_id": string,"p_intent_id": string,"p_participant_id": string }; Returns: Json
+                           },
+"withdraw_listing":
+{ Args: { "p_expected_version": number,"p_intent_id": string,"p_listing_id": string }; Returns: Json
                            }
           }
           Enums: {
