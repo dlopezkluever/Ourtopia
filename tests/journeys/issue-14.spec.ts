@@ -4,7 +4,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { copyFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { admin, configureVouch, decideApplication, password, pendingVouchApplicant, submitVouch, vouchFixture } from '../../scripts/verify/backend';
 
-const base = process.env.P14_BASE_SHA ?? 'e246904e579ef4231dd90e62be01f5c6f9abfd65';
+const base = process.env.P14_BASE_SHA ?? '998b29ade3134035cf627dc1a1a8ee07cd504ab0';
 const statement = 'I have known this neighbor for years and trust their care for our circle.';
 async function signIn(page: Page, email: string) {
   await page.goto('/'); await page.getByLabel('Email address').fill(email); await page.getByLabel('Password', { exact: true }).fill(password);
@@ -34,7 +34,8 @@ async function vouch(page: Page, f: Awaited<ReturnType<typeof vouchFixture>>) {
   await expect(page.getByRole('region', { name: 'Sponsor history', exact: true })).toContainText(statement);
 }
 async function invariant(f: Awaited<ReturnType<typeof vouchFixture>>) {
-  const membership = await f.applicant.client.from('memberships').select('status').eq('community_id', f.community.id);
+  const membership = await admin.from('memberships').select('status').eq('community_id', f.community.id).eq('user_id', f.applicant.id);
+  expect((await f.applicant.client.from('membership_applications').select('status').eq('id', f.application.id)).data).toEqual([{ status: 'pending' }]);
   expect(membership.data).toEqual([{ status: 'pending' }]);
   expect((await f.applicant.client.from('communities').select('*')).data).toEqual([]);
   expect((await admin.from('reputation_events').select('id').eq('community_id', f.community.id)).data).toEqual([]);
@@ -44,12 +45,13 @@ async function invariant(f: Awaited<ReturnType<typeof vouchFixture>>) {
   return { membership: membership.data, reputation, reputationEvents: 0, qualifyingInteractions: 0 };
 }
 async function deliver(recipient: string, kind: string) {
-  const result = await admin.from('notification_outbox').select('id').eq('recipient_id', recipient).eq('kind', kind);
-  expect(result.error).toBeNull(); expect(result.data!.length).toBeGreaterThan(0);
-  for (const item of result.data ?? []) {
+  const rows = async () => (await admin.from('notification_outbox').select('id,state').eq('recipient_id', recipient).eq('kind', kind)).data ?? [];
+  expect((await rows()).length).toBeGreaterThan(0);
+  for (const item of await rows()) {
     const claim = await admin.rpc('claim_notification', { p_outbox_id: item.id }); expect(claim.error).toBeNull();
-    expect((await admin.rpc('finish_notification', { p_outbox_id: item.id, p_claim_token: claim.data.claim_token })).error).toBeNull();
+    if (claim.data) expect((await admin.rpc('finish_notification', { p_outbox_id: item.id, p_claim_token: claim.data.claim_token })).error).toBeNull();
   }
+  await expect.poll(async () => (await rows()).every(item => item.state === 'delivered'), { timeout: 20000 }).toBe(true);
 }
 
 test('lane 1 trunk absence and head durable statement preserve pending access and standing', async ({ page, browser }, info) => {
@@ -108,7 +110,7 @@ test('lane 3 applicant requests a Vouch sponsor reads notice and permitted histo
   await page.reload(); await expect(page.getByText('Foreign history stays hidden.', { exact: true })).toHaveCount(0);
   await deliver(f.applicant.id, 'vouch_submitted');
   await page.getByRole('button', { name: 'Sign out' }).click(); await open(page, f.applicant.email);
-  await expect(page.getByRole('region', { name: 'Vouch notices', exact: true })).toContainText('A Vouch statement is ready to read.');
+  await expect(page.getByRole('region', { name: 'Vouch notices', exact: true })).toContainText('A Vouch statement is ready to read in Vouches.');
   await capture(page, info, 3, { requests: (await f.applicant.client.from('vouch_requests').select('*')).data, statements: (await f.applicant.client.from('vouches').select('*')).data, foreignHidden: true });
 });
 

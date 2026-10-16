@@ -6,7 +6,7 @@ import { copyFileSync, existsSync, mkdirSync, rmSync, symlinkSync, unlinkSync, w
 import { join, resolve } from 'node:path';
 import { cpus, loadavg, totalmem, freemem } from 'node:os';
 import { chromium, expect, type Page } from '@playwright/test';
-import { activeMember, actor, commitHelp, createCommunity, createHelpPost, helpFixture, helpListingFields, membershipFixture, password, configureVouch, vouchFixture } from './backend';
+import { activeMember, actor, commitHelp, createCommunity, createHelpPost, helpFixture, helpListingFields, membershipFixture, password, configureVouch, vouchFixture, admin } from './backend';
 import { z } from 'zod';
 import { vouchSchema } from '../../src/features/vouches/model';
 import { standingSchema } from '../../src/features/reputation/model';
@@ -313,7 +313,7 @@ async function verifyIssue14(values: PerfArguments) {
             const statement = await f.applicant.client.from('vouches').select('id,statement').eq('application_id', f.application.id);
             const vouchQueryMs = performance.now() - readStart;
             assert.equal(statement.error, null); assert.deepEqual(statement.data, [{ id: result.vouch.id, statement: body }]);
-            const membership = await f.applicant.client.from('memberships').select('status').eq('community_id', f.community.id);
+            const membership = await admin.from('memberships').select('status').eq('community_id', f.community.id).eq('user_id', f.applicant.id);
             assert.deepEqual(membership.data, [{ status: 'pending' }]);
             assert.deepEqual((await f.applicant.client.from('communities').select('*')).data, []);
             assert.deepEqual(z.object({ global: standingSchema }).parse((await f.sponsor.client.rpc('my_reputation')).data).global, { score: 50, title: 'Unproven', completedInteractions: 0 });

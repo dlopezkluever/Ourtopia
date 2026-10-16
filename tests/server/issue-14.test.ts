@@ -39,7 +39,8 @@ test('request and statement use durable in-app outbox, preserve pending membersh
   assert.equal((await submitVouch(f.sponsor, f.application.id, 'Different.', intent)).error?.code, '23505');
   assert.equal((await submitVouch(f.sponsor, f.application.id)).error?.code, '23505');
   assert.deepEqual((await f.sponsor.client.rpc('my_reputation')).data, before);
-  assert.deepEqual((await f.applicant.client.from('memberships').select('status').eq('community_id', f.community.id)).data, [{ status: 'pending' }]);
+  assert.deepEqual((await admin.from('memberships').select('status').eq('community_id', f.community.id).eq('user_id', f.applicant.id)).data, [{ status: 'pending' }]);
+  assert.deepEqual((await f.applicant.client.from('membership_applications').select('status').eq('id', f.application.id)).data, [{ status: 'pending' }]);
   assert.deepEqual((await f.applicant.client.from('communities').select('*')).data, []);
   assert.deepEqual((await admin.from('qualifying_interactions').select('id').eq('community_id', f.community.id)).data, []);
   assert.deepEqual((await admin.from('reputation_events').select('id').eq('community_id', f.community.id)).data, []);

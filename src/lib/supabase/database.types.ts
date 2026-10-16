@@ -689,6 +689,104 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"vouch_eligibility": {
+                  Row: {
+                    "community_id": string,"eligible": boolean,"sponsor_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "community_id": string,"eligible": boolean,"sponsor_id": string
+                  }
+                  Update: {
+                    "community_id"?: string,"eligible"?: boolean,"sponsor_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "vouch_eligibility_community_id_fkey"
+      columns: ["community_id"]
+isOneToOne: false
+      referencedRelation: "communities"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"vouch_requests": {
+                  Row: {
+                    "applicant_id": string,"application_id": string,"community_id": string,"created_at": string,"id": string,"sponsor_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "applicant_id": string,"application_id": string,"community_id": string,"created_at"?: string,"id"?: string,"sponsor_id": string
+                  }
+                  Update: {
+                    "applicant_id"?: string,"application_id"?: string,"community_id"?: string,"created_at"?: string,"id"?: string,"sponsor_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "vouch_requests_application_id_fkey"
+      columns: ["application_id"]
+isOneToOne: false
+      referencedRelation: "membership_applications"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "vouch_requests_community_id_fkey"
+      columns: ["community_id"]
+isOneToOne: false
+      referencedRelation: "communities"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"vouch_settings": {
+                  Row: {
+                    "annual_limit": number,"community_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "annual_limit"?: number,"community_id": string
+                  }
+                  Update: {
+                    "annual_limit"?: number,"community_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "vouch_settings_community_id_fkey"
+      columns: ["community_id"]
+isOneToOne: true
+      referencedRelation: "communities"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"vouches": {
+                  Row: {
+                    "applicant_id": string,"application_id": string,"community_id": string,"created_at": string,"event_id": string,"id": string,"sponsor_id": string,"statement": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "applicant_id": string,"application_id": string,"community_id": string,"created_at"?: string,"event_id": string,"id"?: string,"sponsor_id": string,"statement": string
+                  }
+                  Update: {
+                    "applicant_id"?: string,"application_id"?: string,"community_id"?: string,"created_at"?: string,"event_id"?: string,"id"?: string,"sponsor_id"?: string,"statement"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "vouches_application_id_fkey"
+      columns: ["application_id"]
+isOneToOne: false
+      referencedRelation: "membership_applications"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "vouches_community_id_fkey"
+      columns: ["community_id"]
+isOneToOne: false
+      referencedRelation: "communities"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "vouches_event_id_fkey"
+      columns: ["event_id"]
+isOneToOne: true
+      referencedRelation: "community_events"
+      referencedColumns: ["id"]
+    }
+                  ]
                 }
           }
           Views: {
@@ -721,6 +819,9 @@ isOneToOne: false
                            },
 "complete_listing_image":
 { Args: { "p_image_id": string,"p_intent_id": string }; Returns: Json
+                           },
+"configure_vouch":
+{ Args: { "p_annual_limit": number,"p_community_id": string,"p_eligible": boolean,"p_intent_id": string,"p_sponsor_id": string }; Returns: Json
                            },
 "conversation_candidates":
 { Args: { "p_community_id": string }; Returns: {
@@ -762,6 +863,9 @@ isOneToOne: false
 "is_community_administrator":
 { Args: { "p_community_id": string }; Returns: boolean
                            },
+"is_eligible_sponsor":
+{ Args: { "p_community_id": string }; Returns: boolean
+                           },
 "issue_invite":
 { Args: { "p_community_id": string,"p_email": string,"p_intent_id": string }; Returns: Json
                            },
@@ -779,6 +883,9 @@ isOneToOne: false
 "my_reputation":
 { Args: Record<PropertyKey, never>; Returns: Json
                            },
+"my_vouch_statements":
+{ Args: Record<PropertyKey, never>; Returns: Json
+                           },
 "prepare_listing_image":
 { Args: { "p_byte_size": number,"p_image_id": string,"p_intent_id": string,"p_listing_id": string,"p_mime_type": string }; Returns: Json
                            },
@@ -787,6 +894,9 @@ isOneToOne: false
                            },
 "remove_listing_image":
 { Args: { "p_image_id": string,"p_intent_id": string }; Returns: Json
+                           },
+"request_vouch":
+{ Args: { "p_application_id": string,"p_intent_id": string,"p_sponsor_email": string }; Returns: Json
                            },
 "require_current_membership":
 { Args: { "p_administrator"?: boolean,"p_community_id": string }; Returns: undefined
@@ -808,6 +918,12 @@ isOneToOne: false
                            },
 "start_conversation":
 { Args: { "p_community_id": string,"p_intent_id": string,"p_participant_id": string }; Returns: Json
+                           },
+"submit_vouch":
+{ Args: { "p_application_id": string,"p_intent_id": string,"p_statement": string }; Returns: Json
+                           },
+"vouch_workspace":
+{ Args: { "p_community_id": string }; Returns: Json
                            },
 "withdraw_help_post":
 { Args: { "p_intent_id": string,"p_post_id": string,"p_post_kind": string }; Returns: Json

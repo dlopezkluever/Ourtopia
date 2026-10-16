@@ -1,6 +1,8 @@
 import { before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { actor, activeMember, admin, anonKey, configureVouch, createCommunity, publicClient, realtimeReady, receipt, submitVouch, vouchFixture } from '../../scripts/verify/backend';
 
 before(() => realtimeReady(), { timeout: 70000 });
@@ -79,15 +81,14 @@ test('realtime carries only recipient hints and never statement bodies, includin
   const f = await vouchFixture('rls-realtime'); await configureVouch(f.owner, f.community.id, f.sponsor.id);
   const foreign = await actor({ label: 'foreign-realtime' }); await createCommunity(foreign.client);
   const outsider = await actor({ label: 'outsider-realtime' });
-  const counts: Record<string, { bodies: number; hints: number }> = {};
+  const counts: Record<string, { hints: number }> = {};
   const payloads: Record<string, unknown>[] = [];
   const channels = [];
   try {
     for (const [label, client] of [['applicant', f.applicant.client], ['sponsor', f.sponsor.client], ['foreign', foreign.client], ['outsider', outsider.client], ['anonymous', publicClient()]] satisfies [string, ReturnType<typeof publicClient>][]) {
-      counts[label] = { bodies: 0, hints: 0 };
+      counts[label] = { hints: 0 };
       const session = await client.auth.getSession(); await client.realtime.setAuth(session.data.session?.access_token ?? anonKey);
       const channel = client.channel(`p14-${randomUUID()}`)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'vouches', filter: `community_id=eq.${f.community.id}` }, () => counts[label].bodies++)
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notification_hints', filter: `recipient_id=eq.${f.applicant.id}` }, change => { counts[label].hints++; payloads.push(change.new); });
       channels.push({ client, channel });
       await new Promise<void>((resolve, reject) => {
@@ -104,8 +105,12 @@ test('realtime carries only recipient hints and never statement bodies, includin
     while (counts.applicant.hints === 0 && Date.now() < deadline) await new Promise(done => setTimeout(done, 100));
     await new Promise(done => setTimeout(done, 1000));
     assert.ok(counts.applicant.hints >= 1);
-    for (const [label, count] of Object.entries(counts)) { assert.equal(count.bodies, 0); if (label !== 'applicant') assert.equal(count.hints, 0); }
+    for (const [label, count] of Object.entries(counts)) if (label !== 'applicant') assert.equal(count.hints, 0);
+    const project = /^project_id\s*=\s*"([^"]+)"/m.exec(readFileSync('supabase/config.toml', 'utf8'))?.[1];
+    assert.match(project ?? '', /^ourtopia-issue-\d+$/);
+    const published = execFileSync('docker', ['exec', '-i', `supabase_db_${project}`, 'psql', '-U', 'postgres', '-d', 'postgres', '-At', '-c', "select tablename from pg_publication_tables where pubname = 'supabase_realtime' and tablename like 'vouch%'"], { encoding: 'utf8' }).trim();
+    assert.equal(published, '', 'no Vouch table is published to realtime');
     for (const payload of payloads) assert.deepEqual(Object.keys(payload).sort(), ['id', 'recipient_id']);
-    receipt('issue-14-rls-realtime', { counts, payloadKeys: ['id', 'recipient_id'] });
+    receipt('issue-14-rls-realtime', { counts, payloadKeys: ['id', 'recipient_id'], publishedVouchTables: [] });
   } finally { await Promise.all(channels.map(async ({ client, channel }) => { await client.removeChannel(channel); client.realtime.disconnect(); })); }
 });
