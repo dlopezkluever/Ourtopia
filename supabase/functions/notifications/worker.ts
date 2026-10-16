@@ -16,6 +16,10 @@ const subjects: Record<string, string> = {
   membership_applied: 'A membership application is ready to review',
   membership_approved: 'Your membership application was approved',
   membership_rejected: 'Your membership application was rejected',
+  help_commitment_offered: 'Someone offered to help on your post',
+  help_commitment_accepted: 'Your help offer was accepted',
+  help_scheduled: 'Your help Exchange has a schedule',
+  help_cancelled: 'A help Exchange was cancelled',
 };
 
 export async function deliverOne(backend: DeliveryBackend, sendEmail: EmailSender, outboxId?: string) {
@@ -28,7 +32,7 @@ export async function deliverOne(backend: DeliveryBackend, sendEmail: EmailSende
     if (item.channel === 'email') await sendEmail({
       to: item.recipient_email,
       subject: subjects[item.kind] ?? 'You have an Ourtopia notification',
-      text: 'Sign in to Ourtopia to view your notification and current application status.',
+      text: item.kind.startsWith('help_') ? 'Sign in to Ourtopia to view the current status of your help Exchange.' : 'Sign in to Ourtopia to view your notification and current application status.',
       idempotencyKey: item.id,
     });
   } catch {

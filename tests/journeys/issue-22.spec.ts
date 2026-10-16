@@ -77,7 +77,7 @@ async function cancelProviderSubscription(id: string) {
 test('lane 1 trunk absence and real test Checkout durable end state', async ({ page, browser }, info) => {
   requireProvider();
   const fixture = await billingFixture('billing-trunk');
-  const base = '3f5f3fd0293421cc2688576acfc8d742e676dc4c';
+  const base = '998b29ade3134035cf627dc1a1a8ee07cd504ab0';
   const root = `.pilot-evidence/billing-trunk-${info.project.name}`;
   const paths = execFileSync('git', ['ls-tree', '-r', '--name-only', base], { encoding: 'utf8' }).split('\n').filter(path => /^(src\/|vite.config.ts$|index.html$|package.json$)/.test(path));
   for (const path of paths) { const target = `${root}/${path}`; mkdirSync(target.slice(0, target.lastIndexOf('/')), { recursive: true }); writeFileSync(target, execFileSync('git', ['show', `${base}:${path}`])); }
@@ -152,7 +152,7 @@ test('lane 4 approved unpaid member retains ordinary Community access', async ({
   await expect(page.getByRole('heading', { name: 'Your Solidarity Scores' })).toBeVisible();
   expect((await fixture.member.client.rpc('my_reputation')).error).toBeNull();
   expect(await persistedStatus(fixture.member.id)).toEqual([]);
-  await capture(page, info, 4, { approvedUnpaidAccess: true, activityScope: 'Community home, private messaging to the administrator and own standing at merged master e246904' });
+  await capture(page, info, 4, { approvedUnpaidAccess: true, activityScope: 'Community home, private messaging to the administrator and own standing at merged master 998b29a' });
 });
 
 test('lane 5 invalid and changed raw signatures and forged redirects cannot set status', async ({ page }, info) => {
