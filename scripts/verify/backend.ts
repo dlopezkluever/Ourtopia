@@ -270,6 +270,16 @@ export async function checkOutFixture(exchangeId: string) {
     const result = await update; if (result.error) throw result.error;
   }
 }
+export async function overdueBorrowFixture(f: Awaited<ReturnType<typeof borrowingFixture>>) {
+  const exchange = await admin.from('exchanges').insert({ community_id: f.community.id, kind: 'item', provider_id: f.alice.id, receiver_id: f.bob.id, source_kind: 'listing', source_id: f.listing.id, state: 'approved' }).select('id').single();
+  if (exchange.error) throw exchange.error;
+  const request = await admin.from('borrow_requests').insert({ community_id: f.community.id, listing_id: f.listing.id, owner_id: f.alice.id, borrower_id: f.bob.id, starts_on: '2020-01-15', ends_on: '2020-01-17', status: 'approved', version: 2, exchange_id: exchange.data.id, decided_at: new Date().toISOString() }).select('id').single();
+  if (request.error) throw request.error;
+  const reservation = await admin.from('item_reservations').insert({ exchange_id: exchange.data.id, request_id: request.data.id, listing_id: f.listing.id, starts_on: '2020-01-15', ends_on: '2020-01-17', acknowledgment_due_at: new Date(Date.now() + 48 * 3600000).toISOString(), condition: drillDetails.condition, replacement_value: drillDetails.replacement_value, lending_conditions: drillDetails.lending_conditions });
+  if (reservation.error) throw reservation.error;
+  await checkOutFixture(exchange.data.id);
+  return { exchange_id: exchange.data.id, request_id: request.data.id };
+}
 export async function borrowRecords(listingId: string) {
   const [requests, reservations, exchanges] = await Promise.all([
     admin.from('borrow_requests').select('id,borrower_id,status,version,exchange_id,starts_on,ends_on').eq('listing_id', listingId).order('created_at'),

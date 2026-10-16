@@ -3,8 +3,8 @@ import { test } from 'node:test';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import {
-  activeMember, admin, approveBorrow, borrowNotices, borrowRecords, borrowingFixture, checkOutFixture, decideBorrow, receipt, requestItem,
-  seedReputationEvent, withAcknowledgmentWindow,
+  activeMember, admin, approveBorrow, borrowNotices, borrowRecords, borrowingFixture, decideBorrow, receipt, requestItem,
+  overdueBorrowFixture, seedReputationEvent, withAcknowledgmentWindow,
 } from '../../scripts/verify/backend';
 import { borrowViewSchema } from '../../src/features/borrowing/model';
 import { memberProfileSchema } from '../../src/features/profiles/model';
@@ -148,6 +148,8 @@ test('Deadline guards hold before the worker; delayed, concurrent, and repeated 
   for (const result of workers) assert.equal(result.error, null);
   const repeated = borrowViewSchema.parse((await admin.rpc('expire_item_approval', { p_exchange_id: exchangeId })).data);
   assert.deepEqual({ status: repeated.status, version: repeated.version, state: repeated.exchange_state, blocking: repeated.reservation?.blocking }, { status: 'expired', version: 3, state: 'expired', blocking: false });
+  assert.equal((await admin.from('item_reservations').update({ acknowledged_at: new Date().toISOString() }).eq('exchange_id', exchangeId)).error?.code, '55000');
+  assert.equal((await admin.from('exchanges').update({ state: 'handoff_pending' }).eq('id', exchangeId)).error?.code, '55000');
   assert.equal((await admin.from('community_events').select('id').eq('community_id', f.community.id).eq('kind', 'borrow_expired')).data?.length, 1);
   assert.deepEqual((await admin.from('exchange_events').select('kind').eq('exchange_id', exchangeId).order('created_at')).data, [{ kind: 'item_approved' }, { kind: 'item_approval_expired' }]);
   assert.deepEqual((await borrowNotices(f.community.id, 'borrow_expired')).map(row => `${row.recipient_id === f.alice.id ? 'alice' : 'bob'}:${row.channel}`).sort(), ['alice:email', 'alice:in_app', 'bob:email', 'bob:in_app']);
@@ -159,8 +161,7 @@ test('Deadline guards hold before the worker; delayed, concurrent, and repeated 
 
 test('Unresolved custody blocks later disjoint approvals until recovery; reservation dates cannot be edited', async () => {
   const f = await borrowingFixture('borrow-custody');
-  const loan = await approveBorrow(f.alice, await requestItem(f.bob, f.listing.id, '2027-01-15', '2027-01-17'));
-  await checkOutFixture(loan.exchange_id!);
+  const loan = await overdueBorrowFixture(f);
   const after = await requestItem(f.carol, f.listing.id, '2027-02-01', '2027-02-02');
   const intent = randomUUID();
   assert.equal((await decideBorrow(f.alice, after, 'approved', intent)).error?.code, '23P01');
@@ -169,10 +170,10 @@ test('Unresolved custody blocks later disjoint approvals until recovery; reserva
   assert.equal((await admin.from('exchanges').update({ state: 'closed_without_completion' }).eq('id', loan.exchange_id!)).error, null);
   assert.equal((await decideBorrow(f.alice, after)).error?.code, '23P01');
   const held = (await borrowRecords(f.listing.id)).reservations;
-  assert.deepEqual(held.map(row => ({ dates: row.dates, blocking: row.blocking, custody: row.custody_unresolved })), [{ dates: '[2027-01-15,2027-01-18)', blocking: true, custody: true }]);
+  assert.deepEqual(held.map(row => ({ dates: row.dates, blocking: row.blocking, custody: row.custody_unresolved })), [{ dates: '[2020-01-15,2020-01-18)', blocking: true, custody: true }]);
   assert.equal((await admin.from('item_reservations').update({ custody_unresolved: false }).eq('exchange_id', loan.exchange_id!)).error, null);
   const recovered = await approveBorrow(f.alice, after);
   assert.equal(recovered.status, 'approved');
-  assert.deepEqual((await borrowRecords(f.listing.id)).reservations.map(row => [row.dates, row.blocking]), [['[2027-01-15,2027-01-18)', false], ['[2027-02-01,2027-02-03)', true]]);
+  assert.deepEqual((await borrowRecords(f.listing.id)).reservations.map(row => [row.dates, row.blocking]), [['[2020-01-15,2020-01-18)', false], ['[2027-02-01,2027-02-03)', true]]);
   receipt('issue-6-custody', { blockedWhileCheckedOut: '23P01', blockedAfterClosure: '23P01', held, recovered: recovered.reservation });
 });

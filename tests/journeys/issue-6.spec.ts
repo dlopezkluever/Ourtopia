@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { execFileSync, spawn } from 'node:child_process';
 import { copyFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import {
-  activeMember, admin, approveBorrow, borrowNotices, borrowRecords, borrowingFixture, checkOutFixture, decideBorrow, drillDetails, password,
+  activeMember, admin, approveBorrow, borrowNotices, borrowRecords, borrowingFixture, overdueBorrowFixture, decideBorrow, drillDetails, password,
   requestItem, seedReputationEvent, withAcknowledgmentWindow,
 } from '../../scripts/verify/backend';
 
@@ -237,12 +237,12 @@ test('lane 7 an unacknowledged approval expires once under delayed and repeated 
 
 test('lane 8 unresolved custody blocks a later request until physical recovery', async ({ page, browser }, info) => {
   const f = await borrowingFixture('borrow-custody');
-  const loan = await approveBorrow(f.alice, await requestItem(f.bob, f.listing.id)); await checkOutFixture(loan.exchange_id!);
+  const loan = await overdueBorrowFixture(f);
   const carol = await second(browser, info);
   try { await openListing(carol.page, f, f.carol.email); await requestDates(carol.page, '2027-02-01', '2027-02-02'); } finally { await carol.context.close(); }
   const carolDates = 'Mon, Feb 1, 2027 through Tue, Feb 2, 2027';
   await openListing(page, f, f.alice.email);
-  await expect(card(page, f.bob.email).getByRole('region', { name: 'Reservation', exact: true })).toContainText('Checked out to the borrower');
+  await expect(card(page, f.bob.email, 'Wed, Jan 15, 2020 through Fri, Jan 17, 2020').getByRole('region', { name: 'Reservation', exact: true })).toContainText('Checked out to the borrower');
   const approve = card(page, f.carol.email, carolDates).getByRole('button', { name: `Approve ${f.carol.email}`, exact: true });
   const decide = async () => (await Promise.all([page.waitForResponse(response => response.url().includes('/rpc/decide_borrow_request')), approve.click()]))[0];
   expect((await (await decide()).json()).code).toBe('23P01'); await expect(card(page, f.carol.email, carolDates).getByRole('alert')).toContainText('Item custody is unresolved');
