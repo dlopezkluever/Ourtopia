@@ -10,15 +10,28 @@ test('own billing is private across actors and command-owned state rejects direc
   const foreign = await actor({ label: 'billing-foreign-admin' });
   const unrelated = await actor({ label: 'billing-unrelated' });
   const unverified = await actor({ label: 'billing-unverified', verified: false });
+  const peerAdministrator = await actor({ label: 'billing-peer-administrator' });
+  const pending = await actor({ label: 'billing-pending' });
+  const rejected = await actor({ label: 'billing-rejected' });
+  const removed = await actor({ label: 'billing-removed' });
   const ownCommunity = await createCommunity(owner.client);
   const foreignCommunity = await createCommunity(foreign.client);
   assert.equal(ownCommunity.error, null); assert.equal(foreignCommunity.error, null);
+  assert.equal((await admin.from('memberships').insert([
+    { community_id: ownCommunity.data.id, user_id: peerAdministrator.id, role: 'administrator', status: 'active' },
+    { community_id: ownCommunity.data.id, user_id: pending.id, role: 'member', status: 'pending' },
+    { community_id: ownCommunity.data.id, user_id: rejected.id, role: 'member', status: 'rejected' },
+    { community_id: ownCommunity.data.id, user_id: removed.id, role: 'member', status: 'removed' },
+  ])).error, null);
   const result = await owner.client.rpc('request_test_billing', { p_intent_id: randomUUID(), p_community_id: ownCommunity.data.id, p_kind: 'checkout' });
   assert.equal(result.error, null);
   const customer = `cus_${randomUUID().replaceAll('-', '')}`;
   assert.equal((await admin.from('billing_accounts').update({ customer_id: customer }).eq('account_id', owner.id)).error, null);
   assert.equal((await admin.from('billing_subscriptions').insert({ account_id: owner.id, customer_id: customer, subscription_id: `sub_${randomUUID().replaceAll('-', '')}`, status: 'active', cancel_at_period_end: false })).error, null);
-  const denied = [foreign.client, unrelated.client, unverified.client, publicClient(), stripeWorker()];
+  const denied = [foreign.client, unrelated.client, unverified.client, publicClient(), stripeWorker(), pending.client, rejected.client, removed.client];
+  for (const table of ['billing_accounts', 'billing_jobs', 'billing_subscriptions']) {
+    assert.deepEqual((await peerAdministrator.client.from(table).select('*').eq('account_id', owner.id)).data, [], `${table} leaked to a same-Community administrator`);
+  }
   for (const client of denied) {
     for (const table of ['billing_accounts', 'billing_jobs', 'billing_subscriptions']) {
       const read = await client.from(table).select('*');
@@ -55,8 +68,12 @@ test('own billing is private across actors and command-owned state rejects direc
   assert.ok((await worker.from('memberships').update({ role: 'administrator' }).eq('user_id', unrelated.id)).error);
   assert.ok((await worker.rpc('create_community', { p_intent_id: randomUUID(), p_name: 'Forbidden billing Community', p_description: '' })).error);
   assert.ok((await worker.rpc('decide_membership', { p_intent_id: randomUUID(), p_application_id: randomUUID(), p_decision: 'approved', p_reason: '' })).error);
-  assert.deepEqual((await owner.client.from('memberships').select('role,status').eq('community_id', ownCommunity.data.id)).data, [{ role: 'administrator', status: 'active' }]);
-  receipt('issue-22-rls-boundaries', { actorClasses: ['owner', 'foreign administrator', 'unrelated', 'unverified', 'anonymous', 'stripe worker'], directWritesDenied: true, webhookCannotChangeRoles: true });
+  const peerRequest = await peerAdministrator.client.rpc('request_test_billing', { p_intent_id: randomUUID(), p_community_id: ownCommunity.data.id, p_kind: 'checkout' });
+  assert.equal(peerRequest.error, null);
+  assert.notEqual(peerRequest.data.job_id, result.data.job_id);
+  assert.deepEqual((await peerAdministrator.client.from('billing_jobs').select('account_id')).data, [{ account_id: peerAdministrator.id }]);
+  assert.deepEqual((await owner.client.from('memberships').select('role,status').eq('community_id', ownCommunity.data.id).eq('user_id', owner.id)).data, [{ role: 'administrator', status: 'active' }]);
+  receipt('issue-22-rls-boundaries', { actorClasses: ['owner', 'same-Community administrator', 'foreign administrator', 'pending', 'rejected', 'removed', 'unrelated', 'unverified', 'anonymous', 'stripe worker'], directWritesDenied: true, webhookCannotChangeRoles: true, peerAdministratorCreatesOnlyOwnJob: true });
 });
 
 test('billing projections do not leak through realtime or Storage and revoked members retain only account status', async () => {
