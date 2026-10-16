@@ -285,12 +285,29 @@ a.sidebar-nav { text-decoration: none; }
   .help-facts dd { margin-bottom: 6px; }
 }
 
-.borrowing-panel { max-width: 920px; margin: 2rem auto; padding: 1.5rem; background: var(--card, #fffdf7); border: 1px solid #d8dfd0; border-radius: 20px; }
-.borrowing-panel form { display: grid; gap: 1rem; max-width: 32rem; }
-.borrowing-panel label { display: grid; gap: .4rem; }
-.borrowing-panel input { min-height: 44px; border: 1px solid #88997e; border-radius: 6px; padding: .6rem; }
-.borrowing-panel button { min-height: 44px; padding: .55rem .85rem; border: 1px solid #78916d; border-radius: 8px; margin: .3rem .3rem .3rem 0; }
-.borrow-request { border-top: 1px solid #d8dfd0; margin-top: 1.5rem; padding-top: 1rem; overflow-wrap: anywhere; }
-.reservation-summary { background: #edf3e5; border-radius: 10px; padding: 1rem; }
-.listings-layout:has(+ .borrowing-panel) .listing-detail > button { display: none; }
-@media(max-width: 600px) { .borrowing-panel { margin: 1rem; padding: 1rem; } }
+.borrowing-panel { max-width: 1100px; margin: 2rem auto; padding: 1.5rem; background: #fffefa; border: 1px solid #d9dfd3; border-radius: 18px; overflow-wrap: anywhere; }
+.listings-layout + .borrowing-panel { margin: -1.5rem auto 3rem; max-width: calc(1100px - 2.5rem); }
+.borrowing-overview h1 { margin: .5rem 0; }
+.borrowing-overview h2 { margin-top: 2rem; }
+.borrow-note { color: #4d5b47; }
+.borrow-form { display: grid; gap: .9rem; max-width: 34rem; margin: 1rem 0; }
+.borrow-dates { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
+.borrow-form label { display: grid; gap: .35rem; font-weight: 600; }
+.borrow-form input { min-height: 44px; border: 1px solid #88997e; border-radius: 8px; padding: .55rem; font: inherit; max-width: 100%; }
+.borrow-availability { margin: 0; padding-left: 1.2rem; }
+.borrowing-panel button { min-height: 44px; padding: .6rem 1rem; border: 1px solid #506949; border-radius: 8px; margin: .3rem .4rem .3rem 0; }
+.borrowing-panel button:focus-visible, .borrowing-panel a:focus-visible, .borrow-form input:focus-visible { outline: 3px solid #2f5d2a; outline-offset: 2px; }
+.borrow-request { border-top: 1px solid #d9dfd3; margin-top: 1.25rem; padding-top: 1rem; }
+.borrow-request-head { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; }
+.borrow-status { display: inline-block; font-size: .8rem; font-weight: 600; padding: .2rem .6rem; border-radius: 999px; background: #eef1e8; }
+.borrow-status-approved { background: #dcebd3; }
+.borrow-status-rejected, .borrow-status-expired { background: #f1e6dc; }
+.borrow-actions { display: flex; flex-wrap: wrap; }
+.trust-review { border: 1px solid #e1e5da; border-radius: 12px; padding: 1rem; margin: .75rem 0; }
+.trust-review-scores { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: .75rem; }
+.borrow-warning { color: #8a2d1c; font-weight: 600; }
+.borrow-problem { border-left: 4px solid #8a2d1c; background: #fbefe9; padding: .75rem 1rem; margin: .75rem 0; border-radius: 6px; }
+.borrow-problem p { margin: .25rem 0 0; }
+.borrow-sent { background: #e8f2e1; padding: .75rem 1rem; border-radius: 6px; }
+.reservation-summary { background: #edf3e5; border-radius: 10px; padding: 1rem; margin-top: .75rem; }
+@media(max-width: 600px) { .borrowing-panel { margin: 1rem; padding: 1rem; } .listings-layout + .borrowing-panel { margin: 0 1.25rem 2rem; } .borrow-dates { grid-template-columns: 1fr; } }

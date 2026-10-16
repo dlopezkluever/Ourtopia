@@ -36,7 +36,7 @@ export async function deliverOne(backend: DeliveryBackend, sendEmail: EmailSende
     if (item.channel === 'email') await sendEmail({
       to: item.recipient_email,
       subject: subjects[item.kind] ?? 'You have an Ourtopia notification',
-      text: item.kind.startsWith('help_') ? 'Sign in to Ourtopia to view the current status of your help Exchange.' : 'Sign in to Ourtopia to view your notification and current application status.',
+      text: item.kind.startsWith('help_') ? 'Sign in to Ourtopia to view the current status of your help Exchange.' : item.kind.startsWith('borrow_') ? 'Sign in to Ourtopia and open Borrow Requests to view the current status.' : 'Sign in to Ourtopia to view your notification and current application status.',
       idempotencyKey: item.id,
     });
   } catch {
