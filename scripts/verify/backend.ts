@@ -1,3 +1,4 @@
+import { helpExchangeSchema, helpPostSchema } from '../../src/features/help/model';
 import { createClient } from '@supabase/supabase-js';
 import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -214,4 +215,35 @@ export async function uploadListingImage(member: Awaited<ReturnType<typeof actor
   const completed = await member.client.rpc('complete_listing_image', { p_intent_id: randomUUID(), p_image_id: image.id });
   if (completed.error) throw completed.error;
   return image;
+}
+
+export const helpListingFields = (overrides: Record<string, unknown> = {}) => ({ title: 'Moving help with a van', description: 'I can lift and drive.', category: 'moving', skill: 'Lifting and van driving', skill_level: 'experienced', availability: 'Weekend mornings', geographic_constraints: 'Within 3 miles of Maple Street', scheduling_preferences: 'Two days notice', ...overrides });
+export const helpNeedFields = (helpers = 2, overrides: Record<string, unknown> = {}) => ({ title: 'Move a couch upstairs', description: 'Third floor, no lift.', category: 'moving', starts_at: new Date(Date.now() + 3 * 86400000).toISOString(), duration_minutes: 120, location: '12 Maple Street', helpers_needed: helpers, ...overrides });
+export const helpScheduleFields = (overrides: Record<string, unknown> = {}) => ({ starts_at: new Date(Date.now() + 2 * 86400000).toISOString(), duration_minutes: 90, meeting_point: 'Side gate on Maple Street', ...overrides });
+
+export async function createHelpPost(author: Awaited<ReturnType<typeof actor>>, communityId: string, kind: 'listing' | 'need_post', fields: Record<string, unknown>, intent = randomUUID()) {
+  const result = await author.client.rpc('create_help_post', { p_intent_id: intent, p_community_id: communityId, p_post_kind: kind, p_fields: fields });
+  if (result.error) throw result.error;
+  return helpPostSchema.parse(result.data);
+}
+
+export async function commitHelp(member: Awaited<ReturnType<typeof actor>>, kind: 'listing' | 'need_post', postId: string, note = '', intent = randomUUID()) {
+  const result = await member.client.rpc('commit_help', { p_intent_id: intent, p_post_kind: kind, p_post_id: postId, p_note: note });
+  if (result.error) throw result.error;
+  return z.object({ id: z.uuid(), status: z.literal('pending'), member_id: z.uuid() }).parse(result.data).id;
+}
+
+export async function acceptHelp(owner: Awaited<ReturnType<typeof actor>>, commitmentId: string, intent = randomUUID()) {
+  const result = await owner.client.rpc('accept_help_commitment', { p_intent_id: intent, p_commitment_id: commitmentId });
+  if (result.error) throw result.error;
+  return helpExchangeSchema.parse(result.data);
+}
+
+// An administrator-owned Community with a requester/author and active helper members.
+export async function helpFixture(label = 'help', helpers = 3) {
+  const { owner, community } = await membershipFixture(label);
+  const author = await activeMember(owner, community.id, `${label}-author`);
+  const members = [];
+  for (let index = 0; index < helpers; index++) members.push(await activeMember(owner, community.id, `${label}-helper${index + 1}`));
+  return { owner, community, author, members };
 }

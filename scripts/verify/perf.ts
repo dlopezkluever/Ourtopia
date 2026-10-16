@@ -6,16 +6,18 @@ import { copyFileSync, existsSync, mkdirSync, symlinkSync, unlinkSync, writeFile
 import { join, resolve } from 'node:path';
 import { cpus, loadavg, totalmem, freemem } from 'node:os';
 import { chromium, expect, type Page } from '@playwright/test';
-import { activeMember, actor, createCommunity, membershipFixture, password } from './backend';
+import { activeMember, actor, commitHelp, createCommunity, createHelpPost, helpFixture, helpListingFields, membershipFixture, password } from './backend';
 import { z } from 'zod';
 import { standingSchema } from '../../src/features/reputation/model';
 import { communitySchema } from '../../src/features/communities/model';
 import { drillDetails } from './backend';
 import { listingSchema } from '../../src/features/listings/model';
 import { conversationSchema, messageSchema } from '../../src/features/messages/model';
+import { helpExchangeSchema, helpPostSchema } from '../../src/features/help/model';
 
 const { values } = parseArgs({ options: { issue: { type: 'string' }, base: { type: 'string' }, head: { type: 'string' }, pairs: { type: 'string', default: '10' } } });
-if (values.issue === '15') await verifyIssue15(values);
+if (values.issue === '12') await verifyIssue12(values);
+else if (values.issue === '15') await verifyIssue15(values);
 else if (values.issue === '3' || values.issue === '4' || values.issue === '5') await verifyIssue3(values);
 else await verifyIssue2(values);
 
@@ -112,6 +114,111 @@ async function verifyIssue15(values: PerfArguments) {
     const ranges = { readinessMs: [Math.min(...samples.map(row => row.readinessMs)), Math.max(...samples.map(row => row.readinessMs))], commandMs: [Math.min(...actions.map(row => row.commandMs)), Math.max(...actions.map(row => row.commandMs))], visibleMs: [Math.min(...actions.map(row => row.visibleMs)), Math.max(...actions.map(row => row.visibleMs))] };
     persist({ errors: 0, baseline, head: current, added, queryP95Ms, checks, ranges, claim: 'Local serial development probe meets regression and absolute budgets. No production throughput or speedup claim.', baselineAction: 'Messages absent; shared authorized Community readiness/read compared instead.', providerWait: 'None in this path; only local persisted command and render work.' });
     writeFileSync(`${directory}/report.md`, `P15 at ${head}.\n\n${pairs} interleaved trunk/head pairs against ${base}. Both sides reload and read the identical authorized Community. Trunk lacks messaging, so added message commands and durable visible states use absolute budgets.\n\nTrunk ${JSON.stringify(baseline)}. Head ${JSON.stringify(current)}. Added ${JSON.stringify(added)}. Query p95 ${queryP95Ms} ms. Ranges ${JSON.stringify(ranges)}. Checks ${JSON.stringify(checks)}.\n\nEvery sample includes a successful HTTP command, a unique persisted message, a fresh counterparty RLS read and an author reload. Zero failed samples. Local serial Chrome and Vite development timings include HTTP, PostgreSQL and render work. Provider waits are absent. No production throughput or speedup claim. Host observations and raw samples are in samples.json.\n`);
+    assert.ok(Object.values(checks).every(Boolean), JSON.stringify(checks));
+    process.stdout.write(`${JSON.stringify({ baseline, head: current, added, queryP95Ms, checks })}\n`);
+  } catch (error) { persist({ error: error instanceof Error ? error.message : String(error) }); throw error; }
+  finally {
+    await browser.close();
+    await Promise.all(servers.map(server => new Promise<void>(done => { if (server.exitCode !== null) done(); else { server.once('exit', () => done()); server.kill(); } })));
+    if (existsSync(trunkModules)) unlinkSync(trunkModules);
+    if (existsSync(trunkRoot)) execFileSync('git', ['worktree', 'remove', '--force', trunkRoot], { stdio: 'inherit' });
+    assert.ok(existsSync('node_modules/vite/package.json'));
+  }
+}
+
+async function verifyIssue12(values: PerfArguments) {
+  const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+  assert.equal(values.head, head, 'Measure the committed candidate head.');
+  assert.ok(values.base);
+  const base = values.base;
+  const pairs = Number(values.pairs);
+  assert.ok(Number.isInteger(pairs) && pairs >= 10);
+  const tree = execFileSync('git', ['ls-tree', '-r', '--name-only', base], { encoding: 'utf8' }).split('\n');
+  assert.ok(tree.includes('package.json'));
+  assert.ok(!tree.some(path => path.startsWith('src/features/help/')), 'The added-action exception requires help to be absent at the base.');
+  assert.equal(execFileSync('git', ['diff', base, head, '--', 'package-lock.json'], { encoding: 'utf8' }), '');
+  const directory = `${process.env.EVIDENCE_DIR ?? '.pilot-evidence'}/perf`;
+  mkdirSync(directory, { recursive: true });
+  const trunkRoot = resolve('..', 'perf-trunk-12');
+  assert.ok(!existsSync(trunkRoot), 'An existing probe checkout must be inspected before reuse.');
+  const trunkModules = join(trunkRoot, 'node_modules');
+  const servers: ReturnType<typeof spawn>[] = [];
+  const startup: Record<string, number> = {};
+  const samples: { index: number; side: string; readinessMs: number; queryMs: number; communityId: string }[] = [];
+  const actions: { index: number; boardQueryMs: number; commandMs: number; visibleMs: number; exchangeId: string; listingId: string }[] = [];
+  const trunkPort = Number(process.env.APP_PORT ?? 5173) + 1;
+  const headPort = trunkPort + 1;
+  const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH ?? (process.platform === 'win32' ? 'C:/Program Files/Google/Chrome/Application/chrome.exe' : undefined) });
+  const persist = (extra: unknown) => writeFileSync(`${directory}/samples.json`, JSON.stringify({ utc: new Date().toISOString(), head, base, pairs, startup, samples, actions, host: { cores: cpus().length, totalMemory: totalmem(), freeMemory: freemem(), loadAverage: loadavg() }, extra }, null, 2));
+  async function serve(label: string, root: string, port: number, config: string[] = []) {
+    const start = performance.now();
+    const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', root, ...config, '--host', '127.0.0.1', '--port', String(port), '--strictPort'], { stdio: 'ignore', windowsHide: true });
+    servers.push(server);
+    const deadline = Date.now() + 60000;
+    while (Date.now() < deadline) {
+      if (server.exitCode !== null) throw new Error(`${label} server exited ${server.exitCode}`);
+      if (await fetch(`http://127.0.0.1:${port}`).then(r => r.ok, () => false)) { startup[label] = performance.now() - start; return; }
+      await new Promise(done => setTimeout(done, 100));
+    }
+    throw new Error(`${label} startup exceeded 60 seconds`);
+  }
+  try {
+    execFileSync('git', ['worktree', 'add', '--detach', trunkRoot, base], { stdio: 'inherit' });
+    symlinkSync(resolve('node_modules'), trunkModules, 'junction');
+    copyFileSync('.env.local', join(trunkRoot, '.env.local'));
+    writeFileSync(join(trunkRoot, 'perf.vite.config.ts'), "import { mergeConfig } from 'vite';\nimport config from './vite.config';\nexport default mergeConfig(config, { cacheDir: '.vite-perf-cache' });\n");
+    await serve('trunk', trunkRoot, trunkPort, ['--config', join(trunkRoot, 'perf.vite.config.ts')]);
+    await serve('head', '.', headPort);
+    for (let index = 0; index < pairs; index++) {
+      const f = await helpFixture(`perf12-${index}`, 1);
+      const [requester] = f.members;
+      for (const [side, port] of [['trunk', trunkPort], ['head', headPort]] satisfies [string, number][]) {
+        const context = await browser.newContext({ baseURL: `http://127.0.0.1:${port}`, viewport: { width: 1440, height: 1000 } });
+        try {
+          const page = await context.newPage(); await page.goto('/');
+          await page.getByLabel('Email address').fill(f.author.email); await page.getByLabel('Password', { exact: true }).fill(password);
+          await page.getByRole('button', { name: 'Sign in', exact: true }).last().click();
+          const home = page.getByRole('heading', { name: `Welcome to ${f.community.name}.` }); await expect(home).toBeVisible();
+          const readyStart = performance.now(); await page.reload(); await expect(home).toBeVisible(); const readinessMs = performance.now() - readyStart;
+          const queryStart = performance.now(); const query = await f.author.client.from('communities').select('id,name').eq('id', f.community.id); const queryMs = performance.now() - queryStart;
+          assert.equal(query.error, null); assert.deepEqual(query.data, [f.community]);
+          samples.push({ index, side, readinessMs, queryMs, communityId: f.community.id }); persist({ errors: 0, phase: 'paired reads' });
+          if (side === 'head') {
+            const listing = await createHelpPost(f.author, f.community.id, 'listing', helpListingFields({ title: `Perf help ${index}` }));
+            await commitHelp(requester, 'listing', listing.id);
+            const boardStart = performance.now();
+            const board = await requester.client.rpc('help_board', { p_community_id: f.community.id, p_search: '', p_post_kind: '', p_category: '' });
+            const boardQueryMs = performance.now() - boardStart;
+            assert.equal(board.error, null); assert.deepEqual(helpPostSchema.array().parse(board.data).map(post => post.id), [listing.id]);
+            await page.goto(`/help/${f.community.id}/listing/${listing.id}`); await expect(page.getByRole('heading', { name: `Perf help ${index}`, exact: true })).toBeVisible();
+            let requestStart = 0;
+            page.on('request', request => { if (request.url().includes('/rpc/accept_help_commitment')) requestStart = performance.now(); });
+            const response = page.waitForResponse(value => value.url().includes('/rpc/accept_help_commitment')).then(async value => {
+              await value.finished(); assert.equal(value.status(), 200);
+              return { commandMs: performance.now() - requestStart, exchange: helpExchangeSchema.parse(await value.json()) };
+            });
+            const actionStart = performance.now(); await page.getByRole('button', { name: `Accept ${requester.email}`, exact: true }).click();
+            const region = page.getByRole('region', { name: `Help Exchange with ${requester.email}` });
+            await expect(region.getByText('Committed', { exact: true })).toBeVisible(); const visibleMs = performance.now() - actionStart;
+            const result = await response;
+            const persisted = await requester.client.from('exchanges').select('id,kind,provider_id,receiver_id,state').eq('source_id', listing.id);
+            assert.deepEqual(persisted.data, [{ id: result.exchange.id, kind: 'help', provider_id: f.author.id, receiver_id: requester.id, state: 'committed' }]);
+            await page.reload(); await expect(region.getByText('Committed', { exact: true })).toBeVisible();
+            actions.push({ index, boardQueryMs, commandMs: result.commandMs, visibleMs, exchangeId: result.exchange.id, listingId: listing.id }); persist({ errors: 0, phase: 'head action persisted' });
+          }
+        } finally { await context.close(); }
+      }
+    }
+    const median = (numbers: number[]) => { const sorted = [...numbers].sort((a, b) => a - b); const mid = Math.floor(sorted.length / 2); return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2; };
+    const summary = (side: string) => ({ readinessMedianMs: median(samples.filter(row => row.side === side).map(row => row.readinessMs)), queryMedianMs: median(samples.filter(row => row.side === side).map(row => row.queryMs)) });
+    const baseline = summary('trunk'); const current = summary('head');
+    const added = { boardQueryMedianMs: median(actions.map(row => row.boardQueryMs)), commandMedianMs: median(actions.map(row => row.commandMs)), visibleMedianMs: median(actions.map(row => row.visibleMs)) };
+    const queries = [...samples.filter(row => row.side === 'head').map(row => row.queryMs), ...actions.map(row => row.boardQueryMs)].sort((a, b) => a - b);
+    const queryP95Ms = queries[Math.ceil(queries.length * .95) - 1];
+    const checks = { comparableReadiness: current.readinessMedianMs <= Math.max(1.2 * baseline.readinessMedianMs, baseline.readinessMedianMs + 100), comparableRead: current.queryMedianMs <= Math.max(1.2 * baseline.queryMedianMs, baseline.queryMedianMs + 100), command: added.commandMedianMs <= 1000, visible: added.visibleMedianMs <= 2000, query: queryP95Ms <= 3000, startup: Object.values(startup).every(value => value <= 60000) };
+    const ranges = { readinessMs: [Math.min(...samples.map(row => row.readinessMs)), Math.max(...samples.map(row => row.readinessMs))], commandMs: [Math.min(...actions.map(row => row.commandMs)), Math.max(...actions.map(row => row.commandMs))], visibleMs: [Math.min(...actions.map(row => row.visibleMs)), Math.max(...actions.map(row => row.visibleMs))] };
+    persist({ errors: 0, baseline, head: current, added, queryP95Ms, checks, ranges, claim: 'Local serial development probe meets regression and absolute budgets. No production throughput or speedup claim.', baselineAction: 'Help absent at trunk; shared authorized Community readiness/read compared instead.', providerWait: 'None in this path; notices are enqueued in the transaction and delivered after commit.' });
+    writeFileSync(`${directory}/report.md`, `P12 at ${head}.\n\n${pairs} interleaved trunk/head pairs against ${base}. Both sides reload and read the identical authorized Community. Trunk lacks help, so the added help board read, owner acceptance command, and visible committed Exchange use absolute budgets.\n\nTrunk ${JSON.stringify(baseline)}. Head ${JSON.stringify(current)}. Added ${JSON.stringify(added)}. Query p95 ${queryP95Ms} ms. Ranges ${JSON.stringify(ranges)}. Checks ${JSON.stringify(checks)}.\n\nEvery head sample publishes a Help Listing, records a requester commitment, reads the board, accepts through the browser, asserts HTTP 200, one persisted committed help Exchange with the owner as helper and the committer as requester, and a reload. Zero failed samples. Local serial Chrome and Vite development timings include HTTP, PostgreSQL and render work. Notice delivery happens after commit and is excluded. No production throughput or speedup claim. Host observations and raw samples are in samples.json.\n`);
     assert.ok(Object.values(checks).every(Boolean), JSON.stringify(checks));
     process.stdout.write(`${JSON.stringify({ baseline, head: current, added, queryP95Ms, checks })}\n`);
   } catch (error) { persist({ error: error instanceof Error ? error.message : String(error) }); throw error; }
