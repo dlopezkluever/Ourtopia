@@ -4,7 +4,7 @@ export const stripeId = z.string().regex(/^[a-z]+_[A-Za-z0-9_]+$/);
 export const subscriptionSchema = z.object({
   id: stripeId, customer: stripeId, livemode: z.literal(false),
   status: z.enum(['incomplete', 'incomplete_expired', 'trialing', 'active', 'past_due', 'canceled', 'unpaid', 'paused']),
-  cancel_at_period_end: z.boolean(), metadata: z.object({ account_id: z.uuid() }),
+  cancel_at_period_end: z.boolean(), metadata: z.object({ account_id: z.uuid(), billing_job_id: z.uuid().optional() }),
   items: z.object({ data: z.array(z.object({ quantity: z.literal(1), price: z.object({
     unit_amount: z.literal(500), currency: z.literal('usd'), recurring: z.object({ interval: z.literal('month'), interval_count: z.literal(1) }),
   }) })).length(1) }),
@@ -43,6 +43,7 @@ export class TestStripe {
       mode: 'subscription', customer, client_reference_id: job.account_id,
       success_url: `${origin}/billing?checkout=returned`, cancel_url: `${origin}/billing?checkout=canceled`,
       'metadata[account_id]': job.account_id, 'subscription_data[metadata][account_id]': job.account_id,
+      'subscription_data[metadata][billing_job_id]': job.id,
       'line_items[0][quantity]': '1', 'line_items[0][price_data][currency]': 'usd',
       'line_items[0][price_data][unit_amount]': '500', 'line_items[0][price_data][recurring][interval]': 'month',
       'line_items[0][price_data][product_data][name]': 'Ourtopia test subscription',

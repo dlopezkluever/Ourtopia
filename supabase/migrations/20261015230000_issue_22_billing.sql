@@ -119,6 +119,7 @@ begin
     raise exception using errcode = '55000', message = 'There is no current test subscription to cancel.';
   end if;
   select * into job from public.billing_jobs where account_id = actor and kind = p_kind
+    and (p_kind <> 'checkout' or subscription_id is null)
     and (state in ('pending', 'processing', 'failed') or (p_kind = 'checkout' and state = 'ready' and expires_at > now()))
     order by created_at desc limit 1;
   if job.id is null then
@@ -184,7 +185,8 @@ begin
     raise exception using errcode = '22023', message = 'A test Checkout session is required.';
   end if;
   update public.billing_jobs set state = case when p_failed then 'failed' else 'ready' end,
-    session_id = p_session_id, checkout_url = p_checkout_url, expires_at = p_expires_at,
+    session_id = p_session_id, checkout_url = p_checkout_url,
+    expires_at = case when job.kind = 'checkout' and job.subscription_id is not null then clock_timestamp() else p_expires_at end,
     claim_token = null, lease_until = null,
     last_error = case when p_failed then 'Test billing could not finish. Retry this action.' end
     where id = job.id returning * into job;
@@ -230,7 +232,7 @@ begin
 end;
 $$;
 
-create function public.finish_stripe_receipt(p_event_id text, p_claim_token uuid, p_account_id uuid default null, p_status text default null, p_cancel_at_period_end boolean default false, p_failed boolean default false)
+create function public.finish_stripe_receipt(p_event_id text, p_claim_token uuid, p_account_id uuid default null, p_status text default null, p_cancel_at_period_end boolean default false, p_failed boolean default false, p_checkout_job_id uuid default null)
 returns jsonb language plpgsql security definer set search_path = '' as $$
 declare receipt public.stripe_receipts; writer public.stripe_writers; outcome jsonb;
 begin
@@ -254,11 +256,15 @@ begin
   if exists(select 1 from public.billing_subscriptions where subscription_id = receipt.subscription_id and (account_id <> p_account_id or customer_id <> receipt.customer_id)) then
     raise exception using errcode = '42501', message = 'Subscription ownership cannot change.';
   end if;
+  if p_checkout_job_id is not null and not exists(select 1 from public.billing_jobs where id = p_checkout_job_id
+    and account_id = p_account_id and kind = 'checkout' and (subscription_id is null or subscription_id = receipt.subscription_id)) then
+    raise exception using errcode = '42501', message = 'The Stripe subscription must reference its own checkout job.';
+  end if;
   insert into public.billing_subscriptions(subscription_id, account_id, customer_id, status, cancel_at_period_end)
     values(receipt.subscription_id, p_account_id, receipt.customer_id, p_status, p_cancel_at_period_end)
     on conflict (subscription_id) do update set status = excluded.status, cancel_at_period_end = excluded.cancel_at_period_end, reconciled_at = clock_timestamp();
-  update public.billing_jobs set expires_at = clock_timestamp()
-    where account_id = p_account_id and kind = 'checkout' and state = 'ready' and expires_at > clock_timestamp();
+  update public.billing_jobs set subscription_id = receipt.subscription_id, expires_at = clock_timestamp()
+    where id = p_checkout_job_id and account_id = p_account_id and kind = 'checkout';
   outcome := jsonb_build_object('event_id', p_event_id, 'subscription_id', receipt.subscription_id, 'status', p_status);
   update public.stripe_receipts set state = 'processed', result = outcome, processed_at = clock_timestamp(), last_error = null where event_id = p_event_id;
   delete from public.stripe_writers where subscription_id = receipt.subscription_id;
@@ -266,5 +272,5 @@ begin
 end;
 $$;
 
-revoke all on function public.claim_test_billing(uuid), public.link_test_customer(uuid, uuid, text), public.finish_test_billing(uuid, uuid, text, text, timestamptz, boolean), public.receive_stripe_receipt(text, text, text, text, text), public.claim_stripe_receipt(text), public.finish_stripe_receipt(text, uuid, uuid, text, boolean, boolean) from public, anon, authenticated;
-grant execute on function public.claim_test_billing(uuid), public.link_test_customer(uuid, uuid, text), public.finish_test_billing(uuid, uuid, text, text, timestamptz, boolean), public.receive_stripe_receipt(text, text, text, text, text), public.claim_stripe_receipt(text), public.finish_stripe_receipt(text, uuid, uuid, text, boolean, boolean) to stripe_worker;
+revoke all on function public.claim_test_billing(uuid), public.link_test_customer(uuid, uuid, text), public.finish_test_billing(uuid, uuid, text, text, timestamptz, boolean), public.receive_stripe_receipt(text, text, text, text, text), public.claim_stripe_receipt(text), public.finish_stripe_receipt(text, uuid, uuid, text, boolean, boolean, uuid) from public, anon, authenticated;
+grant execute on function public.claim_test_billing(uuid), public.link_test_customer(uuid, uuid, text), public.finish_test_billing(uuid, uuid, text, text, timestamptz, boolean), public.receive_stripe_receipt(text, text, text, text, text), public.claim_stripe_receipt(text), public.finish_stripe_receipt(text, uuid, uuid, text, boolean, boolean, uuid) to stripe_worker;

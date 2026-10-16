@@ -23,6 +23,7 @@ export async function processReceipt(backend: BillingBackend, stripe: TestStripe
     return await backend.rpc('finish_stripe_receipt', {
       p_event_id: eventId, p_claim_token: receipt.claim_token, p_account_id: current.metadata.account_id,
       p_status: current.status, p_cancel_at_period_end: current.cancel_at_period_end,
+      p_checkout_job_id: current.metadata.billing_job_id ?? null,
     });
   } catch {
     await backend.rpc('finish_stripe_receipt', { p_event_id: eventId, p_claim_token: receipt.claim_token, p_failed: true });

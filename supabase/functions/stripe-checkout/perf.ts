@@ -6,12 +6,13 @@ import { randomUUID } from 'node:crypto';
 import { cpus, freemem, totalmem } from 'node:os';
 import { chromium, expect, type Page } from '@playwright/test';
 import { actor, createCommunity, password } from '../../../scripts/verify/backend';
-import { currentSubscriptionFixture, persistedStatus, realBillingConfig, stripeTestApi } from './verification';
+import { currentSubscriptionFixture, persistedStatus, realBillingConfig, realBillingConfigured, stripeTestApi } from './verification';
 import { TestStripe } from './provider';
 import { processReceipt, type BillingBackend } from './worker';
 
 export async function verifyBillingPerf(values: { base?: string; head?: string; pairs?: string }) {
-  realBillingConfig();
+  const providerConfigured = realBillingConfigured();
+  if (providerConfigured) realBillingConfig();
   const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
   assert.equal(values.head, head, 'Measure the exact committed head.');
   assert.ok(values.base); const base = values.base;
@@ -61,6 +62,7 @@ export async function verifyBillingPerf(values: { base?: string; head?: string; 
           assert.equal(read.error, null); assert.deepEqual(read.data, [community.data]); samples.push({ pair, side, readinessMs, queryMs }); persist({ phase: 'paired read', errors: 0 });
         } finally { await context.close(); }
       }
+      if (!providerConfigured) continue;
       const fixture = await currentSubscriptionFixture(`billing-perf-${pair}`);
       try {
         const context = await browser.newContext({ baseURL: `http://127.0.0.1:${headPort}` });
@@ -83,12 +85,19 @@ export async function verifyBillingPerf(values: { base?: string; head?: string; 
     const median = (rows: number[]) => { const ordered = [...rows].sort((a, b) => a - b); const middle = Math.floor(ordered.length / 2); return ordered.length % 2 ? ordered[middle] : (ordered[middle - 1] + ordered[middle]) / 2; };
     const summary = (side: string) => ({ readinessMs: median(samples.filter(row => row.side === side).map(row => row.readinessMs)), queryMs: median(samples.filter(row => row.side === side).map(row => row.queryMs)) });
     const baseline = summary('trunk'); const current = summary('head');
-    const added = { commandMs: median(actions.map(row => row.commandMs)), localCommandsMs: median(actions.map(row => row.localCommandsMs)), providerMs: median(actions.map(row => row.providerMs)), visibleAfterProviderMs: median(actions.map(row => row.visibleAfterProviderMs)) };
+    const added = providerConfigured ? { commandMs: median(actions.map(row => row.commandMs)), localCommandsMs: median(actions.map(row => row.localCommandsMs)), providerMs: median(actions.map(row => row.providerMs)), visibleAfterProviderMs: median(actions.map(row => row.visibleAfterProviderMs)) } : null;
     const queries = samples.filter(row => row.side === 'head').map(row => row.queryMs).sort((a, b) => a - b); const queryP95Ms = queries[Math.ceil(queries.length * .95) - 1];
-    const checks = { readiness: current.readinessMs <= Math.max(baseline.readinessMs * 1.2, baseline.readinessMs + 100), read: current.queryMs <= Math.max(baseline.queryMs * 1.2, baseline.queryMs + 100), command: added.commandMs <= 1000 && added.localCommandsMs <= 1000, visible: added.visibleAfterProviderMs <= 2000, query: queryP95Ms <= 3000, startup: Object.values(startup).every(value => value <= 60000) };
-    persist({ baseline, head: current, added, queryP95Ms, checks, errors: 0, mode: 'Local Vite and serial Chrome. Ten interleaved trunk-first pairs with identical persisted authorized reads. Billing absent at trunk. Head uses actual Stripe test subscriptions; synthetic verified receipts isolate current-object reconciliation. Provider time is separate. No speedup claim.' });
-    writeFileSync(`${directory}/report.md`, `P22 at ${head}. ${pairs} alternating pairs against ${base}.\n\nBaseline ${JSON.stringify(baseline)}. Head ${JSON.stringify(current)}. Added ${JSON.stringify(added)}. Query p95 ${queryP95Ms} ms.\n\nChecks ${JSON.stringify(checks)}. Zero failed samples. Every action persisted and displayed canceled status matching current Stripe. External provider wait is separate from local command work. Browser polling and HTTP rendering bound visible time. This local development probe makes no production throughput or speedup claim. Real hosted Checkout is covered separately by the journey suite.\n`);
-    assert.ok(Object.values(checks).every(Boolean), JSON.stringify(checks));
+    const checks = { readiness: current.readinessMs <= Math.max(baseline.readinessMs * 1.2, baseline.readinessMs + 100), read: current.queryMs <= Math.max(baseline.queryMs * 1.2, baseline.queryMs + 100), command: added ? added.commandMs <= 1000 && added.localCommandsMs <= 1000 : null, visible: added ? added.visibleAfterProviderMs <= 2000 : null, query: queryP95Ms <= 3000, startup: Object.values(startup).every(value => value <= 60000) };
+    const status = providerConfigured ? 'MEASURED' : 'BLOCKED P22-STRIPE-TEST-CONFIG';
+    const mode = 'Local Vite and serial Chrome. Ten interleaved trunk-first pairs with identical persisted authorized reads. Billing absent at trunk. Configured head actions use actual Stripe test subscriptions and synthetic verified receipts to isolate current-object reconciliation. Provider time is separate. No speedup claim.';
+    persist({ status, baseline, head: current, added, queryP95Ms, checks, errors: 0, mode });
+    const outcome = providerConfigured ? 'Every action persisted and displayed canceled status matching current Stripe. External provider wait is separate from local command work. Browser polling and HTTP rendering bound visible time. Real hosted Checkout has a separate journey gate.' : 'Only shared readiness and authorized reads were measured. Billing command and visible provider outcome checks are BLOCKED, not passed. Configure ignored STRIPE_TEST_SECRET_KEY and STRIPE_WEBHOOK_SECRET before provider acceptance.';
+    writeFileSync(`${directory}/report.md`, `P22 at ${head}. ${pairs} alternating pairs against ${base}.\n\nStatus ${status}.\n\nBaseline ${JSON.stringify(baseline)}. Head ${JSON.stringify(current)}. Added ${JSON.stringify(added)}. Query p95 ${queryP95Ms} ms.\n\nChecks ${JSON.stringify(checks)}. Zero failed samples. ${outcome} This local development probe makes no production throughput or speedup claim.\n`);
+    assert.ok(Object.values(checks).every(value => value !== false), JSON.stringify(checks));
+    if (!providerConfigured) {
+      process.stdout.write('BLOCKED P22-STRIPE-TEST-CONFIG. Shared paired samples saved; billing performance acceptance remains unmeasured.\n');
+      process.exitCode = 2;
+    }
   } catch (error) { persist({ failed: true, errors: 1, message: error instanceof Error ? error.message : 'Perf failed.' }); throw error; }
   finally { await browser.close(); for (const server of servers) server.kill(); }
 }

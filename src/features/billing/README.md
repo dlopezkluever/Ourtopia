@@ -6,6 +6,8 @@ Billing belongs to the signed-in account. An approved active membership authoriz
 
 Checkout jobs persist before Stripe calls. Customer creation uses the account UUID as the Stripe idempotency identity. Checkout creation uses the durable job UUID. The server fixes the price at USD 500 cents per month and quantity one. Clients supply neither prices nor customer identities. Failed jobs retain the same provider identity. Jobs older than 22 hours fail closed for manual recovery before Stripe's idempotency retention window can expire. Recover the original provider operation before permitting a replacement. No automatic retry may create a second chargeable subscription.
 
+Stripe subscription metadata retains `billing_job_id`. Reconciliation consumes only that originating Checkout job. An old subscription event cannot expire a newer open session. A receipt that arrives before the Checkout response also records the consumed job, so the later response cannot make that job reusable.
+
 The webhook verifies the exact raw body with HMAC SHA-256 and a five minute timestamp tolerance before recording an event. Configure its destination for `customer.subscription.created`, `customer.subscription.updated`, and `customer.subscription.deleted`. Other verified test events receive a durable ignored result and cannot change subscription state. Signed test events have unique durable receipt identities and payload fingerprints. The receipt commits before processing. A pending or failed receipt can be claimed again. A processed duplicate returns its prior result.
 
 Each subscription has one durable writer lease. The worker acquires a fresh claim token before retrieving Stripe's current subscription object. The guarded finish command checks the token and lease again, validates customer ownership, then updates the subscription and marks the receipt processed in one transaction. Event creation timestamps never choose the resulting state. Expired workers cannot finish after another claim. A crash after receipt insertion leaves pending work. A crash after a claim requires lease expiry, then a new Stripe retrieval. A failed transaction leaves the receipt retryable and preserves the old subscription state.
@@ -21,6 +23,8 @@ Use the coordinator's runtime lease before starting a backend or browser workloa
 Provide `STRIPE_TEST_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` through the ignored `.env.stripe.local` file. Use a Stripe test secret key. The signing secret must match the local Stripe CLI listener. Do not place either value in a Vite variable or a command argument.
 
 No price ID environment variable is required. The server creates the fixed USD 500 monthly price through Checkout's inline price data. Clients cannot choose the price or interval.
+
+The issue-22 performance command always collects the ten paired shared readiness and authorized-read samples. Without provider configuration, it saves those samples and a blocked report, then exits with code 2. Billing command and provider-visible outcome checks remain null. A partial performance report never passes the full performance gate.
 
 1. Run `node supabase/functions/stripe-checkout/local-env.mjs --check` to print availability booleans only.
 2. Start the lane backend and run `node scripts/verify/local-env.mjs`.

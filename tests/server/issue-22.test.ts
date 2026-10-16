@@ -96,6 +96,7 @@ test('server fixes Checkout price and identities and reuses the durable provider
   assert.equal(calls[1].body.get('line_items[0][price_data][currency]'), 'usd');
   assert.equal(calls[1].body.get('line_items[0][price_data][recurring][interval]'), 'month');
   assert.equal(calls[1].body.get('subscription_data[metadata][account_id]'), accountId);
+  assert.equal(calls[1].body.get('subscription_data[metadata][billing_job_id]'), job.id);
   assert.equal(calls[1].body.get('customer'), 'cus_fixture');
 });
 
@@ -246,4 +247,53 @@ test('generated signatures traverse durable reconciliation without claiming real
   assert.deepEqual((await admin.from('stripe_receipts').select('state,attempts').eq('event_id', `evt_${suffix}old`).single()).data, { state: 'processed', attempts: 2 });
   assert.deepEqual((await owner.client.from('memberships').select('role,status').eq('user_id', owner.id)).data, [{ role: 'administrator', status: 'active' }]);
   receipt('issue-22-signed-integration', { signature: 'generated HMAC over exact raw body', persistence: 'real Postgres', provider: 'controlled current-object fixture, not real Stripe acceptance', outOfOrderConverged: true, failedRetried: true, membershipUnchanged: true });
+});
+
+test('an old subscription receipt cannot expire a newer open Checkout job', { skip: process.env.BILLING_LIGHTWEIGHT === '1' }, async () => {
+  const { actor, createCommunity, stripeWorker, receipt } = await import('../../scripts/verify/backend');
+  const owner = await actor({ label: 'billing-old-receipt' });
+  const community = await createCommunity(owner.client);
+  assert.equal(community.error, null);
+  const worker = stripeWorker();
+  const suffix = randomUUID().replaceAll('-', '');
+  const customer = `cus_${suffix}`;
+  const subscription = `sub_${suffix}`;
+  const requestJob = async () => {
+    const result = await owner.client.rpc('request_test_billing', { p_intent_id: randomUUID(), p_community_id: community.data.id, p_kind: 'checkout' });
+    assert.equal(result.error, null);
+    return result.data.job_id as string;
+  };
+  const reconcile = async (jobId: string, status: string) => {
+    const eventId = `evt_${randomUUID().replaceAll('-', '')}`;
+    assert.equal((await worker.rpc('receive_stripe_receipt', { p_event_id: eventId, p_event_type: 'customer.subscription.updated', p_subscription_id: subscription, p_customer_id: customer, p_fingerprint: eventId })).error, null);
+    const claim = await worker.rpc('claim_stripe_receipt', { p_event_id: eventId });
+    assert.equal(claim.error, null);
+    assert.equal((await worker.rpc('finish_stripe_receipt', { p_event_id: eventId, p_claim_token: claim.data.claim_token, p_account_id: owner.id, p_status: status, p_checkout_job_id: jobId })).error, null);
+  };
+  const finish = async (jobId: string, token: string) => {
+    const result = await worker.rpc('finish_test_billing', { p_job_id: jobId, p_claim_token: token, p_session_id: `cs_test_${jobId}`, p_checkout_url: `https://checkout.stripe.com/c/pay/cs_test_${jobId}`, p_expires_at: new Date(Date.now() + 3600000).toISOString() });
+    assert.equal(result.error, null);
+    return result.data;
+  };
+  const firstJob = await requestJob();
+  const firstClaim = await worker.rpc('claim_test_billing', { p_job_id: firstJob });
+  assert.equal(firstClaim.error, null);
+  assert.equal((await worker.rpc('link_test_customer', { p_job_id: firstJob, p_claim_token: firstClaim.data.claim_token, p_customer_id: customer })).error, null);
+  await reconcile(firstJob, 'active');
+  const completed = await finish(firstJob, firstClaim.data.claim_token);
+  assert.equal(completed.subscription_id, subscription);
+  assert.ok(Date.parse(completed.expires_at) <= Date.now());
+  await reconcile(firstJob, 'canceled');
+  const nextJob = await requestJob();
+  assert.notEqual(nextJob, firstJob);
+  const nextClaim = await worker.rpc('claim_test_billing', { p_job_id: nextJob });
+  assert.equal(nextClaim.error, null);
+  const open = await finish(nextJob, nextClaim.data.claim_token);
+  await reconcile(firstJob, 'canceled');
+  assert.equal(await requestJob(), nextJob);
+  const retained = await owner.client.from('billing_jobs').select('expires_at,subscription_id').eq('id', nextJob).single();
+  assert.equal(retained.error, null);
+  assert.equal(retained.data?.expires_at, open.expires_at);
+  assert.equal(retained.data?.subscription_id, null);
+  receipt('issue-22-old-receipt-checkout', { earlyReceiptPreserved: true, newerOpenCheckoutRetained: true, provider: 'command fixtures only, no real Checkout acceptance' });
 });
