@@ -79,7 +79,7 @@ test('lane 3 owner edits and withdraws retained Listing', async ({ page }, info)
 
 test('lane 4 keyword category type dates member and score filters obey persisted fields', async ({ page }, info) => {
   const f = await listingFixture('listing-filters'); await publishDrill(f.alice, f.community.id);
-  await publishDrill(f.bob, f.community.id, { ...drillDetails, title: 'Kitchen mixer', category: 'kitchen', minimum_score: 80 });
+  await publishDrill(f.bob, f.community.id, { ...drillDetails, title: 'Kitchen mixer', description: 'Stand mixer with dough hook.', category: 'kitchen', minimum_score: 80 });
   await openFeed(page, f); await expect(page.getByRole('status')).toHaveText('2 Listings');
   await page.getByLabel('Search Listings').fill('Makita'); await expect(page.getByRole('status')).toHaveText('1 Listing');
   await page.getByLabel('Filter category').selectOption('kitchen'); await expect(page.getByRole('status')).toHaveText('0 Listings');

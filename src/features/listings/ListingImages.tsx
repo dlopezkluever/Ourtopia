@@ -55,7 +55,8 @@ export function ListingImages({ listingId, images, canEdit, onChanged }: { listi
       setFile(null); setPending(null); onChanged();
     } catch (error) { setError(errorMessage(error)); } finally { setBusy(false); }
   }
-  return <section aria-label="Listing images"><h3>Images</h3><div className="listing-images">{images.filter(image => image.state !== 'removed' && (image.state === 'ready' || canEdit)).map((image, index) => <div key={image.id}>{image.state === 'ready' ? <PrivateImage image={image}/> : <p>Upload awaiting retry.</p>}{canEdit && <button type="button" onClick={() => void remove(image.id)}>Remove image {index + 1}</button>}</div>)}</div>
+  const visible = images.filter(image => image.state !== 'removed' && (image.state === 'ready' || canEdit));
+  return <section aria-label="Listing images"><h3>Images</h3>{visible.length === 0 && <p>No images shared yet.</p>}<div className="listing-images">{visible.map((image, index) => <div key={image.id}>{image.state === 'ready' ? <PrivateImage image={image}/> : <p>Upload awaiting retry.</p>}{canEdit && <button type="button" onClick={() => void remove(image.id)}>Remove image {index + 1}</button>}</div>)}</div>
     {canEdit && <><label htmlFor="listing-image">Private image (JPEG, PNG, WebP, up to 5 MB)</label><input id="listing-image" type="file" accept="image/jpeg,image/png,image/webp" disabled={busy} onChange={event => { setFile(event.target.files?.[0] ?? null); setError(''); }}/><button type="button" disabled={!file || busy} onClick={() => void upload()}>{busy ? 'Uploading...' : 'Upload or retry image'}</button><p className="field-help">Retry the same file after an interruption. Images are only available to current Community members.</p></>}
     {error && <p role="alert" className="error">{error}</p>}
   </section>;
