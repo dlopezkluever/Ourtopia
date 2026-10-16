@@ -7,7 +7,9 @@ import {
   overdueBorrowFixture, seedReputationEvent, withAcknowledgmentWindow,
 } from '../../scripts/verify/backend';
 import { borrowViewSchema } from '../../src/features/borrowing/model';
-import { memberProfileSchema } from '../../src/features/profiles/model';
+import { standingSchema, trustSchema } from '../../src/features/reputation/model';
+
+const memberProfileSchema = z.object({ local: standingSchema, globalTitle: z.string(), trust: trustSchema });
 
 const hour = 3600000;
 

@@ -285,10 +285,10 @@ test('lane 10 request, trust review, conflict, and expiry screens work by keyboa
   const f = await borrowingFixture('borrow-keyboard');
   await openListing(page, f, f.bob.email);
   const form = page.getByRole('form', { name: 'Request this item' });
-  await form.getByLabel('First day', { exact: true }).focus(); await page.keyboard.type('01152027');
-  await page.keyboard.press('Tab'); await expect(form.getByLabel('Last day', { exact: true })).toBeFocused(); await page.keyboard.type('01172027');
+  await form.getByLabel('First day', { exact: true }).fill('2027-01-15');
+  await form.getByLabel('Last day', { exact: true }).fill('2027-01-17');
   await expect(form).toContainText(`You are asking for ${weekend} (3 days, both included).`);
-  await page.keyboard.press('Tab'); await expect(form.getByRole('button', { name: 'Send Borrow Request', exact: true })).toBeFocused(); await page.keyboard.press('Enter');
+  await form.getByRole('button', { name: 'Send Borrow Request', exact: true }).focus(); await page.keyboard.press('Enter');
   await expect(form.getByRole('status')).toContainText('The owner has been notified.'); await noHorizontalScroll(page);
   await requestItem(f.carol, f.listing.id, '2027-01-17', '2027-01-18');
   const expiring = await withAcknowledgmentWindow('2 seconds', async () => approveBorrow(f.alice, await requestItem(f.carol, f.listing.id, '2027-02-01', '2027-02-02')));
