@@ -127,6 +127,9 @@ declare reservation public.item_reservations;
 begin
   select * into reservation from public.item_reservations where exchange_id = new.id;
   if not found or new.state = old.state then return new; end if;
+  if old.state = 'expired' or (old.state = 'approved' and new.state not in ('handoff_pending', 'cancelled', 'expired')) then
+    raise exception using errcode = '55000', message = 'This item approval can no longer move to that state.';
+  end if;
   if old.state = 'approved' and new.state = 'handoff_pending' and reservation.acknowledged_at is null then
     raise exception using errcode = '55000', message = 'The borrower must acknowledge the terms before the 48-hour deadline.';
   end if;

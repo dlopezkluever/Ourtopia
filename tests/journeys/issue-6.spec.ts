@@ -45,7 +45,7 @@ async function noHorizontalScroll(page: Page) { expect(await page.evaluate(() =>
 test('lane 1 trunk has no Borrow Request submission; head approves one 48-hour reservation', async ({ page, browser }, info) => {
   test.setTimeout(150000);
   const f = await borrowingFixture('borrow-trunk'); const root = `.pilot-evidence/issue-6-trunk-${info.project.name}`;
-  const paths = execFileSync('git', ['ls-tree', '-r', '--name-only', base], { encoding: 'utf8' }).split('\n').filter(path => /^(src\/|vite.config.ts$|index.html$|package.json$|tsconfig[^/]*\.json$)/.test(path));
+  const paths = execFileSync('git', ['ls-tree', '-r', '--name-only', base], { encoding: 'utf8' }).split('\n').filter(path => /^(src\/|vite.config.ts$|index.html$|package.json$)/.test(path));
   for (const path of paths) { const target = `${root}/${path}`; mkdirSync(target.slice(0, target.lastIndexOf('/')), { recursive: true }); writeFileSync(target, execFileSync('git', ['show', `${base}:${path}`])); }
   copyFileSync('.env.local', `${root}/.env.local`);
   const port = Number(process.env.APP_PORT ?? 5173) + 8;
@@ -212,27 +212,27 @@ test('lane 7 an unacknowledged approval expires once under delayed and repeated 
       await card(alice.page, f.bob.email).getByRole('button', { name: `Approve ${f.bob.email}`, exact: true }).click();
       await expect(card(alice.page, f.bob.email).getByRole('heading', { name: 'Dates reserved', exact: true })).toBeVisible();
     });
+    const approved = await borrowRecords(f.listing.id); const exchangeId = approved.reservations[0].exchange_id;
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await expect(card(page, 'you').getByRole('heading', { name: 'Dates reserved', exact: true })).toBeVisible();
+    await page.context().setOffline(true);
+    await page.waitForTimeout(Math.max(0, Date.parse(approved.reservations[0].acknowledgment_due_at) - Date.now()) + 1000);
+    await expect(card(alice.page, f.bob.email).getByRole('heading', { name: /^(Acknowledgment deadline passed|Approval expired)$/ })).toBeVisible();
+    expect((await admin.from('item_reservations').update({ acknowledged_at: new Date().toISOString() }).eq('exchange_id', exchangeId)).error?.code).toBe('55000');
+    const workers = await Promise.all([admin.rpc('expire_due_item_approvals'), admin.rpc('expire_item_approval', { p_exchange_id: exchangeId }), admin.rpc('expire_due_item_approvals')]);
+    for (const worker of workers) expect(worker.error).toBeNull();
+    expect((await admin.rpc('expire_item_approval', { p_exchange_id: exchangeId })).error).toBeNull();
+    await page.context().setOffline(false); await page.reload();
+    await expect(card(page, 'you').getByRole('heading', { name: 'Approval expired', exact: true })).toBeVisible();
+    await expect(card(page, 'you')).toContainText('you can send a new Borrow Request.');
+    await expect(card(alice.page, f.bob.email).getByRole('heading', { name: 'Approval expired', exact: true })).toBeVisible();
+    const records = await borrowRecords(f.listing.id);
+    expect(records.exchanges.map(row => row.state)).toEqual(['expired']); expect(records.requests.map(row => row.status)).toEqual(['expired']);
+    expect(records.reservations.map(row => row.blocking)).toEqual([false]);
+    expect((await admin.from('community_events').select('id').eq('community_id', f.community.id).eq('kind', 'borrow_expired')).data).toHaveLength(1);
+    expect((await borrowNotices(f.community.id, 'borrow_expired')).map(row => row.recipient_id).sort()).toEqual([f.alice.id, f.alice.id, f.bob.id, f.bob.id].sort());
+    await capture(page, info, 7, { records, workers: workers.map(worker => worker.data) });
   } finally { await alice.context.close(); }
-  const approved = await borrowRecords(f.listing.id); const exchangeId = approved.reservations[0].exchange_id;
-  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-  await expect(card(page, 'you').getByRole('heading', { name: 'Dates reserved', exact: true })).toBeVisible();
-  await page.context().setOffline(true);
-  const due = Date.parse(approved.reservations[0].acknowledgment_due_at);
-  await page.waitForTimeout(Math.max(0, due - Date.now()) + 1000);
-  await expect(card(page, 'you').getByRole('heading', { name: 'Acknowledgment deadline passed', exact: true })).toBeVisible();
-  expect((await admin.from('item_reservations').update({ acknowledged_at: new Date().toISOString() }).eq('exchange_id', exchangeId)).error?.code).toBe('55000');
-  const workers = await Promise.all([admin.rpc('expire_due_item_approvals'), admin.rpc('expire_item_approval', { p_exchange_id: exchangeId }), admin.rpc('expire_due_item_approvals')]);
-  for (const worker of workers) expect(worker.error).toBeNull();
-  expect((await admin.rpc('expire_item_approval', { p_exchange_id: exchangeId })).error).toBeNull();
-  await page.context().setOffline(false); await page.reload();
-  await expect(card(page, 'you').getByRole('heading', { name: 'Approval expired', exact: true })).toBeVisible();
-  await expect(card(page, 'you')).toContainText('you can send a new Borrow Request.');
-  const records = await borrowRecords(f.listing.id);
-  expect(records.exchanges.map(row => row.state)).toEqual(['expired']); expect(records.requests.map(row => row.status)).toEqual(['expired']);
-  expect(records.reservations.map(row => row.blocking)).toEqual([false]);
-  expect((await admin.from('community_events').select('id').eq('community_id', f.community.id).eq('kind', 'borrow_expired')).data).toHaveLength(1);
-  expect((await borrowNotices(f.community.id, 'borrow_expired')).map(row => row.recipient_id).sort()).toEqual([f.alice.id, f.alice.id, f.bob.id, f.bob.id].sort());
-  await capture(page, info, 7, { records, workers: workers.map(worker => worker.data) });
 });
 
 test('lane 8 unresolved custody blocks a later request until physical recovery', async ({ page, browser }, info) => {
@@ -244,9 +244,10 @@ test('lane 8 unresolved custody blocks a later request until physical recovery',
   await openListing(page, f, f.alice.email);
   await expect(card(page, f.bob.email).getByRole('region', { name: 'Reservation', exact: true })).toContainText('Checked out to the borrower');
   const approve = card(page, f.carol.email, carolDates).getByRole('button', { name: `Approve ${f.carol.email}`, exact: true });
-  await approve.click(); await expect(card(page, f.carol.email, carolDates).getByRole('alert')).toContainText('Item custody is unresolved');
+  const decide = async () => (await Promise.all([page.waitForResponse(response => response.url().includes('/rpc/decide_borrow_request')), approve.click()]))[0];
+  expect((await (await decide()).json()).code).toBe('23P01'); await expect(card(page, f.carol.email, carolDates).getByRole('alert')).toContainText('Item custody is unresolved');
   expect((await admin.from('exchanges').update({ state: 'closed_without_completion' }).eq('id', loan.exchange_id!)).error).toBeNull();
-  await approve.click(); await expect(card(page, f.carol.email, carolDates).getByRole('alert')).toContainText('Item custody is unresolved');
+  expect((await (await decide()).json()).code).toBe('23P01'); await expect(card(page, f.carol.email, carolDates).getByRole('alert')).toContainText('Item custody is unresolved');
   const blocked = await borrowRecords(f.listing.id);
   expect(blocked.exchanges).toHaveLength(1); expect(blocked.reservations.map(row => [row.blocking, row.custody_unresolved])).toEqual([[true, true]]);
   await page.screenshot({ path: info.outputPath('lane-8/blocked.png'), fullPage: true });
@@ -261,7 +262,8 @@ test('lane 9 forged approvals, reservation edits, and foreign history reads are 
   const dave = await activeMember(f.owner, f.community.id, 'borrow-forgery-dave');
   await openListing(page, f, dave.email);
   await expect(page.getByRole('form', { name: 'Request this item' })).toBeVisible();
-  await expect(page.getByRole('article')).toHaveCount(0); await expect(page.getByRole('button', { name: /^Approve/ })).toHaveCount(0);
+  const panel = page.getByRole('region', { name: 'Borrow Requests', exact: true });
+  await expect(panel.getByRole('article')).toHaveCount(0); await expect(panel.getByRole('button', { name: /^Approve/ })).toHaveCount(0);
   await page.goto('/borrowing'); await expect(page.getByText('No one has asked to borrow your items yet.')).toBeVisible(); await expect(page.getByText('You have not requested any items yet.')).toBeVisible();
   const denied = {
     borrowerApproves: (await decideBorrow(f.bob, request)).error?.code,

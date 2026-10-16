@@ -45,7 +45,7 @@ test('Bob requests Friday through Sunday, Alice sees 50 Unproven, and approval a
   const due = Date.parse(approved.reservation!.acknowledgment_due_at);
   assert.ok(due >= before + 48 * hour - 2000 && due <= after + 48 * hour + 2000, `deadline ${approved.reservation!.acknowledgment_due_at}`);
   const replay = await decideBorrow(f.alice, request, 'approved', decisionIntent);
-  assert.deepEqual(replay.data, approved);
+  assert.deepEqual(borrowViewSchema.parse(replay.data), approved);
   assert.equal((await decideBorrow(f.alice, request, 'rejected', decisionIntent)).error?.code, '23505');
 
   const records = await borrowRecords(f.listing.id);
