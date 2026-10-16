@@ -47,7 +47,9 @@ test('lane 1 actual trunk absence and persisted head publication', async ({ page
     await expect(trunk.getByRole('link', { name: 'Community Listings' })).toHaveCount(0);
     await trunk.screenshot({ path: info.outputPath('lane-1/trunk.png'), fullPage: true });
   } finally { await context.close(); server.kill(); }
-  await openFeed(page, f); await fillDrill(page); await saveDrill(page);
+  await signIn(page, f.alice.email); await page.getByRole('link', { name: 'Community Listings', exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/communities/${f.community.id}/listings$`)); await expect(page.getByRole('heading', { name: 'Community Listings', exact: true })).toBeVisible();
+  await fillDrill(page); await saveDrill(page);
   await page.screenshot({ path: info.outputPath('lane-1/head.png'), fullPage: true });
   await page.reload(); await expect(page.getByRole('heading', { name: drillDetails.title, exact: true })).toBeVisible();
   const persisted = await f.bob.client.from('listings').select('*').eq('community_id', f.community.id); expect(persisted.data).toHaveLength(1);

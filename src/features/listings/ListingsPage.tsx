@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { z } from 'zod';
 import { supabase } from '../../lib/supabase/client';
 import { useAccessScopedRead } from '../profiles/useAccessScopedRead';
@@ -70,16 +70,20 @@ export function ListingsPage({ userId, communityId, listingId }: { userId: strin
   </section>;
 }
 
-export function ListingsLink({ userId }: { userId: string }) {
+export function ListingsLink() {
+  const current = /^\/communities\/([0-9a-f-]{36})/i.exec(location.pathname)?.[1];
+  return <a className="text-button" href={current ? `/communities/${current}/listings` : '/listings'}>Community Listings</a>;
+}
+
+export function ListingsRedirect({ userId }: { userId: string }) {
   const state = useAccessScopedRead(userId, 'listings-navigation', async () => {
-    const result = await supabase.from('communities').select('id,name').order('created_at');
+    const result = await supabase.from('communities').select('id').order('created_at').limit(1);
     if (result.error) throw result.error;
-    return z.array(z.object({ id: z.uuid(), name: z.string() })).parse(result.data);
+    return z.array(z.object({ id: z.uuid() })).parse(result.data)[0]?.id ?? null;
   });
-  if (state.status !== 'ready') return null;
-  const requested = /^\/communities\/([0-9a-f-]{36})/.exec(location.pathname)?.[1];
-  const community = state.data.find(value => value.id === requested) ?? state.data[0];
-  return community ? <a className="text-button" href={`/communities/${community.id}/listings`}>Community Listings</a> : null;
+  useEffect(() => { if (state.status === 'ready' && state.data) location.replace(`/communities/${state.data}/listings`); }, [state]);
+  if (state.status === 'ready' && !state.data) return <section className="account-card"><h2>No Community yet.</h2><p>Join or create a Community to share and find items.</p><a href="/">Back home</a></section>;
+  return <p role="status" className="loading">Opening Listings...</p>;
 }
 
 export function OwnerListings({ userId, communityId, subjectId }: { userId: string; communityId: string; subjectId: string }) {
