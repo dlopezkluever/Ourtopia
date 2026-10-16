@@ -138,6 +138,29 @@ export async function activeMember(owner: Awaited<ReturnType<typeof actor>>, com
   return member;
 }
 
+export const conversationRow = z.object({ id: z.uuid(), community_id: z.uuid(), participant_low: z.uuid(), participant_high: z.uuid(), started_by: z.uuid(), created_at: z.string() });
+export const messageRow = z.object({ id: z.uuid(), conversation_id: z.uuid(), community_id: z.uuid(), author_id: z.uuid(), intent_id: z.uuid(), body: z.string(), created_at: z.string() });
+
+export async function startConversation(starter: Awaited<ReturnType<typeof actor>>, communityId: string, participantId: string, intent = randomUUID()) {
+  const result = await starter.client.rpc('start_conversation', { p_intent_id: intent, p_community_id: communityId, p_participant_id: participantId });
+  if (result.error) throw result.error;
+  return conversationRow.parse(result.data);
+}
+
+export async function sendMessage(author: Awaited<ReturnType<typeof actor>>, conversationId: string, body: string, intent = randomUUID()) {
+  const result = await author.client.rpc('send_message', { p_intent_id: intent, p_conversation_id: conversationId, p_body: body });
+  if (result.error) throw result.error;
+  return messageRow.parse(result.data);
+}
+
+export async function conversationFixture(label = 'conversation') {
+  const { owner, community } = await membershipFixture(label);
+  const first = await activeMember(owner, community.id, `${label}-first`);
+  const second = await activeMember(owner, community.id, `${label}-second`);
+  const conversation = await startConversation(first, community.id, second.id);
+  return { owner, community, first, second, conversation };
+}
+
 // Server-seeded verified history: completed Exchanges settled through the real completion producer.
 export async function completedExchanges(communityId: string, providerId: string, receiverId: string, count: number, kind: 'item' | 'help' = 'help') {
   if (count === 0) return [];

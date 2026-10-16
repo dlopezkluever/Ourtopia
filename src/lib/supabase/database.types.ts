@@ -71,6 +71,26 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"conversations": {
+                  Row: {
+                    "community_id": string,"created_at": string,"id": string,"participant_high": string,"participant_low": string,"started_by": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "community_id": string,"created_at"?: string,"id"?: string,"participant_high": string,"participant_low": string,"started_by": string
+                  }
+                  Update: {
+                    "community_id"?: string,"created_at"?: string,"id"?: string,"participant_high"?: string,"participant_low"?: string,"started_by"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "conversations_community_id_fkey"
+      columns: ["community_id"]
+isOneToOne: false
+      referencedRelation: "communities"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"exchange_events": {
                   Row: {
                     "actor_id": string | null,"community_id": string,"created_at": string,"exchange_id": string,"id": string,"kind": string
@@ -227,6 +247,46 @@ isOneToOne: false
 isOneToOne: false
       referencedRelation: "communities"
       referencedColumns: ["id"]
+    }
+                  ]
+                },"message_selection_grants": {
+                  Row: {
+                    "conversation_id": string,"dispute_id": string,"ends_at": string | null,"granted_at": string,"id": string,"user_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "conversation_id": string,"dispute_id": string,"ends_at"?: string | null,"granted_at"?: string,"id"?: string,"user_id": string
+                  }
+                  Update: {
+                    "conversation_id"?: string,"dispute_id"?: string,"ends_at"?: string | null,"granted_at"?: string,"id"?: string,"user_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "message_selection_grants_conversation_id_fkey"
+      columns: ["conversation_id"]
+isOneToOne: false
+      referencedRelation: "conversations"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"messages": {
+                  Row: {
+                    "author_id": string,"body": string,"community_id": string,"conversation_id": string,"created_at": string,"id": string,"intent_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "author_id": string,"body": string,"community_id": string,"conversation_id": string,"created_at"?: string,"id"?: string,"intent_id": string
+                  }
+                  Update: {
+                    "author_id"?: string,"body"?: string,"community_id"?: string,"conversation_id"?: string,"created_at"?: string,"id"?: string,"intent_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "messages_conversation_id_community_id_fkey"
+      columns: ["conversation_id","community_id"]
+isOneToOne: false
+      referencedRelation: "conversations"
+      referencedColumns: ["id","community_id"]
     }
                   ]
                 },"notification_attempts": {
@@ -433,11 +493,24 @@ isOneToOne: false
             [_ in never]: never
           }
           Functions: {
-            "can_read_invite":
+            "can_read_conversation":
+{ Args: { "p_conversation_id": string,"p_message_at"?: string }; Returns: boolean
+                           },
+"can_read_invite":
 { Args: { "p_invite_id": string }; Returns: boolean
                            },
 "claim_notification":
 { Args: { "p_outbox_id"?: string }; Returns: Json
+                           },
+"conversation_candidates":
+{ Args: { "p_community_id": string }; Returns: {
+              "email": string,"user_id": string
+            }[]
+                           },
+"conversation_inbox":
+{ Args: Record<PropertyKey, never>; Returns: {
+              "can_send": boolean,"community_id": string,"community_name": string,"counterpart_email": string,"counterpart_id": string,"created_at": string,"id": string,"last_message_at": string
+            }[]
                            },
 "create_community":
 { Args: { "p_description"?: string,"p_intent_id": string,"p_name": string }; Returns: Json
@@ -480,8 +553,14 @@ isOneToOne: false
 "retry_notification":
 { Args: { "p_intent_id": string,"p_outbox_id": string }; Returns: Json
                            },
+"send_message":
+{ Args: { "p_body": string,"p_conversation_id": string,"p_intent_id": string }; Returns: Json
+                           },
 "settle_exchange_completions":
 { Args: { "p_exchange_ids": (string)[] }; Returns: Json
+                           },
+"start_conversation":
+{ Args: { "p_community_id": string,"p_intent_id": string,"p_participant_id": string }; Returns: Json
                            }
           }
           Enums: {
