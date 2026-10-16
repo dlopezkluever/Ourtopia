@@ -98,6 +98,7 @@ test('lane 3 applicant requests a Vouch sponsor reads notice and permitted histo
   await open(page, f.applicant.email);
   await page.getByLabel(`Sponsor email for ${f.community.name}`).fill(f.sponsor.email);
   await page.getByRole('button', { name: 'Request a Vouch', exact: true }).click();
+  await expect(page.getByText('Vouch requested. Your application still needs administrator approval.', { exact: true })).toBeVisible();
   await expect.poll(async () => (await f.applicant.client.from('vouch_requests').select('id')).data?.length).toBe(1);
   await deliver(f.sponsor.id, 'vouch_requested');
   await page.getByRole('button', { name: 'Sign out' }).click(); await vouch(page, f);

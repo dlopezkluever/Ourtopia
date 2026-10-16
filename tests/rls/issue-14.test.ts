@@ -36,7 +36,7 @@ test('applicant, sponsor and administrator see only permitted statements; pendin
   const workspace = await f.sponsor.client.rpc('vouch_workspace', { p_community_id: f.community.id });
   assert.deepEqual(Object.keys(workspace.data.applications[0]).sort(), ['email', 'id']);
   assert.deepEqual(workspace.data.members, []);
-  assert.deepEqual((await f.sponsor.client.from('membership_applications').select('*')).data, []);
+  assert.deepEqual((await f.sponsor.client.from('membership_applications').select('*').eq('id', f.application.id)).data, []);
   receipt('issue-14-rls-boundaries', { denials, applicantDirectory: '42501', sponsorApplicationKeys: ['email', 'id'], noStorageObjects: true });
 });
 

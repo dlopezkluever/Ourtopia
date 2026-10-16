@@ -9,4 +9,3 @@ export const workspaceSchema = z.object({
   history: z.array(vouchSchema.extend({ applicantEmail: z.string(), sponsorEmail: z.string() })),
   requests: z.array(z.object({ id: z.uuid(), applicationId: z.uuid(), applicantEmail: z.string(), status: z.string() })),
 });
-

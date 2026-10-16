@@ -71,6 +71,7 @@ test('rolling quota and duplicate races serialize atomically with no partial eve
   assert.equal(results.find(result => result.error)?.error?.code, '54000');
   assert.equal((await admin.from('vouches').select('id').eq('community_id', f.community.id)).data?.length, 1);
   assert.equal((await admin.from('community_events').select('id').eq('community_id', f.community.id).eq('kind', 'vouch_submitted')).data?.length, 1);
+  assert.equal((await admin.from('command_intents').select('intent_id').eq('actor_id', f.sponsor.id).eq('command', 'submit_vouch')).data?.length, 1);
   await configureVouch(f.owner, f.community.id, f.sponsor.id, 3);
   const next = await pendingVouchApplicant(f.owner, f.community.id);
   const duplicates = await Promise.all([submitVouch(f.sponsor, next.application.id), submitVouch(f.sponsor, next.application.id)]);

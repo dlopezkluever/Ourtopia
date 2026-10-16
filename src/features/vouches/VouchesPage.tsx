@@ -17,6 +17,7 @@ async function readWorkspace(communityId: string) {
 export function VouchesPage({ userId }: { userId: string }) {
   const [version, setVersion] = useState(0);
   const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const communityId = new URLSearchParams(location.search).get('community');
   const state = useAccessScopedRead(userId, `vouches-${communityId}-${version}`, async () => {
@@ -30,7 +31,7 @@ export function VouchesPage({ userId }: { userId: string }) {
     return { communities: communities.data ?? [], applications: applications.data ?? [], statements: z.array(applicantStatementSchema).parse(statements.data), notices: noticesSchema.parse(notices.data), workspace: communityId ? await readWorkspace(communityId) : null };
   });
   async function command(event: FormEvent<HTMLFormElement>, name: 'configure_vouch' | 'submit_vouch' | 'request_vouch', fixed: Record<string, unknown>) {
-    event.preventDefault(); setBusy(true); setError('');
+    event.preventDefault(); setBusy(true); setError(''); setMessage('');
     const fields = new FormData(event.currentTarget);
     const payload = { ...fixed };
     if (name === 'configure_vouch') { payload.p_sponsor_id = fields.get('sponsor'); payload.p_eligible = fields.get('eligible') === 'true'; payload.p_annual_limit = Number(fields.get('limit')); }
@@ -40,12 +41,15 @@ export function VouchesPage({ userId }: { userId: string }) {
     try {
       const result = await supabase.rpc(name as never, { ...payload, p_intent_id: intent.id } as never);
       if (result.error) throw result.error;
-      intent.complete(); setVersion(value => value + 1);
+      intent.complete();
+      setMessage(name === 'request_vouch' ? 'Vouch requested. Your application still needs administrator approval.' : name === 'configure_vouch' ? 'Sponsorship settings saved.' : 'Vouch saved. The applicant still needs administrator approval.');
+      setVersion(value => value + 1);
     } catch (error) { setError(errorMessage(error)); } finally { setBusy(false); }
   }
   return <section className="membership-page vouches-page"><a href="/">Back to your Communities</a><span className="eyebrow">TRUST IN YOUR CIRCLE</span><h1>Vouches</h1><p>A Vouch is a trust statement. Membership still requires an Invite and separate administrator approval. Vouches change no scores or completed Exchange counts.</p>
     <Button onClick={() => setVersion(value => value + 1)} disabled={busy}>Refresh Vouches and notices</Button>
     {error && <p role="alert" className="error">{error}</p>}
+    {message && <p role="status">{message}</p>}
     {state.status === 'loading' ? <p role="status">Loading Vouches...</p> : state.status === 'denied' ? <p role="alert">{state.message}</p> : <>
       <nav aria-label="Vouch Communities">{state.data.communities.map(community => <a key={community.id} href={`/vouches?community=${community.id}`}>{community.name}</a>)}</nav>
       {state.data.workspace && <><h2>Vouches in {state.data.workspace.name}</h2><p role="status">{state.data.workspace.eligible ? `Eligible sponsor. ${state.data.workspace.used} of ${state.data.workspace.annualLimit} Vouches used in the rolling year.` : 'Sponsorship eligibility is granted by your administrator.'}</p>
