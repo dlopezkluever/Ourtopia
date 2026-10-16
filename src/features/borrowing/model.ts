@@ -32,7 +32,7 @@ export function inclusiveDays(startsOn: string, endsOn: string) {
   return Math.round((Date.parse(`${endsOn}T00:00:00Z`) - Date.parse(`${startsOn}T00:00:00Z`)) / 86400000) + 1;
 }
 export function localDeadline(instant: string) {
-  return new Date(instant).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short', timeZoneName: 'short' });
+  return new Date(instant).toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
 }
 
 const commandError = z.object({ code: z.string().optional(), message: z.string() });

@@ -7,7 +7,7 @@ import {
   requestItem, seedReputationEvent, withAcknowledgmentWindow,
 } from '../../scripts/verify/backend';
 
-const base = '998b29ade3134035cf627dc1a1a8ee07cd504ab0';
+const base = '7aa1af9cf1dae27a32226bb0f52f408e29749aa2';
 const appURL = process.env.TEST_APP_URL ?? `http://127.0.0.1:${process.env.APP_PORT ?? 5173}`;
 const weekend = 'Fri, Jan 15, 2027 through Sun, Jan 17, 2027';
 type Fixture = Awaited<ReturnType<typeof borrowingFixture>>;
