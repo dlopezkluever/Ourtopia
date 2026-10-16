@@ -251,6 +251,7 @@ async function verifyIssue14(values: PerfArguments) {
   const trunkModules = join(trunkRoot, 'node_modules');
   const servers: ReturnType<typeof spawn>[] = [];
   const startup: Record<string, number> = {};
+  const warmup: Record<string, number> = {};
   const samples: { index: number; side: string; readinessMs: number; queryMs: number; communityId: string }[] = [];
   const actions: { index: number; commandMs: number; visibleMs: number; vouchQueryMs: number; vouchId: string; applicationId: string; membershipStatus: string }[] = [];
   const trunkPort = Number(process.env.APP_PORT ?? 5173) + 1;
@@ -281,6 +282,15 @@ async function verifyIssue14(values: PerfArguments) {
     writeFileSync(join(trunkRoot, 'perf.vite.config.ts'), "import { mergeConfig } from 'vite';\nimport config from './vite.config';\nexport default mergeConfig(config, { cacheDir: '.vite-perf-cache' });\n");
     await serve('trunk', trunkRoot, trunkPort, ['--config', join(trunkRoot, 'perf.vite.config.ts')]);
     await serve('head', '.', headPort);
+    for (const [side, port] of [['trunk', trunkPort], ['head', headPort]] satisfies [string, number][]) {
+      const warmStart = performance.now();
+      const context = await browser.newContext({ baseURL: `http://127.0.0.1:${port}` });
+      try {
+        const page = await context.newPage(); await page.goto('/', { timeout: 120000 });
+        await expect(page.getByLabel('Email address')).toBeVisible({ timeout: 120000 });
+      } finally { await context.close(); }
+      warmup[side] = performance.now() - warmStart;
+    }
     for (let index = 0; index < pairs; index++) {
       const f = await vouchFixture(`perf-vouch-${index}`);
       assert.equal((await configureVouch(f.owner, f.community.id, f.sponsor.id)).error, null);
@@ -332,7 +342,7 @@ async function verifyIssue14(values: PerfArguments) {
     const queryP95Ms = queries[Math.ceil(queries.length * .95) - 1];
     const checks = { comparableReadiness: current.readinessMedianMs <= Math.max(1.2 * baseline.readinessMedianMs, baseline.readinessMedianMs + 100), comparableRead: current.queryMedianMs <= Math.max(1.2 * baseline.queryMedianMs, baseline.queryMedianMs + 100), command: added.commandMedianMs <= 1000, visible: added.visibleMedianMs <= 2000, query: queryP95Ms <= 3000, startup: Object.values(startup).every(value => value <= 60000) };
     const ranges = { readinessMs: [Math.min(...samples.map(row => row.readinessMs)), Math.max(...samples.map(row => row.readinessMs))], commandMs: [Math.min(...actions.map(row => row.commandMs)), Math.max(...actions.map(row => row.commandMs))], visibleMs: [Math.min(...actions.map(row => row.visibleMs)), Math.max(...actions.map(row => row.visibleMs))] };
-    persist({ errors: 0, baseline, head: current, added, queryP95Ms, checks, ranges, claim: 'Local serial development probe meets regression and absolute budgets. No production throughput or speedup claim.', baselineAction: 'Vouches absent; shared authorized Community readiness/read compared instead.', providerWait: 'None in this path; only local persisted command and render work.' });
+    persist({ errors: 0, warmup, baseline, head: current, added, queryP95Ms, checks, ranges, claim: 'Local serial development probe meets regression and absolute budgets. No production throughput or speedup claim.', baselineAction: 'Vouches absent; shared authorized Community readiness/read compared instead.', providerWait: 'None in this path; only local persisted command and render work.' });
     writeFileSync(`${directory}/report.md`, `P14 at ${head}.\n\n${pairs} interleaved trunk/head pairs against ${base}. Both sides reload and read the identical authorized Community. Trunk lacks Vouches, so added statement commands and durable visible states use absolute budgets.\n\nTrunk ${JSON.stringify(baseline)}. Head ${JSON.stringify(current)}. Added ${JSON.stringify(added)}. Query p95 ${queryP95Ms} ms. Ranges ${JSON.stringify(ranges)}. Checks ${JSON.stringify(checks)}.\n\nEvery sample includes a successful HTTP command, a unique persisted statement, a fresh applicant RLS read, a sponsor reload, pending membership and literal 50 Unproven with zero completions. Zero failed samples. Local serial Chrome and Vite development timings include HTTP, PostgreSQL and render work. Provider waits are absent. No production throughput or speedup claim. Host observations and raw samples are in samples.json.\n`);
     assert.ok(Object.values(checks).every(Boolean), JSON.stringify(checks));
     process.stdout.write(`${JSON.stringify({ baseline, head: current, added, queryP95Ms, checks })}\n`);
