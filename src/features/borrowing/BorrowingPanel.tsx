@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { z } from 'zod';
 import { supabase } from '../../lib/supabase/client';
 import { useAccessScopedRead } from '../profiles/useAccessScopedRead';
@@ -9,6 +9,7 @@ import { listingSchema, type Listing } from '../listings/model';
 import { ReservationSummary } from '../reservations/ReservationSummary';
 import { borrowProblem, borrowStatusLabels, calendarDate, inclusiveDays, type BorrowProblem, type BorrowView } from './model';
 import { decideBorrowRequest, readBorrowViews, submitBorrowRequest } from './api';
+import { useBorrowingRead } from './useBorrowingRead';
 
 const listingSummarySchema = z.array(z.object({ id: z.uuid(), title: z.string(), minimum_score: z.number().int() }));
 
@@ -24,22 +25,6 @@ async function readBorrowing(listingId?: string) {
   return { requests, people, listings: new Map(listingSummarySchema.parse(titles.data).map(row => [row.id, row])) };
 }
 
-// Notices for either participant also revalidate the open page, so decisions appear without a manual reload.
-function useNoticeRevision(userId: string) {
-  const [revision, setRevision] = useState(0);
-  useEffect(() => {
-    let active = true;
-    const channel = supabase.channel(`borrowing-notices-${userId}`).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notification_hints', filter: `recipient_id=eq.${userId}` }, () => setRevision(value => value + 1));
-    void supabase.auth.getSession().then(async ({ data }) => {
-      if (!active || !data.session) return;
-      await supabase.realtime.setAuth(data.session.access_token);
-      if (active) channel.subscribe();
-    });
-    return () => { active = false; void supabase.removeChannel(channel); };
-  }, [userId]);
-  return [revision, () => setRevision(value => value + 1)] as const;
-}
-
 function rangeText(startsOn: string, endsOn: string) {
   const days = inclusiveDays(startsOn, endsOn);
   return `${calendarDate(startsOn)} through ${calendarDate(endsOn)} (${days} ${days === 1 ? 'day' : 'days'}, both included)`;
@@ -51,7 +36,7 @@ function Problem({ problem }: { problem: BorrowProblem | null }) {
 }
 
 function TrustReview({ userId, request, email, minimum }: { userId: string; request: BorrowView; email: string; minimum?: number }) {
-  const state = useAccessScopedRead(userId, `borrow-trust-${request.community_id}-${request.borrower_id}`, () => readProfile(request.community_id, request.borrower_id));
+  const state = useAccessScopedRead(userId, `borrow-trust-${request.id}`, () => readProfile(request.community_id, request.borrower_id));
   if (state.status === 'loading') return <p role="status">Loading current standing…</p>;
   if (state.status === 'denied') return <p className="borrow-note">The borrower's current standing is unavailable. They may no longer be an active member, and approval will be refused.</p>;
   const profile = state.data;
@@ -137,8 +122,7 @@ function RequestForm({ listing, onSent }: { listing: Listing; onSent: () => void
 }
 
 export function BorrowingPanel({ userId, communityId, listingId }: { userId: string; communityId: string; listingId: string }) {
-  const [revision, refresh] = useNoticeRevision(userId);
-  const state = useAccessScopedRead(userId, `borrowing-${communityId}-${listingId}-${revision}`, async () => {
+  const [state, refresh] = useBorrowingRead(userId, `listing-${listingId}`, async () => {
     const [borrowing, listing] = await Promise.all([
       readBorrowing(listingId),
       supabase.from('listings').select('*,listing_availability(starts_on,ends_on)').eq('id', listingId).eq('community_id', communityId).maybeSingle(),
@@ -162,8 +146,7 @@ export function BorrowingPanel({ userId, communityId, listingId }: { userId: str
 }
 
 export function BorrowingOverview({ userId }: { userId: string }) {
-  const [revision, refresh] = useNoticeRevision(userId);
-  const state = useAccessScopedRead(userId, `borrowing-overview-${revision}`, () => readBorrowing());
+  const [state, refresh] = useBorrowingRead(userId, 'overview', () => readBorrowing());
   if (state.status === 'loading') return <p role="status" className="loading">Opening Borrow Requests…</p>;
   if (state.status === 'denied') return <section className="account-card"><h2>Borrow Requests unavailable</h2><p>Current access is required. Cached requests were cleared.</p><a href="/">Back to your Communities</a></section>;
   const { requests, people, listings } = state.data;

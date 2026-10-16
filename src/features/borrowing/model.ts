@@ -41,7 +41,7 @@ export function borrowProblem(error: unknown): BorrowProblem {
   const value = commandError.safeParse(error);
   if (!value.success || !value.data.code) return { kind: 'network', message: 'The server did not confirm this action. Try again. Retrying is safe and will not send it twice.' };
   const { code, message } = value.data;
-  if (code === '23P01') return { kind: 'conflict', message: `Reservation conflict. ${message} Nothing was reserved, and the borrower was not notified.` };
+  if (code === '23P01') return { kind: 'conflict', message: `${message} Nothing was reserved, and the borrower was not notified.` };
   if (code === '23514') return { kind: 'ineligible', message: `${message} Nothing was reserved.` };
   if (code === '55000') return { kind: 'stale', message: `${message} Refresh to see the current state.` };
   if (code === '42501') return { kind: 'denied', message };

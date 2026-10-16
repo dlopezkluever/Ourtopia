@@ -260,6 +260,7 @@ test('lane 9 forged approvals, reservation edits, and foreign history reads are 
   const request = await requestItem(f.bob, f.listing.id);
   const dave = await activeMember(f.owner, f.community.id, 'borrow-forgery-dave');
   await openListing(page, f, dave.email);
+  await expect(page.getByRole('form', { name: 'Request this item' })).toBeVisible();
   await expect(page.getByRole('article')).toHaveCount(0); await expect(page.getByRole('button', { name: /^Approve/ })).toHaveCount(0);
   await page.goto('/borrowing'); await expect(page.getByText('No one has asked to borrow your items yet.')).toBeVisible(); await expect(page.getByText('You have not requested any items yet.')).toBeVisible();
   const denied = {
@@ -300,7 +301,7 @@ test('lane 10 request, trust review, conflict, and expiry screens work by keyboa
     await expect(card(alice.page, f.bob.email).getByRole('region', { name: 'Reservation', exact: true })).toContainText(`Next: ${f.bob.email} acknowledges the terms by`);
     const conflict = card(alice.page, f.carol.email, 'Sun, Jan 17, 2027 through Mon, Jan 18, 2027');
     await conflict.getByRole('button', { name: `Approve ${f.carol.email}`, exact: true }).focus(); await alice.page.keyboard.press('Enter');
-    await expect(conflict.getByRole('alert')).toContainText('Reservation conflict. These dates overlap a reservation that is already approved.');
+    await expect(conflict.getByRole('alert')).toContainText('Reservation conflict'); await expect(conflict.getByRole('alert')).toContainText('These dates overlap a reservation that is already approved.');
     await expect(card(alice.page, f.carol.email, 'Mon, Feb 1, 2027 through Tue, Feb 2, 2027').getByRole('heading', { name: 'Approval expired', exact: true })).toBeVisible();
     await noHorizontalScroll(alice.page);
     await capture(alice.page, info, 10, { records: await borrowRecords(f.listing.id), viewport: info.project.name });
