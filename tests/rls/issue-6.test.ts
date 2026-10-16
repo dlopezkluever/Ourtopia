@@ -112,6 +112,10 @@ test('Realtime carries no Borrow Request audit to anyone and id-only notice hint
   const f = await borrowingFixture('borrow-rls-realtime');
   const dave = await activeMember(f.owner, f.community.id, 'borrow-rt-dave');
   const outsider = await actor({ label: 'borrow-rt-outsider' });
+  const recipients = [f.alice.id, f.bob.id];
+  const priorHints = await admin.from('notification_hints').select('id').in('recipient_id', recipients);
+  assert.equal(priorHints.error, null);
+  const priorHintIds = new Set(priorHints.data!.map(row => row.id));
   const actors = [f.alice, f.bob, f.carol, dave, f.owner, outsider, { client: publicClient() }];
   const events: unknown[][] = actors.map(() => []);
   const hints: Record<string, unknown>[][] = actors.map(() => []);
@@ -119,7 +123,9 @@ test('Realtime carries no Borrow Request audit to anyone and id-only notice hint
     const session = await member.client.auth.getSession(); if (session.data.session) await member.client.realtime.setAuth(session.data.session.access_token);
     const channel = member.client.channel(`borrow-${randomUUID()}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'community_events', filter: `community_id=eq.${f.community.id}` }, change => { if (String(change.new.kind).startsWith('borrow')) events[index].push(change.new); })
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notification_hints' }, change => { hints[index].push(change.new); });
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notification_hints' }, change => {
+        if (recipients.includes(String(change.new.recipient_id)) && !priorHintIds.has(String(change.new.id))) hints[index].push(change.new);
+      });
     await new Promise<void>((resolve, reject) => { const timer = setTimeout(() => reject(new Error('Subscription timed out')), 15000); channel.subscribe(status => { if (status === 'SUBSCRIBED') { clearTimeout(timer); resolve(); } }); });
     return channel;
   }));
