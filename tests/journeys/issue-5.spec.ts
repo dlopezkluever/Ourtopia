@@ -4,7 +4,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { copyFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { actor, admin, drillDetails, listingFixture, listingImageBytes, password, publishDrill, seedReputationEvent, uploadListingImage } from '../../scripts/verify/backend';
 
-const base = '714ebbd222b19be1e6ca0457bb1bd82a232e8a6b';
+const base = 'e246904e579ef4231dd90e62be01f5c6f9abfd65';
 async function signIn(page: Page, email: string) {
   await page.goto('/'); await page.getByLabel('Email address').fill(email); await page.getByLabel('Password', { exact: true }).fill(password);
   await page.getByRole('button', { name: 'Sign in', exact: true }).last().click(); await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible();
