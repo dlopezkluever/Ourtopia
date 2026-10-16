@@ -12,7 +12,13 @@ const jobSchema = z.object({ id: z.uuid(), account_id: z.uuid(), kind: z.enum(['
 });
 
 export async function processReceipt(backend: BillingBackend, stripe: TestStripe, eventId: string) {
-  const claim = await backend.rpc('claim_stripe_receipt', { p_event_id: eventId });
+  // A sibling event for the same subscription may hold the writer lease briefly. Wait a bounded
+  // time so concurrent provider deliveries converge without depending on provider redelivery.
+  let claim = await backend.rpc('claim_stripe_receipt', { p_event_id: eventId });
+  for (let attempt = 0; !claim && attempt < 20; attempt++) {
+    await new Promise(resolve => setTimeout(resolve, 250));
+    claim = await backend.rpc('claim_stripe_receipt', { p_event_id: eventId });
+  }
   if (!claim) throw new Error('The subscription writer is busy. Retry this event.');
   const prior = receiptSchema.parse(claim);
   if (prior.state === 'processed') return prior.result;

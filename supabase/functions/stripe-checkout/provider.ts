@@ -40,7 +40,7 @@ export class TestStripe {
       throw new Error('This customer already has a current test subscription. Wait for verified status.');
     }
     const params = new URLSearchParams({
-      mode: 'subscription', customer, client_reference_id: job.account_id,
+      mode: 'subscription', customer, client_reference_id: job.account_id, 'payment_method_types[0]': 'card',
       success_url: `${origin}/billing?checkout=returned`, cancel_url: `${origin}/billing?checkout=canceled`,
       'metadata[account_id]': job.account_id, 'subscription_data[metadata][account_id]': job.account_id,
       'subscription_data[metadata][billing_job_id]': job.id,

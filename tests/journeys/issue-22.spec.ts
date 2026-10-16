@@ -39,6 +39,9 @@ async function fillCard(page: Page, number = '4242424242424242') {
     { selectors: ['input[name="cardExpiry"]', 'input[autocomplete="cc-exp"]'], value: '1230' },
     { selectors: ['input[name="cardCvc"]', 'input[autocomplete="cc-csc"]'], value: '123' },
   ];
+  const cardChoice = page.getByRole('button', { name: 'Pay with card' });
+  if (await cardChoice.isVisible()) await cardChoice.click();
+  await expect(page.locator('input[name="cardNumber"]').first()).toBeVisible({ timeout: 15000 });
   for (const field of fields) {
     let filled = false;
     for (const frame of page.frames()) {
@@ -53,13 +56,16 @@ async function fillCard(page: Page, number = '4242424242424242') {
     const zip = frame.locator('input[name="billingPostalCode"], input[autocomplete="postal-code"]').first();
     if (await zip.isVisible()) await zip.fill('60601');
   }
+  const saveWithLink = page.getByRole('checkbox', { name: /Save my information/i });
+  if (await saveWithLink.isVisible() && await saveWithLink.isChecked()) await saveWithLink.uncheck();
 }
 
 async function startCheckout(page: Page, email: string) {
   await page.getByRole('button', { name: /Start test checkout|Retry test checkout/ }).click();
   await expect(page).toHaveURL(/^https:\/\/checkout\.stripe\.com\//, { timeout: 30000 });
-  const emailInput = page.locator('input[type="email"]').first();
-  if (await emailInput.isVisible()) await emailInput.fill(email);
+  const emailInput = page.getByRole('textbox', { name: 'Email', exact: true });
+  await expect(emailInput).toBeVisible({ timeout: 30000 });
+  await emailInput.fill(email);
   await fillCard(page);
 }
 

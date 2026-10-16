@@ -7,7 +7,7 @@ import type { BillingBackend } from './worker';
 
 function billingEnvironment() {
   const values = { ...process.env };
-  for (const file of ['.env.stripe.local', '.env.stripe-functions.local']) {
+  for (const file of ['.env.stripe-functions.local', '.env.stripe.local']) {
     try {
       for (const line of readFileSync(file, 'utf8').split(/\r?\n/)) {
         const match = /^([A-Z_]+)=["']?(.*?)["']?$/.exec(line);
