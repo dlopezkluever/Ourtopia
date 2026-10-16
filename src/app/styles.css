@@ -198,6 +198,93 @@ a.sidebar-nav { text-decoration: none; }
   .history li time { grid-column: 2; }
 }
 @media (max-width: 700px) { .sidebar a.directory-link { display: flex; margin: 12px 0 0; min-height: 44px; } }
+
+.listings-layout { max-width: 1100px; margin: 3rem auto; padding: 0 1.25rem}
+.listings-layout>.eyebrow { display: block; margin-top: 2rem}
+.listing-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.25rem}
+.listing-card, .listing-detail { background: #fff; border: 1px solid #d9dfd3; border-radius: 18px; padding: 1.5rem}
+.listing-card p { overflow-wrap: anywhere}
+.listing-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin: 2rem 0}
+.listing-filters label { display: flex; flex-direction: column; gap: .5rem}
+.listing-filters input, .listing-filters select, .listing-form select { width: 100%; padding: .75rem; border: 1px solid #b7c1b3; border-radius: 8px; background: white}
+.listing-form { max-width: 740px; margin: 2rem auto}
+.listing-form fieldset { border: 0; padding: 0; min-width: 0}
+.listing-form .availability-fields { border: 1px solid #d9dfd3; padding: 1rem; margin: 1rem 0}
+.availability-row { display: flex; gap: 1rem; flex-wrap: wrap}
+.availability-row label { flex: 1; min-width: 150px}
+.listing-detail dl { display: grid; grid-template-columns: 1fr 2fr; gap: .75rem; margin: 2rem 0}
+.listing-detail dt { font-weight: 600}
+.listing-detail dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere}
+.listing-images { display: flex; gap: 1rem; flex-wrap: wrap}
+.listing-images img { max-width: 100%; width: 260px; height: 200px; object-fit: contain; border-radius: 12px}
+.gratitude { background: #f4f4e8; padding: 1rem; border-radius: 12px; margin: 1.5rem 0}
+.listing-actions { display: flex; gap: 1rem; margin-top: 2rem}
+.listing-filters .checkbox-label { flex-direction: row; align-items: center}
+.checkbox-label input { width: 20px; height: 20px}
+.listing-detail button, .listings-layout>button, .listing-form button { min-height: 44px; padding: .65rem 1rem; margin: .4rem .4rem .4rem 0; border-radius: 8px; border: 1px solid #506949}
+.listing-detail h1 { overflow-wrap: anywhere}
+@media(max-width: 600px) { .listing-detail dl { grid-template-columns: 1fr}
+.listing-detail dd { margin-bottom: .75rem}
+.listing-form { margin: 1rem}
+.header-right { flex-wrap: wrap}
+.listing-filters { grid-template-columns: 1fr}
+}
+
+.help-layout { max-width: 1250px; margin: 0 auto; display: grid; grid-template-columns: 300px minmax(0, 1fr); min-height: 640px; }
+.help-side { padding: 40px 26px; border-right: 1px solid #e6e7df; display: grid; align-content: start; gap: 12px; }
+.help-side h1 { font-size: 30px; }
+.help-side-title { font-size: 16px; margin-top: 14px; }
+.help-layout select { width: 100%; min-height: 44px; margin-bottom: 16px; padding: 10px; border: 1px solid #dfe2d7; border-radius: 7px; background: #fffefa; font: inherit; font-size: 13px; color: #283c2c; }
+.help-mine, .help-list, .help-offers, .help-places { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.help-mine a { display: block; padding: 10px; border-radius: 8px; text-decoration: none; min-height: 44px; overflow-wrap: anywhere; }
+.help-mine a:hover { background: #eef2e6; }
+.help-mine strong { display: block; font-size: 12px; font-weight: 600; }
+.help-mine small { display: block; font-size: 10px; color: #7e8a71; margin-top: 3px; }
+.help-main { padding: 40px 56px; min-width: 0; }
+.help-board > h2, .help-post > h2 { margin: 8px 0 8px; overflow-wrap: anywhere; }
+.help-board > .muted { font-size: 13px; margin-bottom: 18px; }
+.help-actions, .help-form-actions { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 14px 0; }
+.help-actions .primary-button { width: auto; }
+.help-form-actions .primary-button { width: auto; }
+.help-filters { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) auto; gap: 12px; align-items: end; margin: 18px 0; }
+.help-filters input, .help-filters select { margin-bottom: 0; }
+.secondary-button { display: flex; justify-content: center; gap: 8px; align-items: center; min-height: 44px; padding: 10px 16px; border: 1px solid #b5bfaf; border-radius: 7px; background: #fffefa; color: #244d3d; font-size: 12px; font-weight: 600; }
+.help-card, .help-exchange, .help-form { background: #fffefa; border: 1px solid #e5e7dc; border-radius: 12px; padding: 18px 20px; overflow-wrap: anywhere; }
+.help-card h3 { font-size: 18px; margin: 6px 0; font-weight: 600; }
+.help-card h3 a { text-decoration: none; }
+.help-kind { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; font-weight: 700; color: #617454; }
+.help-kind-need_post { color: #8a5a2b; }
+.help-meta, .help-by { font-size: 12px; color: #6d766c; line-height: 1.6; }
+.help-empty { margin-top: 18px; }
+.help-form { margin: 14px 0; }
+.help-form h3 { font-size: 18px; margin: 0 0 14px; }
+.help-back { margin-bottom: 14px; display: inline-flex; align-items: center; gap: 6px; }
+.help-description { margin: 12px 0; font-size: 14px; line-height: 1.7; white-space: pre-wrap; }
+.help-facts { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 6px 12px; margin: 12px 0; font-size: 13px; }
+.help-facts dt { font-weight: 600; color: #4e5d4f; }
+.help-facts dd { margin: 0; overflow-wrap: anywhere; }
+.places-summary { margin: 12px 0 6px; font-size: 14px; color: #2c4d37; }
+.help-places li { padding: 8px 12px; border: 1px dashed #c9d1c1; border-radius: 8px; font-size: 13px; overflow-wrap: anywhere; }
+.help-owner h3, .help-exchanges h3 { font-size: 18px; margin: 18px 0 10px; font-weight: 600; }
+.help-offers li { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; padding: 12px; border: 1px solid #e5e7dc; border-radius: 10px; background: #fffefa; overflow-wrap: anywhere; }
+.help-offers small { display: block; color: #6d766c; font-size: 12px; margin-top: 4px; }
+.help-offers .primary-button { width: auto; white-space: normal; height: auto; }
+.help-commit { margin: 18px 0; }
+.help-exchanges { display: grid; gap: 12px; }
+.help-exchange-head { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: center; }
+.help-state { font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 999px; background: #eef2e6; color: #2c4d37; }
+.help-state-cancelled { background: #f6ebe4; color: #8c3c29; }
+.help-schedule, .help-cancel { margin-top: 12px; display: grid; gap: 0; }
+.help-schedule .primary-button, .help-cancel .secondary-button { width: auto; justify-self: start; }
+@media (max-width: 700px) {
+  .help-layout { display: block; }
+  .help-side { border-right: 0; border-bottom: 1px solid #e6e7df; padding: 24px; }
+  .help-main { padding: 24px; }
+  .help-filters { grid-template-columns: 1fr; }
+  .help-facts { grid-template-columns: 1fr; }
+  .help-facts dd { margin-bottom: 6px; }
+}
+
 .vouches-page nav { display: flex; flex-wrap: wrap; gap: 16px; margin: 16px 0; }
 .vouches-page h2, .vouches-page h3 { margin-top: 20px; }
 .vouches-page article, .vouches-page blockquote, .vouches-page select { overflow-wrap: anywhere; max-width: 100%; }

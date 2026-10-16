@@ -1,3 +1,4 @@
+import { helpExchangeSchema, helpPostSchema } from '../../src/features/help/model';
 import { createClient } from '@supabase/supabase-js';
 import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -204,4 +205,66 @@ export async function seedIncident(communityId: string, subjectId: string, type:
   const result = await admin.from('trust_incidents').insert({ community_id: communityId, subject_id: subjectId, type, status, source_kind: 'fixture', source_id: randomUUID() }).select('id').single();
   if (result.error) throw result.error;
   return result.data.id;
+}
+
+export const drillDetails = {
+  title: "Alice's Makita drill", description: 'Cordless Makita drill with two batteries and charger.', category: 'tools', condition: 'Good. Light marks on the case.',
+  replacement_value: 180, pickup_notes: 'Meet at the front porch.', lending_conditions: 'Return with charged batteries.', minimum_score: 45,
+  gratitude: 'Optional $5 toward replacement bits. No priority benefit.', availability: [{ starts_on: '2027-01-10', ends_on: '2027-01-20' }, { starts_on: '2027-02-01', ends_on: '2027-02-05' }],
+};
+export async function listingFixture(label = 'listing') {
+  const f = await membershipFixture(label);
+  const alice = await activeMember(f.owner, f.community.id, `${label}-alice`);
+  const bob = await activeMember(f.owner, f.community.id, `${label}-bob`);
+  return { ...f, alice, bob };
+}
+export async function publishDrill(member: Awaited<ReturnType<typeof actor>>, communityId: string, details = drillDetails, intent = randomUUID()) {
+  const result = await member.client.rpc('save_listing', { p_intent_id: intent, p_community_id: communityId, p_listing_id: null, p_expected_version: 0, p_details: details });
+  if (result.error) throw result.error;
+  return z.object({ id: z.uuid(), community_id: z.uuid(), owner_id: z.uuid(), title: z.string(), status: z.string(), version: z.number(), replacement_value: z.number(), minimum_score: z.number() }).parse(result.data);
+}
+export const listingImageBytes = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==', 'base64');
+export async function prepareListingImage(member: Awaited<ReturnType<typeof actor>>, listingId: string) {
+  const result = await member.client.rpc('prepare_listing_image', { p_intent_id: randomUUID(), p_listing_id: listingId, p_image_id: randomUUID(), p_mime_type: 'image/png', p_byte_size: listingImageBytes.length });
+  if (result.error) throw result.error;
+  return z.object({ id: z.uuid(), object_path: z.string() }).parse(result.data);
+}
+export async function uploadListingImage(member: Awaited<ReturnType<typeof actor>>, listingId: string) {
+  const image = await prepareListingImage(member, listingId);
+  const uploaded = await member.client.storage.from('listing-images').upload(image.object_path, listingImageBytes, { contentType: 'image/png' });
+  if (uploaded.error) throw uploaded.error;
+  const completed = await member.client.rpc('complete_listing_image', { p_intent_id: randomUUID(), p_image_id: image.id });
+  if (completed.error) throw completed.error;
+  return image;
+}
+
+export const helpListingFields = (overrides: Record<string, unknown> = {}) => ({ title: 'Moving help with a van', description: 'I can lift and drive.', category: 'moving', skill: 'Lifting and van driving', skill_level: 'experienced', availability: 'Weekend mornings', geographic_constraints: 'Within 3 miles of Maple Street', scheduling_preferences: 'Two days notice', ...overrides });
+export const helpNeedFields = (helpers = 2, overrides: Record<string, unknown> = {}) => ({ title: 'Move a couch upstairs', description: 'Third floor, no lift.', category: 'moving', starts_at: new Date(Date.now() + 3 * 86400000).toISOString(), duration_minutes: 120, location: '12 Maple Street', helpers_needed: helpers, ...overrides });
+export const helpScheduleFields = (overrides: Record<string, unknown> = {}) => ({ starts_at: new Date(Date.now() + 2 * 86400000).toISOString(), duration_minutes: 90, meeting_point: 'Side gate on Maple Street', ...overrides });
+
+export async function createHelpPost(author: Awaited<ReturnType<typeof actor>>, communityId: string, kind: 'listing' | 'need_post', fields: Record<string, unknown>, intent = randomUUID()) {
+  const result = await author.client.rpc('create_help_post', { p_intent_id: intent, p_community_id: communityId, p_post_kind: kind, p_fields: fields });
+  if (result.error) throw result.error;
+  return helpPostSchema.parse(result.data);
+}
+
+export async function commitHelp(member: Awaited<ReturnType<typeof actor>>, kind: 'listing' | 'need_post', postId: string, note = '', intent = randomUUID()) {
+  const result = await member.client.rpc('commit_help', { p_intent_id: intent, p_post_kind: kind, p_post_id: postId, p_note: note });
+  if (result.error) throw result.error;
+  return z.object({ id: z.uuid(), status: z.literal('pending'), member_id: z.uuid() }).parse(result.data).id;
+}
+
+export async function acceptHelp(owner: Awaited<ReturnType<typeof actor>>, commitmentId: string, intent = randomUUID()) {
+  const result = await owner.client.rpc('accept_help_commitment', { p_intent_id: intent, p_commitment_id: commitmentId });
+  if (result.error) throw result.error;
+  return helpExchangeSchema.parse(result.data);
+}
+
+// An administrator-owned Community with a requester/author and active helper members.
+export async function helpFixture(label = 'help', helpers = 3) {
+  const { owner, community } = await membershipFixture(label);
+  const author = await activeMember(owner, community.id, `${label}-author`);
+  const members = [];
+  for (let index = 0; index < helpers; index++) members.push(await activeMember(owner, community.id, `${label}-helper${index + 1}`));
+  return { owner, community, author, members };
 }
