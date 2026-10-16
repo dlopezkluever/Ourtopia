@@ -130,7 +130,7 @@ export function receipt(name: string, result: unknown) {
   writeFileSync(`${directory}/${name}.json`, JSON.stringify({ utc: new Date().toISOString(), head: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(), dirty: execFileSync('git', ['status', '--porcelain'], { encoding: 'utf8' }).trim().length > 0, backend: config.url, result }, null, 2));
 }
 
-export async function addActiveMember(owner: Awaited<ReturnType<typeof actor>>, communityId: string, label = 'member') {
+export async function activeMember(owner: Awaited<ReturnType<typeof actor>>, communityId: string, label = 'member') {
   const member = await actor({ label });
   const application = await applyInvite(member, (await issueInvite(owner, communityId, member.email)).id);
   const decision = await decideApplication(owner, application.id);
@@ -155,8 +155,32 @@ export async function sendMessage(author: Awaited<ReturnType<typeof actor>>, con
 
 export async function conversationFixture(label = 'conversation') {
   const { owner, community } = await membershipFixture(label);
-  const first = await addActiveMember(owner, community.id, `${label}-first`);
-  const second = await addActiveMember(owner, community.id, `${label}-second`);
+  const first = await activeMember(owner, community.id, `${label}-first`);
+  const second = await activeMember(owner, community.id, `${label}-second`);
   const conversation = await startConversation(first, community.id, second.id);
   return { owner, community, first, second, conversation };
+}
+
+// Server-seeded verified history: completed Exchanges settled through the real completion producer.
+export async function completedExchanges(communityId: string, providerId: string, receiverId: string, count: number, kind: 'item' | 'help' = 'help') {
+  if (count === 0) return [];
+  const rows = Array.from({ length: count }, () => ({ community_id: communityId, kind, provider_id: providerId, receiver_id: receiverId, source_kind: kind === 'help' ? 'need_post' : 'listing', source_id: randomUUID(), state: 'completed' }));
+  const inserted = await admin.from('exchanges').insert(rows).select('id');
+  if (inserted.error) throw inserted.error;
+  const ids = z.array(z.object({ id: z.uuid() })).parse(inserted.data).map(row => row.id);
+  const settled = await admin.rpc('settle_exchange_completions', { p_exchange_ids: ids });
+  if (settled.error) throw settled.error;
+  return ids;
+}
+
+export async function seedReputationEvent(communityId: string, recipientId: string, points: number, rule = 'fixture_adjustment') {
+  const result = await admin.from('reputation_events').insert({ community_id: communityId, recipient_id: recipientId, rule, points, source_kind: 'fixture', source_id: randomUUID(), verified_by_command: 'fixture_seed' }).select('id').single();
+  if (result.error) throw result.error;
+  return result.data.id;
+}
+
+export async function seedIncident(communityId: string, subjectId: string, type: 'unresolved_dispute' | 'serious_violation', status: string) {
+  const result = await admin.from('trust_incidents').insert({ community_id: communityId, subject_id: subjectId, type, status, source_kind: 'fixture', source_id: randomUUID() }).select('id').single();
+  if (result.error) throw result.error;
+  return result.data.id;
 }

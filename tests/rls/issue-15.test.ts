@@ -1,13 +1,13 @@
 import { before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { actor, addActiveMember, admin, anonKey, applyInvite, conversationFixture, createCommunity, issueInvite, publicClient, realtimeReady, receipt, sendMessage } from '../../scripts/verify/backend';
+import { actor, activeMember, admin, anonKey, applyInvite, conversationFixture, createCommunity, issueInvite, publicClient, realtimeReady, receipt, sendMessage } from '../../scripts/verify/backend';
 
 before(() => realtimeReady(), { timeout: 70000 });
 
 test('only current participants can read private rows and inboxes, including against a nonparticipant administrator', async () => {
   const f = await conversationFixture('rls');
-  const unrelated = await addActiveMember(f.owner, f.community.id, 'unrelated');
+  const unrelated = await activeMember(f.owner, f.community.id, 'unrelated');
   const foreign = await actor({ label: 'foreign' }); await createCommunity(foreign.client);
   const pending = await actor({ label: 'pending' });
   await applyInvite(pending, (await issueInvite(f.owner, f.community.id, pending.email)).id);
@@ -54,8 +54,8 @@ test('realtime publishes recipient identities only and never private message bod
   const f = await conversationFixture('realtime');
   const outsider = await actor({ label: 'outsider' });
   const foreign = await actor({ label: 'foreign' }); await createCommunity(foreign.client);
-  const unrelated = await addActiveMember(f.owner, f.community.id, 'unrelated');
-  const inactive = await addActiveMember(f.owner, f.community.id, 'inactive');
+  const unrelated = await activeMember(f.owner, f.community.id, 'unrelated');
+  const inactive = await activeMember(f.owner, f.community.id, 'inactive');
   assert.equal((await admin.from('memberships').update({ status: 'suspended' }).eq('community_id', f.community.id).eq('user_id', inactive.id)).error, null);
   const channels = [];
   const counts: Record<string, { messages: number; hints: number }> = {};

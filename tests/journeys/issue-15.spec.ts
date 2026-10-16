@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { execFileSync, spawn } from 'node:child_process';
 import { copyFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { z } from 'zod';
-import { actor, addActiveMember, admin, applyInvite, conversationFixture, createCommunity, issueInvite, password, sendMessage, startConversation } from '../../scripts/verify/backend';
+import { actor, activeMember, admin, applyInvite, completedExchanges, conversationFixture, createCommunity, issueInvite, password, sendMessage, startConversation } from '../../scripts/verify/backend';
 
 async function signIn(page: Page, email: string) {
   await page.goto('/');
@@ -30,7 +30,7 @@ async function capture(page: Page, info: TestInfo, lane: number, data: unknown) 
 }
 
 test('lane 1 fixed trunk lacks messaging and head retains Community access with persisted private text', async ({ page, browser }, info) => {
-  const base = '3f5f3fd0293421cc2688576acfc8d742e676dc4c';
+  const base = '714ebbd222b19be1e6ca0457bb1bd82a232e8a6b';
   const root = `${process.env.EVIDENCE_DIR ?? '.pilot-evidence'}/trunk-${info.project.name}`;
   const paths = execFileSync('git', ['ls-tree', '-r', '--name-only', base], { encoding: 'utf8' }).split('\n').filter(path => /^(src\/|vite.config.ts$|index.html$|package.json$)/.test(path));
   for (const path of paths) {
@@ -127,7 +127,7 @@ test('lane 5 realtime hints contain identities and the browser performs a fresh 
 
 test('lane 6 nonparticipant administrator unrelated member foreign member and outsider cannot browse private content', async ({ page }, info) => {
   const f = await conversationFixture('privacy'); await sendMessage(f.first, f.conversation.id, 'Participant secret');
-  const unrelated = await addActiveMember(f.owner, f.community.id, 'unrelated'); const outsider = await actor();
+  const unrelated = await activeMember(f.owner, f.community.id, 'unrelated'); const outsider = await actor();
   const foreign = await actor(); await createCommunity(foreign.client);
   for (const person of [f.owner, unrelated, foreign, outsider]) {
     expect((await person.client.from('messages').select('*').eq('conversation_id', f.conversation.id)).data).toEqual([]);
@@ -183,7 +183,10 @@ test('lane 8 membership invalidation clears cached content and drafts before fre
 });
 
 test('lane 9 privileged future Dispute selection grant permits existing counterparty text without adjacent browsing or sending', async ({ page }, info) => {
-  const f = await conversationFixture('selection'); const third = await addActiveMember(f.owner, f.community.id, 'third');
+  const f = await conversationFixture('selection');
+  const [exchangeId] = await completedExchanges(f.community.id, f.second.id, f.first.id, 1);
+  expect(exchangeId).toBeTruthy();
+  const third = await activeMember(f.owner, f.community.id, 'third');
   const adjacent = await startConversation(f.first, f.community.id, third.id); await sendMessage(third, adjacent.id, 'Adjacent conversation secret');
   await sendMessage(f.second, f.conversation.id, 'Existing counterparty evidence');
   expect((await admin.from('memberships').update({ status: 'removed' }).eq('community_id', f.community.id).eq('user_id', f.first.id)).error).toBeNull();
@@ -196,7 +199,7 @@ test('lane 9 privileged future Dispute selection grant permits existing counterp
   expect((await f.first.client.from('messages').select('*').eq('conversation_id', adjacent.id)).data).toEqual([]);
   expect((await f.first.client.from('communities').select('*').eq('id', f.community.id)).data).toEqual([]);
   expect((await f.first.client.rpc('send_message', { p_intent_id: randomUUID(), p_conversation_id: f.conversation.id, p_body: 'Denied' })).error?.code).toBe('42501');
-  await capture(page, info, 9, { fixture: 'service-only grant seam; Exchange eligibility is activated by ticket 16', grantId: grant.data.id, adjacentRows: 0, sendDenied: '42501' });
+  await capture(page, info, 9, { exchangeId, fixture: 'actual completed Exchange; service-only selection grant; Dispute eligibility activation belongs to ticket 16', grantId: grant.data.id, adjacentRows: 0, sendDenied: '42501' });
   expect((await admin.from('message_selection_grants').update({ ends_at: new Date(Date.now() - 1000).toISOString() }).eq('id', grant.data.id)).error).toBeNull();
   await page.reload(); await expect(page.getByRole('heading', { name: 'Conversation unavailable.' })).toBeVisible();
 });

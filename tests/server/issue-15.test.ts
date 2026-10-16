@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { actor, addActiveMember, admin, applyInvite, conversationFixture, createCommunity, issueInvite, receipt, sendMessage, startConversation } from '../../scripts/verify/backend';
+import { actor, activeMember, admin, applyInvite, completedExchanges, conversationFixture, createCommunity, issueInvite, receipt, sendMessage, startConversation } from '../../scripts/verify/backend';
 import { inboxRowSchema } from '../../src/features/messages/model';
 import { deliverOne } from '../../supabase/functions/notifications/worker';
 
@@ -105,7 +105,9 @@ test('start and send require current active membership of both people in the sam
 
 test('a removed participant with an eligible selection grant reads only existing messages and can never send', async () => {
   const f = await conversationFixture('selection');
-  const third = await addActiveMember(f.owner, f.community.id, 'selection-third');
+  const [exchangeId] = await completedExchanges(f.community.id, f.second.id, f.first.id, 1);
+  assert.ok(exchangeId);
+  const third = await activeMember(f.owner, f.community.id, 'selection-third');
   const unrelatedConversation = await startConversation(third, f.community.id, f.first.id);
   await sendMessage(third, unrelatedConversation.id, 'Unrelated logistics');
   await sendMessage(f.second, f.conversation.id, 'I returned the saw with a chipped blade.');

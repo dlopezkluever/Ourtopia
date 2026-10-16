@@ -91,6 +91,52 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"exchange_events": {
+                  Row: {
+                    "actor_id": string | null,"community_id": string,"created_at": string,"exchange_id": string,"id": string,"kind": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "actor_id"?: string | null,"community_id": string,"created_at"?: string,"exchange_id": string,"id"?: string,"kind": string
+                  }
+                  Update: {
+                    "actor_id"?: string | null,"community_id"?: string,"created_at"?: string,"exchange_id"?: string,"id"?: string,"kind"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "exchange_events_community_id_fkey"
+      columns: ["community_id"]
+isOneToOne: false
+      referencedRelation: "communities"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "exchange_events_exchange_id_fkey"
+      columns: ["exchange_id"]
+isOneToOne: false
+      referencedRelation: "exchanges"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"exchanges": {
+                  Row: {
+                    "community_id": string,"created_at": string,"id": string,"kind": string,"provider_id": string,"receiver_id": string,"source_id": string,"source_kind": string,"state": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "community_id": string,"created_at"?: string,"id"?: string,"kind": string,"provider_id": string,"receiver_id": string,"source_id": string,"source_kind": string,"state": string
+                  }
+                  Update: {
+                    "community_id"?: string,"created_at"?: string,"id"?: string,"kind"?: string,"provider_id"?: string,"receiver_id"?: string,"source_id"?: string,"source_kind"?: string,"state"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "exchanges_community_id_fkey"
+      columns: ["community_id"]
+isOneToOne: false
+      referencedRelation: "communities"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"invites": {
                   Row: {
                     "community_id": string,"community_name": string,"created_at": string,"expires_at": string,"id": string,"issued_by": string,"recipient_email": string,"redeemed_at": string | null,"redeemed_by": string | null
@@ -335,6 +381,112 @@ isOneToOne: true
       referencedColumns: ["id"]
     }
                   ]
+                },"qualifying_interactions": {
+                  Row: {
+                    "community_id": string,"created_at": string,"exchange_id": string,"id": string,"participant_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "community_id": string,"created_at"?: string,"exchange_id": string,"id"?: string,"participant_id": string
+                  }
+                  Update: {
+                    "community_id"?: string,"created_at"?: string,"exchange_id"?: string,"id"?: string,"participant_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "qualifying_interactions_community_id_fkey"
+      columns: ["community_id"]
+isOneToOne: false
+      referencedRelation: "communities"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "qualifying_interactions_exchange_id_fkey"
+      columns: ["exchange_id"]
+isOneToOne: false
+      referencedRelation: "exchanges"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"reputation_events": {
+                  Row: {
+                    "community_id": string,"corrects_event_id": string | null,"created_at": string,"exchange_id": string | null,"id": string,"points": number,"reason": string | null,"recipient_id": string,"rule": string,"source_id": string,"source_kind": string,"verified_by": string | null,"verified_by_command": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "community_id": string,"corrects_event_id"?: string | null,"created_at"?: string,"exchange_id"?: string | null,"id"?: string,"points": number,"reason"?: string | null,"recipient_id": string,"rule": string,"source_id": string,"source_kind": string,"verified_by"?: string | null,"verified_by_command": string
+                  }
+                  Update: {
+                    "community_id"?: string,"corrects_event_id"?: string | null,"created_at"?: string,"exchange_id"?: string | null,"id"?: string,"points"?: number,"reason"?: string | null,"recipient_id"?: string,"rule"?: string,"source_id"?: string,"source_kind"?: string,"verified_by"?: string | null,"verified_by_command"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "reputation_events_community_id_fkey"
+      columns: ["community_id"]
+isOneToOne: false
+      referencedRelation: "communities"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "reputation_events_corrects_event_id_fkey"
+      columns: ["corrects_event_id"]
+isOneToOne: false
+      referencedRelation: "reputation_events"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "reputation_events_exchange_id_fkey"
+      columns: ["exchange_id"]
+isOneToOne: false
+      referencedRelation: "exchanges"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"reputation_rules": {
+                  Row: {
+                    "exchange_kind": string,"points": number,"recipient_role": string,"rule": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "exchange_kind": string,"points": number,"recipient_role": string,"rule": string
+                  }
+                  Update: {
+                    "exchange_kind"?: string,"points"?: number,"recipient_role"?: string,"rule"?: string
+                  }
+                  Relationships: [
+
+                  ]
+                },"reputation_titles": {
+                  Row: {
+                    "max_score": number,"min_score": number,"title": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "max_score": number,"min_score": number,"title": string
+                  }
+                  Update: {
+                    "max_score"?: number,"min_score"?: number,"title"?: string
+                  }
+                  Relationships: [
+
+                  ]
+                },"trust_incidents": {
+                  Row: {
+                    "community_id": string,"created_at": string,"id": string,"source_id": string,"source_kind": string,"status": string,"subject_id": string,"type": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "community_id": string,"created_at"?: string,"id"?: string,"source_id": string,"source_kind": string,"status": string,"subject_id": string,"type": string
+                  }
+                  Update: {
+                    "community_id"?: string,"created_at"?: string,"id"?: string,"source_id"?: string,"source_kind"?: string,"status"?: string,"subject_id"?: string,"type"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "trust_incidents_community_id_fkey"
+      columns: ["community_id"]
+isOneToOne: false
+      referencedRelation: "communities"
+      referencedColumns: ["id"]
+    }
+                  ]
                 }
           }
           Views: {
@@ -369,6 +521,9 @@ isOneToOne: true
 "finish_notification":
 { Args: { "p_claim_token": string,"p_error"?: string,"p_outbox_id": string }; Returns: Json
                            },
+"global_trust":
+{ Args: { "p_subject": string }; Returns: Json
+                           },
 "is_active_member":
 { Args: { "target_community": string }; Returns: boolean
                            },
@@ -377,6 +532,17 @@ isOneToOne: true
                            },
 "issue_invite":
 { Args: { "p_community_id": string,"p_email": string,"p_intent_id": string }; Returns: Json
+                           },
+"member_directory":
+{ Args: { "p_community_id": string }; Returns: {
+              "completed_interactions": number,"email": string,"joined_at": string,"role": string,"score": number,"title": string,"user_id": string
+            }[]
+                           },
+"member_profile":
+{ Args: { "p_community_id": string,"p_subject": string }; Returns: Json
+                           },
+"my_reputation":
+{ Args: Record<PropertyKey, never>; Returns: Json
                            },
 "redeem_invite":
 { Args: { "p_intent_id": string,"p_invite_id": string }; Returns: Json
@@ -389,6 +555,9 @@ isOneToOne: true
                            },
 "send_message":
 { Args: { "p_body": string,"p_conversation_id": string,"p_intent_id": string }; Returns: Json
+                           },
+"settle_exchange_completions":
+{ Args: { "p_exchange_ids": (string)[] }; Returns: Json
                            },
 "start_conversation":
 { Args: { "p_community_id": string,"p_intent_id": string,"p_participant_id": string }; Returns: Json
