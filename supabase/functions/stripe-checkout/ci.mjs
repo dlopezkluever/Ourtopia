@@ -58,7 +58,7 @@ try {
   await run('rls', 'npm', ['run', 'test:rls', '--', 'tests/rls/issue-22.test.ts']);
   for (let suite = 1; suite <= 3; suite++) await run(`journeys-${suite}`, 'npm', ['run', 'test:journey', '--', 'tests/journeys/issue-22.spec.ts'], { EVIDENCE_DIR: `.pilot-evidence/ci/suite-${suite}` });
   const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
-  await run('perf', 'npm', ['run', 'verify:perf', '--', '--issue', '22', '--base', '998b29ade3134035cf627dc1a1a8ee07cd504ab0', '--head', head, '--pairs', '10']);
+  await run('perf', 'npm', ['run', 'verify:perf', '--', '--issue', '22', '--base', '7aa1af9cf1dae27a32226bb0f52f408e29749aa2', '--head', head, '--pairs', '10']);
 } finally {
   for (const child of daemons) child.kill();
   try { execFileSync('docker', ['stop', 'ourtopia-stripe-ci'], { stdio: 'ignore' }); } catch { process.stdout.write('Stripe listener cleanup was not confirmed.\n'); }

@@ -2,12 +2,13 @@ import { randomUUID } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { parseArgs } from 'node:util';
 import { execFileSync, spawn } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { cpus, loadavg, totalmem, freemem } from 'node:os';
 import { chromium, expect, type Page } from '@playwright/test';
-import { activeMember, actor, commitHelp, createCommunity, createHelpPost, helpFixture, helpListingFields, membershipFixture, password } from './backend';
+import { activeMember, actor, commitHelp, createCommunity, createHelpPost, helpFixture, helpListingFields, membershipFixture, password, configureVouch, vouchFixture, admin } from './backend';
 import { z } from 'zod';
+import { vouchSchema } from '../../src/features/vouches/model';
 import { standingSchema } from '../../src/features/reputation/model';
 import { communitySchema } from '../../src/features/communities/model';
 import { drillDetails } from './backend';
@@ -17,6 +18,7 @@ import { helpExchangeSchema, helpPostSchema } from '../../src/features/help/mode
 
 const { values } = parseArgs({ options: { issue: { type: 'string' }, base: { type: 'string' }, head: { type: 'string' }, pairs: { type: 'string', default: '10' } } });
 if (values.issue === '22') await (await import('../../supabase/functions/stripe-checkout/perf')).verifyBillingPerf(values);
+else if (values.issue === '14') await verifyIssue14(values);
 else if (values.issue === '12') await verifyIssue12(values);
 else if (values.issue === '15') await verifyIssue15(values);
 else if (values.issue === '3' || values.issue === '4' || values.issue === '5') await verifyIssue3(values);
@@ -228,6 +230,130 @@ async function verifyIssue12(values: PerfArguments) {
     await Promise.all(servers.map(server => new Promise<void>(done => { if (server.exitCode !== null) done(); else { server.once('exit', () => done()); server.kill(); } })));
     if (existsSync(trunkModules)) unlinkSync(trunkModules);
     if (existsSync(trunkRoot)) execFileSync('git', ['worktree', 'remove', '--force', trunkRoot], { stdio: 'inherit' });
+    assert.ok(existsSync('node_modules/vite/package.json'));
+  }
+}
+
+async function verifyIssue14(values: PerfArguments) {
+  const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+  assert.equal(values.head, head, 'Measure the committed candidate head.');
+  assert.ok(values.base);
+  const base = values.base;
+  const pairs = Number(values.pairs);
+  assert.ok(Number.isInteger(pairs) && pairs >= 10);
+  const tree = execFileSync('git', ['ls-tree', '-r', '--name-only', base], { encoding: 'utf8' }).split('\n');
+  assert.ok(tree.includes('package.json'));
+  assert.ok(!tree.some(path => path.startsWith('src/features/vouches/')), 'The added-action exception requires vouches to be absent at the base.');
+  assert.equal(execFileSync('git', ['diff', base, head, '--', 'package-lock.json'], { encoding: 'utf8' }), '');
+  const directory = `${process.env.EVIDENCE_DIR ?? '.pilot-evidence'}/perf`;
+  mkdirSync(directory, { recursive: true });
+  const trunkRoot = resolve('.pilot-evidence', 'perf-trunk-14');
+  assert.ok(!existsSync(trunkRoot), 'An existing probe checkout must be inspected before reuse.');
+  const trunkModules = join(trunkRoot, 'node_modules');
+  const servers: ReturnType<typeof spawn>[] = [];
+  const startup: Record<string, number> = {};
+  const warmup: Record<string, number> = {};
+  const samples: { index: number; side: string; readinessMs: number; queryMs: number; communityId: string }[] = [];
+  const actions: { index: number; commandMs: number; visibleMs: number; vouchQueryMs: number; vouchId: string; applicationId: string; membershipStatus: string }[] = [];
+  const trunkPort = Number(process.env.APP_PORT ?? 5173) + 1;
+  const headPort = trunkPort + 1;
+  const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH ?? (process.platform === 'win32' ? 'C:/Program Files/Google/Chrome/Application/chrome.exe' : undefined) });
+  const persist = (extra: unknown) => writeFileSync(`${directory}/samples.json`, JSON.stringify({ utc: new Date().toISOString(), head, base, pairs, startup, samples, actions, host: { cores: cpus().length, totalMemory: totalmem(), freeMemory: freemem(), loadAverage: loadavg() }, extra }, null, 2));
+  async function serve(label: string, root: string, port: number, config: string[] = []) {
+    const start = performance.now();
+    const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', root, ...config, '--host', '127.0.0.1', '--port', String(port), '--strictPort'], { stdio: 'ignore', windowsHide: true });
+    servers.push(server);
+    const deadline = Date.now() + 60000;
+    while (Date.now() < deadline) {
+      if (server.exitCode !== null) throw new Error(`${label} server exited ${server.exitCode}`);
+      if (await fetch(`http://127.0.0.1:${port}`).then(r => r.ok, () => false)) { startup[label] = performance.now() - start; return; }
+      await new Promise(done => setTimeout(done, 100));
+    }
+    throw new Error(`${label} startup exceeded 60 seconds`);
+  }
+  try {
+    mkdirSync(trunkRoot, { recursive: true });
+    for (const file of tree.filter(file => /^(src\/|vite.config.ts$|index.html$|package.json$|tsconfig.json$)/.test(file))) {
+      const target = join(trunkRoot, file);
+      mkdirSync(resolve(target, '..'), { recursive: true });
+      writeFileSync(target, execFileSync('git', ['show', `${base}:${file}`]));
+    }
+    symlinkSync(resolve('node_modules'), trunkModules, 'junction');
+    copyFileSync('.env.local', join(trunkRoot, '.env.local'));
+    writeFileSync(join(trunkRoot, 'perf.vite.config.ts'), "import { mergeConfig } from 'vite';\nimport config from './vite.config';\nexport default mergeConfig(config, { cacheDir: '.vite-perf-cache' });\n");
+    await serve('trunk', trunkRoot, trunkPort, ['--config', join(trunkRoot, 'perf.vite.config.ts')]);
+    await serve('head', '.', headPort);
+    for (const [side, port] of [['trunk', trunkPort], ['head', headPort]] satisfies [string, number][]) {
+      const warmStart = performance.now();
+      const context = await browser.newContext({ baseURL: `http://127.0.0.1:${port}` });
+      try {
+        const page = await context.newPage(); await page.goto('/', { timeout: 120000 });
+        await expect(page.getByLabel('Email address')).toBeVisible({ timeout: 120000 });
+      } finally { await context.close(); }
+      warmup[side] = performance.now() - warmStart;
+    }
+    for (let index = 0; index < pairs; index++) {
+      const f = await vouchFixture(`perf-vouch-${index}`);
+      assert.equal((await configureVouch(f.owner, f.community.id, f.sponsor.id)).error, null);
+      for (const [side, port] of [['trunk', trunkPort], ['head', headPort]] satisfies [string, number][]) {
+        const context = await browser.newContext({ baseURL: `http://127.0.0.1:${port}`, viewport: { width: 1440, height: 1000 } });
+        try {
+          const page = await context.newPage(); await page.goto('/');
+          await page.getByLabel('Email address').fill(f.sponsor.email); await page.getByLabel('Password', { exact: true }).fill(password);
+          await page.getByRole('button', { name: 'Sign in', exact: true }).last().click();
+          const home = page.getByRole('heading', { name: `Welcome to ${f.community.name}.` }); await expect(home).toBeVisible();
+          const readyStart = performance.now(); await page.reload(); await expect(home).toBeVisible(); const readinessMs = performance.now() - readyStart;
+          const queryStart = performance.now(); const query = await f.sponsor.client.from('communities').select('id,name').eq('id', f.community.id); const queryMs = performance.now() - queryStart;
+          assert.equal(query.error, null); assert.deepEqual(query.data, [f.community]);
+          samples.push({ index, side, readinessMs, queryMs, communityId: f.community.id }); persist({ errors: 0, phase: 'paired reads' });
+          if (side === 'head') {
+            await page.goto(`/vouches?community=${f.community.id}`);
+            const body = `Persisted performance Vouch ${index}`;
+            await page.getByLabel(`Trust statement for ${f.applicant.email}`, { exact: true }).fill(body);
+            let requestStart = 0;
+            page.on('request', request => { if (request.url().includes('/rpc/submit_vouch')) requestStart = performance.now(); });
+            const response = page.waitForResponse(value => value.url().includes('/rpc/submit_vouch')).then(async value => {
+              await value.finished(); assert.equal(value.status(), 200);
+              return { commandMs: performance.now() - requestStart, vouch: vouchSchema.parse(await value.json()) };
+            });
+            const actionStart = performance.now(); await page.getByRole('button', { name: `Vouch for ${f.applicant.email}`, exact: true }).click();
+            await expect(page.getByRole('region', { name: 'Sponsor history', exact: true }).getByText(body, { exact: true })).toBeVisible();
+            const visibleMs = performance.now() - actionStart;
+            const result = await response;
+            const readStart = performance.now();
+            const statement = await f.applicant.client.from('vouches').select('id,statement').eq('application_id', f.application.id);
+            const vouchQueryMs = performance.now() - readStart;
+            assert.equal(statement.error, null); assert.deepEqual(statement.data, [{ id: result.vouch.id, statement: body }]);
+            const membership = await admin.from('memberships').select('status').eq('community_id', f.community.id).eq('user_id', f.applicant.id);
+            assert.deepEqual(membership.data, [{ status: 'pending' }]);
+            assert.deepEqual((await f.applicant.client.from('communities').select('*')).data, []);
+            assert.deepEqual(z.object({ global: standingSchema }).parse((await f.sponsor.client.rpc('my_reputation')).data).global, { score: 50, title: 'Unproven', completedInteractions: 0 });
+            await page.reload(); await expect(page.getByText(body, { exact: true })).toBeVisible();
+            actions.push({ index, commandMs: result.commandMs, visibleMs, vouchQueryMs, vouchId: result.vouch.id, applicationId: f.application.id, membershipStatus: 'pending' });
+            persist({ errors: 0, phase: 'head statement persisted and applicant remains pending' });
+          }
+        } finally { await context.close(); }
+      }
+    }
+    const median = (numbers: number[]) => { const sorted = [...numbers].sort((a, b) => a - b); const mid = Math.floor(sorted.length / 2); return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2; };
+    const summary = (side: string) => ({ readinessMedianMs: median(samples.filter(row => row.side === side).map(row => row.readinessMs)), queryMedianMs: median(samples.filter(row => row.side === side).map(row => row.queryMs)) });
+    const baseline = summary('trunk'); const current = summary('head');
+    const added = { commandMedianMs: median(actions.map(row => row.commandMs)), visibleMedianMs: median(actions.map(row => row.visibleMs)) };
+    const queries = [...samples.filter(row => row.side === 'head').map(row => row.queryMs), ...actions.map(row => row.vouchQueryMs)].sort((a, b) => a - b);
+    const queryP95Ms = queries[Math.ceil(queries.length * .95) - 1];
+    const checks = { comparableReadiness: current.readinessMedianMs <= Math.max(1.2 * baseline.readinessMedianMs, baseline.readinessMedianMs + 100), comparableRead: current.queryMedianMs <= Math.max(1.2 * baseline.queryMedianMs, baseline.queryMedianMs + 100), command: added.commandMedianMs <= 1000, visible: added.visibleMedianMs <= 2000, query: queryP95Ms <= 3000, startup: Object.values(startup).every(value => value <= 60000) };
+    const ranges = { readinessMs: [Math.min(...samples.map(row => row.readinessMs)), Math.max(...samples.map(row => row.readinessMs))], commandMs: [Math.min(...actions.map(row => row.commandMs)), Math.max(...actions.map(row => row.commandMs))], visibleMs: [Math.min(...actions.map(row => row.visibleMs)), Math.max(...actions.map(row => row.visibleMs))] };
+    persist({ errors: 0, warmup, baseline, head: current, added, queryP95Ms, checks, ranges, claim: 'Local serial development probe meets regression and absolute budgets. No production throughput or speedup claim.', baselineAction: 'Vouches absent; shared authorized Community readiness/read compared instead.', providerWait: 'None in this path; only local persisted command and render work.' });
+    writeFileSync(`${directory}/report.md`, `P14 at ${head}.\n\n${pairs} interleaved trunk/head pairs against ${base}. Both sides reload and read the identical authorized Community. Trunk lacks Vouches, so added statement commands and durable visible states use absolute budgets.\n\nTrunk ${JSON.stringify(baseline)}. Head ${JSON.stringify(current)}. Added ${JSON.stringify(added)}. Query p95 ${queryP95Ms} ms. Ranges ${JSON.stringify(ranges)}. Checks ${JSON.stringify(checks)}.\n\nEvery sample includes a successful HTTP command, a unique persisted statement, a fresh applicant RLS read, a sponsor reload, pending membership and literal 50 Unproven with zero completions. Zero failed samples. Local serial Chrome and Vite development timings include HTTP, PostgreSQL and render work. Provider waits are absent. No production throughput or speedup claim. Host observations and raw samples are in samples.json.\n`);
+    assert.ok(Object.values(checks).every(Boolean), JSON.stringify(checks));
+    process.stdout.write(`${JSON.stringify({ baseline, head: current, added, queryP95Ms, checks })}\n`);
+  } catch (error) { persist({ error: error instanceof Error ? error.message : String(error) }); throw error; }
+  finally {
+    await browser.close();
+    await Promise.all(servers.map(server => new Promise<void>(done => { if (server.exitCode !== null) done(); else { server.once('exit', () => done()); server.kill(); } })));
+    if (existsSync(trunkModules)) unlinkSync(trunkModules);
+    assert.equal(trunkRoot, resolve('.pilot-evidence', 'perf-trunk-14'));
+    if (existsSync(trunkRoot)) rmSync(trunkRoot, { recursive: true });
     assert.ok(existsSync('node_modules/vite/package.json'));
   }
 }

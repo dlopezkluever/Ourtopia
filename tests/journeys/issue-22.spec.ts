@@ -83,7 +83,7 @@ async function cancelProviderSubscription(id: string) {
 test('lane 1 trunk absence and real test Checkout durable end state', async ({ page, browser }, info) => {
   requireProvider();
   const fixture = await billingFixture('billing-trunk');
-  const base = '998b29ade3134035cf627dc1a1a8ee07cd504ab0';
+  const base = '7aa1af9cf1dae27a32226bb0f52f408e29749aa2';
   const root = `.pilot-evidence/billing-trunk-${info.project.name}`;
   const paths = execFileSync('git', ['ls-tree', '-r', '--name-only', base], { encoding: 'utf8' }).split('\n').filter(path => /^(src\/|vite.config.ts$|index.html$|package.json$)/.test(path));
   for (const path of paths) { const target = `${root}/${path}`; mkdirSync(target.slice(0, target.lastIndexOf('/')), { recursive: true }); writeFileSync(target, execFileSync('git', ['show', `${base}:${path}`])); }
