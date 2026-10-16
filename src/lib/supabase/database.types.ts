@@ -299,6 +299,30 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"borrow_requests": {
+                  Row: {
+                    "borrower_id": string,"community_id": string,"created_at": string,"decided_at": string | null,"ends_on": string,"exchange_id": string | null,"id": string,"listing_id": string,"owner_id": string,"starts_on": string,"status": string,"version": number
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "borrower_id": string,"community_id": string,"created_at"?: string,"decided_at"?: string | null,"ends_on": string,"exchange_id"?: string | null,"id"?: string,"listing_id": string,"owner_id": string,"starts_on": string,"status"?: string,"version"?: number
+                  }
+                  Update: {
+                    "borrower_id"?: string,"community_id"?: string,"created_at"?: string,"decided_at"?: string | null,"ends_on"?: string,"exchange_id"?: string | null,"id"?: string,"listing_id"?: string,"owner_id"?: string,"starts_on"?: string,"status"?: string,"version"?: number
+                  }
+                  Relationships: []
+                },"item_reservations": {
+                  Row: {
+                    "acknowledged_at": string | null,"acknowledgment_due_at": string,"blocking": boolean,"condition": string,"created_at": string,"custody_unresolved": boolean,"dates": unknown,"ends_on": string,"exchange_id": string,"lending_conditions": string,"listing_id": string,"replacement_value": number,"request_id": string,"starts_on": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "acknowledged_at"?: string | null,"acknowledgment_due_at": string,"blocking"?: boolean,"condition": string,"created_at"?: string,"custody_unresolved"?: boolean,"dates"?: never,"ends_on": string,"exchange_id": string,"lending_conditions": string,"listing_id": string,"replacement_value": number,"request_id": string,"starts_on": string
+                  }
+                  Update: {
+                    "acknowledged_at"?: string | null,"acknowledgment_due_at"?: string,"blocking"?: boolean,"condition"?: string,"created_at"?: string,"custody_unresolved"?: boolean,"dates"?: never,"ends_on"?: string,"exchange_id"?: string,"lending_conditions"?: string,"listing_id"?: string,"replacement_value"?: number,"request_id"?: string,"starts_on"?: string
+                  }
+                  Relationships: []
                 },"listing_availability": {
                   Row: {
                     "dates": unknown,"ends_on": string,"id": string,"listing_id": string,"starts_on": string
@@ -695,6 +719,18 @@ isOneToOne: false
             [_ in never]: never
           }
           Functions: {
+            "decide_borrow_request":
+{ Args: { "p_decision": string,"p_expected_version": number,"p_intent_id": string,"p_request_id": string }; Returns: Json
+                           },
+"expire_due_item_approvals":
+{ Args: never; Returns: number
+                           },
+"expire_item_approval":
+{ Args: { "p_exchange_id": string }; Returns: Json
+                           },
+"submit_borrow_request":
+{ Args: { "p_ends_on": string,"p_intent_id": string,"p_listing_id": string,"p_starts_on": string }; Returns: Json
+                           },
             "accept_help_commitment":
 { Args: { "p_commitment_id": string,"p_intent_id": string }; Returns: Json
                            },
