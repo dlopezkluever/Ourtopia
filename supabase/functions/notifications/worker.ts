@@ -13,6 +13,10 @@ export type DeliveryBackend = {
 export type EmailSender = (message: { to: string; subject: string; text: string; idempotencyKey: string }) => Promise<void>;
 
 const subjects: Record<string, string> = {
+  borrow_requested: 'A Borrow Request is ready to review',
+  borrow_approved: 'Your Borrow Request was approved. Acknowledge within 48 hours',
+  borrow_rejected: 'Your Borrow Request was declined',
+  borrow_expired: 'An unacknowledged item approval expired',
   membership_applied: 'A membership application is ready to review',
   membership_approved: 'Your membership application was approved',
   membership_rejected: 'Your membership application was rejected',

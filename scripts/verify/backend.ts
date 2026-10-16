@@ -217,6 +217,29 @@ export async function uploadListingImage(member: Awaited<ReturnType<typeof actor
   return image;
 }
 
+export async function borrowingFixture(label = 'borrowing') {
+  const f = await listingFixture(label);
+  const listing = await publishDrill(f.alice, f.community.id);
+  return { ...f, listing };
+}
+export async function requestItem(borrower: Awaited<ReturnType<typeof actor>>, listingId: string, startsOn = '2027-01-15', endsOn = '2027-01-17', intent = randomUUID()) {
+  const result = await borrower.client.rpc('submit_borrow_request', { p_intent_id: intent, p_listing_id: listingId, p_starts_on: startsOn, p_ends_on: endsOn });
+  if (result.error) throw result.error;
+  return z.object({ id: z.uuid(), version: z.number(), status: z.string(), exchange_id: z.uuid().nullable() }).parse(result.data);
+}
+export async function decideBorrow(owner: Awaited<ReturnType<typeof actor>>, requestId: string, decision = 'approved', intent = randomUUID(), version = 1) {
+  return owner.client.rpc('decide_borrow_request', { p_intent_id: intent, p_request_id: requestId, p_expected_version: version, p_decision: decision });
+}
+export async function seedDueItemApproval(f: Awaited<ReturnType<typeof borrowingFixture>>, dueAt = new Date(Date.now() - 60000).toISOString()) {
+  const exchange = await admin.from('exchanges').insert({ community_id: f.community.id, kind: 'item', provider_id: f.alice.id, receiver_id: f.bob.id, source_kind: 'listing', source_id: f.listing.id, state: 'approved' }).select('id').single();
+  if (exchange.error) throw exchange.error;
+  const request = await admin.from('borrow_requests').insert({ community_id: f.community.id, listing_id: f.listing.id, owner_id: f.alice.id, borrower_id: f.bob.id, starts_on: '2027-01-15', ends_on: '2027-01-17', status: 'approved', exchange_id: exchange.data.id }).select('id').single();
+  if (request.error) throw request.error;
+  const reservation = await admin.from('item_reservations').insert({ exchange_id: exchange.data.id, request_id: request.data.id, listing_id: f.listing.id, starts_on: '2027-01-15', ends_on: '2027-01-17', acknowledgment_due_at: dueAt, condition: drillDetails.condition, replacement_value: 180, lending_conditions: drillDetails.lending_conditions });
+  if (reservation.error) throw reservation.error;
+  return { exchangeId: exchange.data.id, requestId: request.data.id };
+}
+
 export const helpListingFields = (overrides: Record<string, unknown> = {}) => ({ title: 'Moving help with a van', description: 'I can lift and drive.', category: 'moving', skill: 'Lifting and van driving', skill_level: 'experienced', availability: 'Weekend mornings', geographic_constraints: 'Within 3 miles of Maple Street', scheduling_preferences: 'Two days notice', ...overrides });
 export const helpNeedFields = (helpers = 2, overrides: Record<string, unknown> = {}) => ({ title: 'Move a couch upstairs', description: 'Third floor, no lift.', category: 'moving', starts_at: new Date(Date.now() + 3 * 86400000).toISOString(), duration_minutes: 120, location: '12 Maple Street', helpers_needed: helpers, ...overrides });
 export const helpScheduleFields = (overrides: Record<string, unknown> = {}) => ({ starts_at: new Date(Date.now() + 2 * 86400000).toISOString(), duration_minutes: 90, meeting_point: 'Side gate on Maple Street', ...overrides });
