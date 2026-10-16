@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { parseArgs } from 'node:util';
 import { execFileSync, spawn } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { cpus, loadavg, totalmem, freemem } from 'node:os';
 import { chromium, expect, type Page } from '@playwright/test';
@@ -137,7 +137,7 @@ async function verifyIssue14(values: PerfArguments) {
   assert.equal(execFileSync('git', ['diff', base, head, '--', 'package-lock.json'], { encoding: 'utf8' }), '');
   const directory = `${process.env.EVIDENCE_DIR ?? '.pilot-evidence'}/perf`;
   mkdirSync(directory, { recursive: true });
-  const trunkRoot = resolve('..', 'perf-trunk-14');
+  const trunkRoot = resolve('.pilot-evidence', 'perf-trunk-14');
   assert.ok(!existsSync(trunkRoot), 'An existing probe checkout must be inspected before reuse.');
   const trunkModules = join(trunkRoot, 'node_modules');
   const servers: ReturnType<typeof spawn>[] = [];
@@ -161,7 +161,12 @@ async function verifyIssue14(values: PerfArguments) {
     throw new Error(`${label} startup exceeded 60 seconds`);
   }
   try {
-    execFileSync('git', ['worktree', 'add', '--detach', trunkRoot, base], { stdio: 'inherit' });
+    mkdirSync(trunkRoot, { recursive: true });
+    for (const file of tree.filter(file => /^(src\/|vite.config.ts$|index.html$|package.json$|tsconfig.json$)/.test(file))) {
+      const target = join(trunkRoot, file);
+      mkdirSync(resolve(target, '..'), { recursive: true });
+      writeFileSync(target, execFileSync('git', ['show', `${base}:${file}`]));
+    }
     symlinkSync(resolve('node_modules'), trunkModules, 'junction');
     copyFileSync('.env.local', join(trunkRoot, '.env.local'));
     writeFileSync(join(trunkRoot, 'perf.vite.config.ts'), "import { mergeConfig } from 'vite';\nimport config from './vite.config';\nexport default mergeConfig(config, { cacheDir: '.vite-perf-cache' });\n");
@@ -227,7 +232,8 @@ async function verifyIssue14(values: PerfArguments) {
     await browser.close();
     await Promise.all(servers.map(server => new Promise<void>(done => { if (server.exitCode !== null) done(); else { server.once('exit', () => done()); server.kill(); } })));
     if (existsSync(trunkModules)) unlinkSync(trunkModules);
-    if (existsSync(trunkRoot)) execFileSync('git', ['worktree', 'remove', '--force', trunkRoot], { stdio: 'inherit' });
+    assert.equal(trunkRoot, resolve('.pilot-evidence', 'perf-trunk-14'));
+    if (existsSync(trunkRoot)) rmSync(trunkRoot, { recursive: true });
     assert.ok(existsSync('node_modules/vite/package.json'));
   }
 }
