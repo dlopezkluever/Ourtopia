@@ -172,3 +172,34 @@ a.sidebar-nav { text-decoration: none; }
   .history li time { grid-column: 2; }
 }
 @media (max-width: 700px) { .sidebar a.directory-link { display: flex; margin: 12px 0 0; min-height: 44px; } }
+
+.listings-layout { max-width: 1100px; margin: 3rem auto; padding: 0 1.25rem}
+.listings-layout>.eyebrow { display: block; margin-top: 2rem}
+.listing-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.25rem}
+.listing-card, .listing-detail { background: #fff; border: 1px solid #d9dfd3; border-radius: 18px; padding: 1.5rem}
+.listing-card p { overflow-wrap: anywhere}
+.listing-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin: 2rem 0}
+.listing-filters label { display: flex; flex-direction: column; gap: .5rem}
+.listing-filters input, .listing-filters select, .listing-form select { width: 100%; padding: .75rem; border: 1px solid #b7c1b3; border-radius: 8px; background: white}
+.listing-form { max-width: 740px; margin: 2rem auto}
+.listing-form fieldset { border: 0; padding: 0; min-width: 0}
+.listing-form .availability-fields { border: 1px solid #d9dfd3; padding: 1rem; margin: 1rem 0}
+.availability-row { display: flex; gap: 1rem; flex-wrap: wrap}
+.availability-row label { flex: 1; min-width: 150px}
+.listing-detail dl { display: grid; grid-template-columns: 1fr 2fr; gap: .75rem; margin: 2rem 0}
+.listing-detail dt { font-weight: 600}
+.listing-detail dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere}
+.listing-images { display: flex; gap: 1rem; flex-wrap: wrap}
+.listing-images img { max-width: 100%; width: 260px; height: 200px; object-fit: contain; border-radius: 12px}
+.gratitude { background: #f4f4e8; padding: 1rem; border-radius: 12px; margin: 1.5rem 0}
+.listing-actions { display: flex; gap: 1rem; margin-top: 2rem}
+.listing-filters .checkbox-label { flex-direction: row; align-items: center}
+.checkbox-label input { width: 20px; height: 20px}
+.listing-detail button, .listings-layout>button, .listing-form button { min-height: 44px; padding: .65rem 1rem; margin: .4rem .4rem .4rem 0; border-radius: 8px; border: 1px solid #506949}
+.listing-detail h1 { overflow-wrap: anywhere}
+@media(max-width: 600px) { .listing-detail dl { grid-template-columns: 1fr}
+.listing-detail dd { margin-bottom: .75rem}
+.listing-form { margin: 1rem}
+.header-right { flex-wrap: wrap}
+.listing-filters { grid-template-columns: 1fr}
+}
