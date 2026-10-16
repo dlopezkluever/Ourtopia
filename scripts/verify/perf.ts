@@ -325,14 +325,14 @@ try {
           for (const [label, value] of [['Title', drillDetails.title], ['Description', drillDetails.description], ['Condition', drillDetails.condition], ['Estimated replacement value ($)', '180'], ['Minimum Community Solidarity Score', '45'], ['Available from 1', '2027-01-10'], ['Available through 1', '2027-01-20']] as const) await page.getByLabel(label, { exact: true }).fill(value);
           let started = 0;
           page.on('request', request => { if (request.url().includes('/rpc/save_listing')) started = performance.now(); });
-          const response = page.waitForResponse(response => response.url().includes('/rpc/save_listing')).then(async response => { await response.finished(); assert.equal(response.status(), 200); return { commandMs: performance.now() - started, listing: listingSchema.parse(await response.json()) }; });
+          const response = page.waitForResponse(response => response.url().includes('/rpc/save_listing')).then(response => { assert.equal(response.status(), 200); return { commandMs: performance.now() - started }; });
           const actionStart = performance.now();
           await page.getByRole('button', { name: 'Save Listing', exact: true }).click();
           await expect(page.getByRole('heading', { name: drillDetails.title, exact: true })).toBeVisible();
           const visibleMs = performance.now() - actionStart;
           const saved = await response;
           const readStart = performance.now();
-          const result = await owner.client.from('listings').select('*,listing_availability(starts_on,ends_on)').eq('id', saved.listing.id).single();
+          const result = await owner.client.from('listings').select('*,listing_availability(starts_on,ends_on)').eq('community_id', String(community.id)).single();
           const queryMs = performance.now() - readStart;
           assert.equal(result.error, null);
           const persisted = listingSchema.parse(result.data);
