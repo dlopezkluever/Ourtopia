@@ -22,6 +22,8 @@ const subjects: Record<string, string> = {
   item_handoff_condition_recorded: 'Review the item condition at Handoff',
   item_handed_off: 'Your item Handoff was recorded',
   item_handoff_cancelled: 'Your item Handoff was cancelled',
+  item_dispute_opened: 'An Exchange issue was reported',
+  item_dispute_response: 'An Exchange issue case was updated',
   borrow_requested: 'A Borrow Request is ready to review',
   borrow_approved: 'Your Borrow Request was approved. Acknowledge within 48 hours',
   borrow_rejected: 'Your Borrow Request was declined',
@@ -50,7 +52,7 @@ export async function deliverOne(backend: DeliveryBackend, sendEmail: EmailSende
     if (item.channel === 'email') await sendEmail({
       to: item.recipient_email,
       subject: subjects[item.kind] ?? 'You have an Ourtopia notification',
-      text: item.kind === 'item_need_responded' ? 'Sign in to Ourtopia and open Community requests to review the offered Listing and send a separate Borrow Request.' : item.kind.startsWith('item_') ? 'Sign in to Ourtopia and open Handoffs to view the current schedule and status.' : item.kind.startsWith('help_') ? 'Sign in to Ourtopia to view the current status of your help Exchange.' : item.kind.startsWith('borrow_') ? 'Sign in to Ourtopia and open Borrow Requests to view the current status.' : 'Sign in to Ourtopia to view your notification and current status.',
+      text: item.kind === 'item_need_responded' ? 'Sign in to Ourtopia and open Community requests to review the offered Listing and send a separate Borrow Request.' : item.kind.startsWith('item_dispute_') ? 'Sign in to Ourtopia and open Exchange issues to review the case.' : item.kind.startsWith('item_') ? 'Sign in to Ourtopia and open Handoffs to view the current schedule and status.' : item.kind.startsWith('help_') ? 'Sign in to Ourtopia to view the current status of your help Exchange.' : item.kind.startsWith('borrow_') ? 'Sign in to Ourtopia and open Borrow Requests to view the current status.' : 'Sign in to Ourtopia to view your notification and current status.',
       idempotencyKey: item.id,
     });
   } catch {
