@@ -7,6 +7,65 @@ import {
 
 before(() => realtimeReady(), { timeout: 70000 });
 
+test('Private response notices and image audit stay hidden from nonparticipants, including administrators and realtime subscribers', async () => {
+  const f = await itemNeedFixture('need-notice-privacy');
+  const foreign = await foreignAdministrator('need-notice-foreign');
+  const outsider = await actor({ label: 'need-notice-outsider' });
+  const members = [f.bob, f.alice, f.carol, f.owner, foreign, outsider, { client: publicClient() }];
+  const privateKinds = ['item_need_responded', 'item_need_response_withdrawn', 'item_need_image_prepared', 'item_need_image_completed', 'item_need_image_removed'];
+  const deliveries: string[][] = members.map(() => []);
+  const channels = await Promise.all(members.map(async (member, index) => {
+    const session = await member.client.auth.getSession();
+    if (session.data.session) await member.client.realtime.setAuth(session.data.session.access_token);
+    const channel = member.client.channel(`need-private-${randomUUID()}`).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'community_events', filter: `community_id=eq.${f.community.id}` }, change => {
+      if (privateKinds.includes(String(change.new.kind))) deliveries[index].push(String(change.new.kind));
+    });
+    await new Promise<void>((resolve, reject) => { const timer = setTimeout(() => reject(new Error('Subscription timed out')), 15000); channel.subscribe(status => { if (status === 'SUBSCRIBED') { clearTimeout(timer); resolve(); } }); });
+    return channel;
+  }));
+  try {
+    const response = await respondToNeed(f.alice, f.need.id, f.listing.id, 'Private response notice');
+    const image = await readyImage(f.bob, f.need.id);
+    assert.equal((await f.bob.client.rpc('remove_item_need_image', { p_intent_id: randomUUID(), p_image_id: image.id })).error, null);
+    assert.equal((await f.alice.client.rpc('withdraw_item_need_response', { p_intent_id: randomUUID(), p_response_id: response.id })).error, null);
+    const notices = await admin.from('notification_outbox').select('id,event_id').eq('community_id', f.community.id).eq('kind', 'item_need_responded');
+    assert.equal(notices.error, null);
+    assert.equal(notices.data!.length, 2);
+    const eventId = notices.data![0].event_id;
+    const reminder = await admin.rpc('schedule_notification_reminder', { p_community_id: f.community.id, p_source_key: randomUUID(), p_event_id: eventId, p_recipient_id: f.alice.id, p_channel: 'email', p_kind: 'item_need_responded', p_due_at: '2027-01-01T00:00:00Z' });
+    assert.equal(reminder.error, null);
+    const persisted = await admin.from('community_events').select('kind').eq('community_id', f.community.id).in('kind', privateKinds);
+    assert.deepEqual(persisted.data?.map(row => row.kind).sort(), [...privateKinds].sort());
+    for (const member of members) {
+      const events = await member.client.from('community_events').select('*').eq('community_id', f.community.id).in('kind', privateKinds);
+      assert.equal(events.error?.code ?? null, member === members[6] ? '42501' : null);
+      assert.deepEqual(events.data ?? [], []);
+      const rows = await member.client.from('notification_outbox').select('*').eq('community_id', f.community.id).eq('kind', 'item_need_responded');
+      assert.equal(rows.error?.code ?? null, member === members[6] ? '42501' : null);
+      const recipient = member === f.bob ? f.bob.id : member === f.alice ? f.alice.id : null;
+      assert.equal(rows.data?.length ?? 0, member === f.bob ? 2 : member === f.alice ? 1 : 0);
+      assert.ok((rows.data ?? []).every(row => row.recipient_id === recipient));
+      const reminders = await member.client.from('notification_reminders').select('*').eq('community_id', f.community.id);
+      assert.equal(reminders.error?.code ?? null, member === members[6] ? '42501' : null);
+      assert.deepEqual(reminders.data ?? [], []);
+    }
+    const consoleRows = await f.owner.client.rpc('inspect_notification_deliveries', { p_community_id: f.community.id });
+    assert.equal(consoleRows.error, null);
+    assert.ok(Array.isArray(consoleRows.data));
+    assert.equal(consoleRows.data.some(row => row.kind === 'item_need_responded'), false);
+    assert.equal(consoleRows.data.some(row => row.kind === 'membership_approved'), true);
+    assert.equal((await f.owner.client.rpc('retry_notification', { p_intent_id: randomUUID(), p_outbox_id: notices.data![0].id })).error?.code, '42501');
+    await admin.from('memberships').update({ status: 'removed' }).eq('community_id', f.community.id).eq('user_id', f.bob.id);
+    assert.deepEqual((await f.bob.client.from('notification_outbox').select('*').eq('community_id', f.community.id).eq('kind', 'item_need_responded')).data, []);
+    await new Promise(resolve => setTimeout(resolve, 2500));
+    assert.deepEqual(deliveries, members.map(() => []));
+    receipt('issue-11-private-notices', { privateKinds, deliveries, consoleRows: consoleRows.data, recipientOutboxCounts: [2, 1, 0, 0, 0, 0, 0] });
+  } finally {
+    await Promise.all(members.map((member, index) => member.client.removeChannel(channels[index])));
+    members.forEach(member => member.client.realtime.disconnect());
+  }
+});
+
 type Client = Awaited<ReturnType<typeof actor>>['client'];
 async function foreignAdministrator(label: string) {
   const foreign = await actor({ label });

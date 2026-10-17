@@ -1,12 +1,32 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { randomUUID } from 'node:crypto';
+import { deliverOne } from '../../supabase/functions/notifications/worker';
+import { noticeKinds } from '../../src/features/notifications/model';
 import {
   admin, approveBorrow, borrowNotices, decideBorrow, drillDetails, itemNeedFixture, listingImageBytes, needDetails, needRow, postNeed, publishDrill,
   receipt, requestItem, respondToNeed, workflowEffects,
 } from '../../scripts/verify/backend';
 
 const none = { exchanges: 0, reservations: 0, reputationEvents: 0, qualifyingInteractions: 0, borrowRequests: 0 };
+
+test('A response delivers specific email and in-app copy without private Need Post content', async () => {
+  const f = await itemNeedFixture('need-notice-copy');
+  await respondToNeed(f.alice, f.need.id, f.listing.id, 'Private note excluded from email');
+  const rows = await admin.from('notification_outbox').select('id,channel').eq('community_id', f.community.id).eq('kind', 'item_need_responded');
+  assert.equal(rows.error, null);
+  assert.equal(rows.data!.length, 2);
+  const sent: { subject: string; text: string }[] = [];
+  for (const row of rows.data!) await deliverOne(admin, async message => { sent.push(message); }, row.id);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].subject, 'Someone answered your item Need Post');
+  assert.equal(sent[0].text, 'Sign in to Ourtopia and open Community requests to review the offered Listing and send a separate Borrow Request.');
+  const notices = await f.bob.client.from('notifications').select('kind').in('outbox_id', rows.data!.map(row => row.id));
+  assert.equal(notices.error, null);
+  assert.deepEqual(notices.data, [{ kind: 'item_need_responded' }]);
+  assert.equal(noticeKinds.item_need_responded.message, 'Someone answered your item Need Post with a Listing. Open Community requests to review it and send a separate Borrow Request.');
+  receipt('issue-11-notice-copy', { email: { subject: sent[0].subject, text: sent[0].text }, inApp: noticeKinds.item_need_responded.message });
+});
 async function intentRows(actorId: string, intent: string) {
   return (await admin.from('command_intents').select('intent_id').eq('actor_id', actorId).eq('intent_id', intent)).data;
 }

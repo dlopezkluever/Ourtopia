@@ -14,6 +14,7 @@ export type DeliveryBackend = {
 export type EmailSender = (message: { to: string; subject: string; text: string; idempotencyKey: string }) => Promise<void>;
 
 const subjects: Record<string, string> = {
+  item_need_responded: 'Someone answered your item Need Post',
   borrow_requested: 'A Borrow Request is ready to review',
   borrow_approved: 'Your Borrow Request was approved. Acknowledge within 48 hours',
   borrow_rejected: 'Your Borrow Request was declined',
@@ -42,7 +43,7 @@ export async function deliverOne(backend: DeliveryBackend, sendEmail: EmailSende
     if (item.channel === 'email') await sendEmail({
       to: item.recipient_email,
       subject: subjects[item.kind] ?? 'You have an Ourtopia notification',
-      text: item.kind.startsWith('help_') ? 'Sign in to Ourtopia to view the current status of your help Exchange.' : item.kind.startsWith('borrow_') ? 'Sign in to Ourtopia and open Borrow Requests to view the current status.' : 'Sign in to Ourtopia to view your notification and current status.',
+      text: item.kind === 'item_need_responded' ? 'Sign in to Ourtopia and open Community requests to review the offered Listing and send a separate Borrow Request.' : item.kind.startsWith('help_') ? 'Sign in to Ourtopia to view the current status of your help Exchange.' : item.kind.startsWith('borrow_') ? 'Sign in to Ourtopia and open Borrow Requests to view the current status.' : 'Sign in to Ourtopia to view your notification and current status.',
       idempotencyKey: item.id,
     });
   } catch {

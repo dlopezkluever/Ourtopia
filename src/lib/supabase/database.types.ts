@@ -411,6 +411,72 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"item_need_images": {
+                  Row: {
+                    "byte_size": number,"created_at": string,"id": string,"mime_type": string,"need_id": string,"object_path": string,"state": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "byte_size": number,"created_at"?: string,"id": string,"mime_type": string,"need_id": string,"object_path": string,"state"?: string
+                  }
+                  Update: {
+                    "byte_size"?: number,"created_at"?: string,"id"?: string,"mime_type"?: string,"need_id"?: string,"object_path"?: string,"state"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "item_need_images_need_id_fkey"
+      columns: ["need_id"]
+isOneToOne: false
+      referencedRelation: "item_need_posts"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"item_need_posts": {
+                  Row: {
+                    "author_id": string,"category": string,"community_id": string,"created_at": string,"description": string,"ends_on": string,"id": string,"starts_on": string,"status": string,"title": string,"updated_at": string,"urgency": string,"value_max": number | null,"value_min": number | null,"version": number
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "author_id": string,"category": string,"community_id": string,"created_at"?: string,"description": string,"ends_on": string,"id"?: string,"starts_on": string,"status"?: string,"title": string,"updated_at"?: string,"urgency": string,"value_max"?: number | null,"value_min"?: number | null,"version"?: number
+                  }
+                  Update: {
+                    "author_id"?: string,"category"?: string,"community_id"?: string,"created_at"?: string,"description"?: string,"ends_on"?: string,"id"?: string,"starts_on"?: string,"status"?: string,"title"?: string,"updated_at"?: string,"urgency"?: string,"value_max"?: number | null,"value_min"?: number | null,"version"?: number
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "item_need_posts_community_id_fkey"
+      columns: ["community_id"]
+isOneToOne: false
+      referencedRelation: "communities"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"item_need_responses": {
+                  Row: {
+                    "community_id": string,"created_at": string,"id": string,"listing_id": string,"need_id": string,"note": string,"responder_id": string,"status": string,"withdrawn_at": string | null
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "community_id": string,"created_at"?: string,"id"?: string,"listing_id": string,"need_id": string,"note"?: string,"responder_id": string,"status"?: string,"withdrawn_at"?: string | null
+                  }
+                  Update: {
+                    "community_id"?: string,"created_at"?: string,"id"?: string,"listing_id"?: string,"need_id"?: string,"note"?: string,"responder_id"?: string,"status"?: string,"withdrawn_at"?: string | null
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "item_need_responses_listing_id_community_id_fkey"
+      columns: ["listing_id","community_id"]
+isOneToOne: false
+      referencedRelation: "listings"
+      referencedColumns: ["id","community_id"]
+    },{
+      foreignKeyName: "item_need_responses_need_id_community_id_fkey"
+      columns: ["need_id","community_id"]
+isOneToOne: false
+      referencedRelation: "item_need_posts"
+      referencedColumns: ["id","community_id"]
+    }
+                  ]
                 },"item_reservations": {
                   Row: {
                     "acknowledged_at": string | null,"acknowledgment_due_at": string,"blocking": boolean,"condition": string,"created_at": string,"custody_unresolved": boolean,"dates": unknown,"ends_on": string,"exchange_id": string,"lending_conditions": string,"listing_id": string,"replacement_value": number,"request_id": string,"starts_on": string
@@ -463,42 +529,6 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
-                },"item_need_images": {
-                  Row: {
-                    "byte_size": number,"created_at": string,"id": string,"need_id": string,"mime_type": string,"object_path": string,"state": string
-                  }
-                  ComputedFields: never
-                  Insert: {
-                    "byte_size"?: number,"created_at"?: string,"id"?: string,"need_id"?: string,"mime_type"?: string,"object_path"?: string,"state"?: string
-                  }
-                  Update: {
-                    "byte_size"?: number,"created_at"?: string,"id"?: string,"need_id"?: string,"mime_type"?: string,"object_path"?: string,"state"?: string
-                  }
-                  Relationships: []
-                },"item_need_posts": {
-                  Row: {
-                    "author_id": string,"category": string,"community_id": string,"created_at": string,"description": string,"ends_on": string,"id": string,"starts_on": string,"status": string,"title": string,"updated_at": string,"urgency": string,"value_max": number | null,"value_min": number | null,"version": number
-                  }
-                  ComputedFields: never
-                  Insert: {
-                    "author_id"?: string,"category"?: string,"community_id"?: string,"created_at"?: string,"description"?: string,"ends_on"?: string,"id"?: string,"starts_on"?: string,"status"?: string,"title"?: string,"updated_at"?: string,"urgency"?: string,"value_max"?: number | null,"value_min"?: number | null,"version"?: number
-                  }
-                  Update: {
-                    "author_id"?: string,"category"?: string,"community_id"?: string,"created_at"?: string,"description"?: string,"ends_on"?: string,"id"?: string,"starts_on"?: string,"status"?: string,"title"?: string,"updated_at"?: string,"urgency"?: string,"value_max"?: number | null,"value_min"?: number | null,"version"?: number
-                  }
-                  Relationships: []
-                },"item_need_responses": {
-                  Row: {
-                    "community_id": string,"created_at": string,"id": string,"listing_id": string,"need_id": string,"note": string,"responder_id": string,"status": string,"withdrawn_at": string | null
-                  }
-                  ComputedFields: never
-                  Insert: {
-                    "community_id"?: string,"created_at"?: string,"id"?: string,"listing_id"?: string,"need_id"?: string,"note"?: string,"responder_id"?: string,"status"?: string,"withdrawn_at"?: string | null
-                  }
-                  Update: {
-                    "community_id"?: string,"created_at"?: string,"id"?: string,"listing_id"?: string,"need_id"?: string,"note"?: string,"responder_id"?: string,"status"?: string,"withdrawn_at"?: string | null
-                  }
-                  Relationships: []
                 },"listing_images": {
                   Row: {
                     "byte_size": number,"created_at": string,"id": string,"listing_id": string,"mime_type": string,"object_path": string,"state": string
@@ -1072,6 +1102,9 @@ isOneToOne: true
 "commit_help":
 { Args: { "p_intent_id": string,"p_note"?: string,"p_post_id": string,"p_post_kind": string }; Returns: Json
                            },
+"complete_item_need_image":
+{ Args: { "p_image_id": string,"p_intent_id": string }; Returns: Json
+                           },
 "complete_listing_image":
 { Args: { "p_image_id": string,"p_intent_id": string }; Returns: Json
                            },
@@ -1162,35 +1195,20 @@ isOneToOne: true
 "my_vouch_statements":
 { Args: Record<PropertyKey, never>; Returns: Json
                            },
+"prepare_item_need_image":
+{ Args: { "p_byte_size": number,"p_image_id": string,"p_intent_id": string,"p_mime_type": string,"p_need_id": string }; Returns: Json
+                           },
 "prepare_listing_image":
 { Args: { "p_byte_size": number,"p_image_id": string,"p_intent_id": string,"p_listing_id": string,"p_mime_type": string }; Returns: Json
                            },
 "receive_stripe_receipt":
 { Args: { "p_customer_id": string,"p_event_id": string,"p_event_type": string,"p_fingerprint": string,"p_subscription_id": string }; Returns: Json
                            },
-"complete_item_need_image":
-{ Args: { "p_image_id": string,"p_intent_id": string }; Returns: Json
-                           },
-"prepare_item_need_image":
-{ Args: { "p_byte_size": number,"p_image_id": string,"p_intent_id": string,"p_mime_type": string,"p_need_id": string }; Returns: Json
+"redeem_invite":
+{ Args: { "p_intent_id": string,"p_invite_id": string }; Returns: Json
                            },
 "remove_item_need_image":
 { Args: { "p_image_id": string,"p_intent_id": string }; Returns: Json
-                           },
-"respond_to_item_need":
-{ Args: { "p_intent_id": string,"p_listing_id": string,"p_need_id": string,"p_note"?: string }; Returns: Json
-                           },
-"save_item_need":
-{ Args: { "p_community_id": string,"p_details"?: Json,"p_expected_version"?: number,"p_intent_id": string,"p_need_id"?: string }; Returns: Json
-                           },
-"withdraw_item_need":
-{ Args: { "p_expected_version": number,"p_intent_id": string,"p_need_id": string }; Returns: Json
-                           },
-"withdraw_item_need_response":
-{ Args: { "p_intent_id": string,"p_response_id": string }; Returns: Json
-                           },
-"redeem_invite":
-{ Args: { "p_intent_id": string,"p_invite_id": string }; Returns: Json
                            },
 "remove_listing_image":
 { Args: { "p_image_id": string,"p_intent_id": string }; Returns: Json
@@ -1204,8 +1222,14 @@ isOneToOne: true
 "require_current_membership":
 { Args: { "p_administrator"?: boolean,"p_community_id": string }; Returns: undefined
                            },
+"respond_to_item_need":
+{ Args: { "p_intent_id": string,"p_listing_id": string,"p_need_id": string,"p_note"?: string }; Returns: Json
+                           },
 "retry_notification":
 { Args: { "p_intent_id": string,"p_outbox_id": string }; Returns: Json
+                           },
+"save_item_need":
+{ Args: { "p_community_id": string,"p_details"?: Json,"p_expected_version"?: number,"p_intent_id": string,"p_need_id"?: string }; Returns: Json
                            },
 "save_listing":
 { Args: { "p_community_id": string,"p_details"?: Json,"p_expected_version"?: number,"p_intent_id": string,"p_listing_id"?: string }; Returns: Json
@@ -1236,6 +1260,12 @@ isOneToOne: true
                            },
 "withdraw_help_post":
 { Args: { "p_intent_id": string,"p_post_id": string,"p_post_kind": string }; Returns: Json
+                           },
+"withdraw_item_need":
+{ Args: { "p_expected_version": number,"p_intent_id": string,"p_need_id": string }; Returns: Json
+                           },
+"withdraw_item_need_response":
+{ Args: { "p_intent_id": string,"p_response_id": string }; Returns: Json
                            },
 "withdraw_listing":
 { Args: { "p_expected_version": number,"p_intent_id": string,"p_listing_id": string }; Returns: Json

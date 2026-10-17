@@ -336,3 +336,67 @@ create policy item_need_object_insert on storage.objects for insert to authentic
     where i.object_path = name and i.state = 'pending' and p.status = 'open' and (p.author_id = auth.uid() or public.is_community_administrator(p.community_id))));
 
 notify pgrst, 'reload schema';
+
+create policy item_need_event_privacy on public.community_events as restrictive for select to authenticated
+  using (kind not in ('item_need_responded', 'item_need_response_withdrawn',
+    'item_need_image_prepared', 'item_need_image_completed', 'item_need_image_removed'));
+create policy item_need_outbox_privacy on public.notification_outbox as restrictive for select to authenticated
+  using (kind <> 'item_need_responded' or (recipient_id = auth.uid() and public.is_active_member(community_id)));
+create policy item_need_reminder_privacy on public.notification_reminders as restrictive for select to authenticated
+  using (kind <> 'item_need_responded');
+create or replace function public.inspect_notification_deliveries(p_community_id uuid, p_before uuid default null)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare result jsonb;
+begin
+  perform public.require_current_membership(p_community_id, true);
+  select coalesce(jsonb_agg(diagnostic order by diagnostic.created_at desc, diagnostic.id desc), '[]'::jsonb) into result from (
+    select o.id, o.event_id, o.recipient_id, o.channel,
+      case when o.kind ~ '^[a-z][a-z0-9_]{0,79}$' then o.kind else 'notification' end as kind,
+      o.state, o.attempts, o.next_attempt_at, o.delivered_at, o.created_at,
+      (o.state in ('pending', 'failed') and o.next_attempt_at <= clock_timestamp())
+        or (o.state = 'processing' and o.lease_until <= clock_timestamp()) as due,
+      private.delivery_error(o.last_error) as last_error, o.reminder_due_at,
+      case when o.reminder_id is null then null else exists (
+        select 1 from public.notification_reminders r where r.id = o.reminder_id
+          and r.event_id = o.event_id and r.due_at = o.reminder_due_at
+      ) end as current_schedule,
+      coalesce((select jsonb_agg(jsonb_build_object('number', a.number, 'started_at', a.started_at,
+        'finished_at', a.finished_at, 'error', private.delivery_error(a.error)) order by a.number)
+        from public.notification_attempts a where a.outbox_id = o.id), '[]'::jsonb) as history
+    from public.notification_outbox o where o.community_id = p_community_id
+      and o.kind not in ('conversation_started', 'message_sent', 'item_need_responded')
+      and (p_before is null or (o.created_at, o.id) < (select cursor.created_at, cursor.id
+        from public.notification_outbox cursor where cursor.id = p_before and cursor.community_id = p_community_id))
+    order by o.created_at desc, o.id desc limit 50
+  ) diagnostic;
+  return result;
+end;
+$$;
+create or replace function public.retry_notification(p_intent_id uuid, p_outbox_id uuid)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare
+  item public.notification_outbox; actor uuid := auth.uid(); prior public.command_intents;
+  payload jsonb := jsonb_build_object('outbox_id', p_outbox_id);
+begin
+  select * into item from public.notification_outbox where id = p_outbox_id;
+  if not found or item.kind in ('conversation_started', 'message_sent', 'item_need_responded') then
+    raise exception using errcode = '42501', message = 'Notice unavailable.';
+  end if;
+  perform public.require_current_membership(item.community_id, true);
+  if p_intent_id is null then raise exception using errcode = '22023', message = 'An intent identity is required.'; end if;
+  perform pg_advisory_xact_lock(hashtextextended(actor::text || p_intent_id::text, 0));
+  select * into prior from public.command_intents where actor_id = actor and intent_id = p_intent_id;
+  if found then
+    if prior.command <> 'retry_notification' or prior.payload <> payload then raise exception using errcode = '23505', message = 'This intent was already used with different details.'; end if;
+    return prior.result;
+  end if;
+  select * into item from public.notification_outbox where id = p_outbox_id for update;
+  if not private.reminder_current(item) then raise exception using errcode = '55000', message = 'This reminder schedule is obsolete.'; end if;
+  if item.state <> 'failed' then raise exception using errcode = '55000', message = 'Only failed deliveries can be retried.'; end if;
+  update public.notification_outbox set next_attempt_at = clock_timestamp() where id = item.id returning * into item;
+  insert into public.community_events(community_id, actor_id, kind, intent_id) values(item.community_id, actor, 'notification_retry_requested', p_intent_id);
+  insert into public.command_intents(actor_id, intent_id, command, payload, result) values(actor, p_intent_id, 'retry_notification', payload, to_jsonb(item));
+  return to_jsonb(item);
+end;
+$$;
+notify pgrst, 'reload schema';
