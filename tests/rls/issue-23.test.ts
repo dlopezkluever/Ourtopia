@@ -87,6 +87,7 @@ test('diagnostics sanitize provider errors in direct RLS reads and realtime expo
   assert.equal(outbox.data?.[0].last_error, 'Delivery failed. Retry is scheduled.');
   assert.equal(attempts.data?.[0].error, 'Delivery failed. Retry is scheduled.');
   const foreign = await actor();
+  const probe = randomUUID();
   const seen: Record<string, unknown[]> = { recipient: [], foreign: [], owner: [] };
   const clients = [['recipient', f.applicant], ['foreign', foreign], ['owner', f.owner]] as const;
   const channels = [];
@@ -94,15 +95,16 @@ test('diagnostics sanitize provider errors in direct RLS reads and realtime expo
     for (const [name, user] of clients) {
       const session = await user.client.auth.getSession();
       await user.client.realtime.setAuth(session.data.session!.access_token);
-      const channel = user.client.channel(`p23-${name}-${randomUUID()}`).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notification_hints', filter: `recipient_id=eq.${f.applicant.id}` }, payload => seen[name].push(payload.new));
+      const channel = user.client.channel(`p23-${name}-${randomUUID()}`).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notification_hints', filter: `id=eq.${probe}` }, payload => seen[name].push(payload.new));
       channels.push({ client: user.client, channel });
       await new Promise<void>((resolve, reject) => { const timer = setTimeout(() => reject(new Error('Subscription timeout')), 15000); channel.subscribe(status => { if (status === 'SUBSCRIBED') { clearTimeout(timer); resolve(); } }); });
     }
-    const hint = await admin.from('notification_hints').insert({ recipient_id: f.applicant.id }).select('id').single();
+    const hint = await admin.from('notification_hints').insert({ id: probe, recipient_id: f.applicant.id }).select('id').single();
     assert.equal(hint.error, null);
     const deadline = Date.now() + 10000;
     while (!seen.recipient.length && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 100));
     await new Promise(resolve => setTimeout(resolve, 500));
+    receipt('issue-23-realtime-observed', { probe: hint.data!.id, hints: seen });
     assert.equal(seen.recipient.length, 1); assert.equal(seen.foreign.length, 0); assert.equal(seen.owner.length, 0);
     assert.deepEqual(Object.keys(seen.recipient[0] as object).sort(), ['id', 'recipient_id']);
     receipt('issue-23-privacy', { outbox: outbox.data, attempts: attempts.data, hints: seen, storage: 'No Storage objects or buckets introduced.' });
