@@ -4,7 +4,7 @@ import { copyFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import { communitySchema } from '../../src/features/communities/model';
-import { admin, membershipFixture, activeMember, createCommunity, password, handoffFixture, advanceHandoff, listingImageBytes, itemHandoff, handoffAction } from '../../scripts/verify/backend';
+import { admin, membershipFixture, activeMember, createCommunity, password, handoffFixture, checkedOutFixture, advanceHandoff, listingImageBytes, itemHandoff, handoffAction, itemReturn } from '../../scripts/verify/backend';
 
 const base = '91cc7b00d9edd075c205464ef90235507e6a7b3b';
 async function signIn(page: Page, email: string) {
@@ -233,15 +233,19 @@ test('lane 7 offline privileged action is not queued and reconnect after cancell
   expect((await admin.from('item_handoffs').select('condition').eq('exchange_id', f.exchangeId)).data).toEqual([{ condition: null }]); await capture(page, info, 7, { state: 'cancelled', offlineQueue: 'none', condition: null, staleCommand: stale.error?.code, offlineShellsAfterReconnect });
 });
 
-test('lane 8 shared Return recovery adapter contract survives a lost completion response with one evidence identity', async ({ page }, info) => {
-  const f = await handoffFixture('pwa-shared-recovery'); await advanceHandoff(f, 'schedule'); await signIn(page, f.bob.email); await page.goto(`/pwa/evidence/${f.exchangeId}`);
+test('lane 8 Return recovery resumes a lost completion response with one evidence identity', async ({ page }, info) => {
+  const f = await checkedOutFixture('pwa-return-recovery'); await signIn(page, f.bob.email); await page.goto(`/handoffs/${f.exchangeId}`);
+  await expect(page.getByRole('heading', { name: 'Item Return', exact: true })).toBeVisible(); await page.getByRole('link', { name: 'Recover an interrupted Return photo' }).click();
+  await expect(page).toHaveURL(new RegExp(`/pwa/evidence/${f.exchangeId}\\?purpose=return$`));
   let interrupted = false;
   await page.route('**/rest/v1/rpc/complete_exchange_evidence', async route => { if (!interrupted) { interrupted = true; await route.fetch(); await route.abort('failed'); } else await route.continue(); });
   await page.getByLabel('Camera or photo').setInputFiles(photo); await page.getByRole('button', { name: 'Retry optional photo', exact: true }).click(); await expect(page.getByRole('status').filter({ hasText: 'Photo not confirmed.' })).toBeVisible();
-  const prior = (await f.bob.client.from('exchange_evidence').select('id,state').eq('exchange_id', f.exchangeId)).data!; expect(prior).toHaveLength(1); expect(prior[0].state).toBe('ready');
+  const prior = (await f.bob.client.from('exchange_evidence').select('id,state,purpose').eq('exchange_id', f.exchangeId)).data!; expect(prior).toHaveLength(1); expect(prior[0]).toEqual({ id: prior[0].id, state: 'ready', purpose: 'return' });
+  expect((await itemReturn(f.bob, f.exchangeId)).state).toBe('checked_out');
   await page.reload(); await page.getByLabel('Camera or photo').setInputFiles(photo); await page.getByRole('button', { name: 'Retry optional photo', exact: true }).click(); await expect(page.getByRole('status').filter({ hasText: 'Photo confirmed.' })).toBeVisible();
-  expect((await f.bob.client.from('exchange_evidence').select('id,state').eq('exchange_id', f.exchangeId)).data).toEqual(prior); expect((await admin.storage.from('exchange-evidence').list(f.exchangeId)).data).toHaveLength(1); expect((await admin.from('exchange_events').select('id').eq('exchange_id', f.exchangeId).eq('kind', 'item_evidence_completed')).data).toHaveLength(1);
-  await capture(page, info, 8, { records: prior, contract: 'Kind-independent recovery adapter; real shared evidence commands; no early Return state machine', completionEvents: 1 });
+  expect((await f.bob.client.from('exchange_evidence').select('id,state,purpose').eq('exchange_id', f.exchangeId)).data).toEqual(prior); expect((await admin.storage.from('exchange-evidence').list(f.exchangeId)).data).toHaveLength(1); expect((await admin.from('exchange_events').select('id').eq('exchange_id', f.exchangeId).eq('kind', 'item_evidence_completed')).data).toHaveLength(1);
+  expect((await itemReturn(f.bob, f.exchangeId)).state).toBe('checked_out');
+  await capture(page, info, 8, { records: prior, purpose: 'return', sameIdentityAfterReload: true, stateUnchanged: 'checked_out', completionEvents: 1 });
 });
 
 test('lane 9 registration, draft errors, scheduling and confirmation expose names and keyboard focus', async ({ page }, info) => {
