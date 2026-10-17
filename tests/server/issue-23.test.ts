@@ -11,7 +11,7 @@ test('administrator inspects safe durable attempts and retries the same identity
   assert.equal(inspected.error, null);
   const row = inspected.data.find((row: { id: string }) => row.id === f.email.id);
   assert.equal(row.state, 'failed'); assert.equal(row.attempts, 1);
-  assert.equal(row.last_error, 'Delivery failed. Retry is scheduled.');
+  assert.equal(row.last_error, 'Email delivery failed. Retry is scheduled.');
   assert.equal(row.history[0].error, row.last_error);
   assert.ok(!JSON.stringify(inspected.data).includes('secret.test'));
   assert.ok(!('claim_token' in row)); assert.ok(!('recipient_email' in row));

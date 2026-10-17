@@ -163,7 +163,7 @@ test('lane 8 diagnostics exclude private bodies bearer URLs and credentials', as
   const diagnostics = await f.owner.client.rpc('inspect_notification_deliveries', { p_community_id: f.community.id }); expect(diagnostics.error).toBeNull();
   expect(JSON.stringify(diagnostics.data)).not.toMatch(/PRIVATE-EVIDENCE|private\.test|SUPER-CREDENTIAL|claim_token|recipient_email/);
   await emailCard(page, f).getByText('Attempt history (1)', { exact: true }).click(); await expect(page.getByText(secret)).toHaveCount(0);
-  await expect(emailCard(page, f).getByText('Delivery failed. Retry is scheduled.', { exact: true })).toBeVisible(); await capture(page, info, 8, diagnostics.data);
+  await expect(emailCard(page, f).getByText('Email delivery failed. Retry is scheduled.', { exact: true })).toBeVisible(); await capture(page, info, 8, diagnostics.data);
 });
 
 test('lane 9 browser reload and fresh worker recover durable provider failure', async ({ page }, info) => {

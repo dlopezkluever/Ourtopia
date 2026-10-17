@@ -1,7 +1,7 @@
 create function private.delivery_error(p_error text)
 returns text language sql immutable set search_path = '' as $$
   select case when p_error is null then null
-    when p_error = 'Delivery lease expired.' then p_error
+    when p_error in ('Delivery lease expired.', 'Email delivery failed. Retry is scheduled.') then p_error
     else 'Delivery failed. Retry is scheduled.' end;
 $$;
 revoke all on function private.delivery_error(text) from public, anon, authenticated;
