@@ -395,3 +395,38 @@ export async function helpFixture(label = 'help', helpers = 3) {
   for (let index = 0; index < helpers; index++) members.push(await activeMember(owner, community.id, `${label}-helper${index + 1}`));
   return { owner, community, author, members };
 }
+
+export const needDetails = (overrides: Record<string, unknown> = {}) => ({
+  title: 'Cordless drill for a weekend', description: 'Hanging shelves in the back room. Any cordless drill works.', category: 'tools',
+  starts_on: '2027-01-15', ends_on: '2027-01-17', urgency: 'soon', value_min: 100, value_max: 250, ...overrides,
+});
+export const needRow = z.object({ id: z.uuid(), community_id: z.uuid(), author_id: z.uuid(), status: z.string(), version: z.number(), title: z.string(), urgency: z.string(), starts_on: z.string(), ends_on: z.string() });
+export const needResponseRow = z.object({ id: z.uuid(), need_id: z.uuid(), listing_id: z.uuid(), responder_id: z.uuid(), status: z.string(), note: z.string() });
+export async function postNeed(member: Awaited<ReturnType<typeof actor>>, communityId: string, details: Record<string, unknown> = needDetails(), intent = randomUUID()) {
+  const result = await member.client.rpc('save_item_need', { p_intent_id: intent, p_community_id: communityId, p_need_id: null, p_expected_version: 0, p_details: details });
+  if (result.error) throw result.error;
+  return needRow.parse(result.data);
+}
+export async function respondToNeed(member: Awaited<ReturnType<typeof actor>>, needId: string, listingId: string, note = 'My drill is free that weekend.', intent = randomUUID()) {
+  const result = await member.client.rpc('respond_to_item_need', { p_intent_id: intent, p_need_id: needId, p_listing_id: listingId, p_note: note });
+  if (result.error) throw result.error;
+  return needResponseRow.parse(result.data);
+}
+// Bob needs a drill; Alice owns the drill Listing; Carol is a second active member.
+export async function itemNeedFixture(label = 'item-need') {
+  const f = await borrowingFixture(label);
+  const need = await postNeed(f.bob, f.community.id);
+  return { ...f, need };
+}
+// Everything that would show a response wrongly creating workflow or reputation effects.
+export async function workflowEffects(communityId: string) {
+  const [exchanges, reservations, reputation, interactions, requests] = await Promise.all([
+    admin.from('exchanges').select('id', { count: 'exact', head: true }).eq('community_id', communityId),
+    admin.from('item_reservations').select('exchange_id, exchanges!inner(community_id)', { count: 'exact', head: true }).eq('exchanges.community_id', communityId),
+    admin.from('reputation_events').select('id', { count: 'exact', head: true }).eq('community_id', communityId),
+    admin.from('qualifying_interactions').select('id', { count: 'exact', head: true }).eq('community_id', communityId),
+    admin.from('borrow_requests').select('id', { count: 'exact', head: true }).eq('community_id', communityId),
+  ]);
+  for (const result of [exchanges, reservations, reputation, interactions, requests]) if (result.error) throw result.error;
+  return { exchanges: exchanges.count, reservations: reservations.count, reputationEvents: reputation.count, qualifyingInteractions: interactions.count, borrowRequests: requests.count };
+}

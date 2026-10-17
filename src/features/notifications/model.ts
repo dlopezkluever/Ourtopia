@@ -1,4 +1,5 @@
 export const noticeKinds: Record<string, { label: string; message: string }> = {
+  item_need_responded: { label: 'Item Need Post response', message: 'Someone answered your item Need Post with a Listing. Open Community requests to review it and send a separate Borrow Request.' },
   membership_applied: { label: 'Membership application', message: 'A membership application is ready to review.' },
   membership_approved: { label: 'Membership approved', message: 'Your membership application was approved.' },
   membership_rejected: { label: 'Membership rejected', message: 'Your membership application was rejected. Your decision reason is in your applications.' },

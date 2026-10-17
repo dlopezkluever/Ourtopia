@@ -11,7 +11,7 @@ import { handoffSchema } from '../../src/features/handoff/model';
 import { activeMember, actor, commitHelp, createCommunity, createHelpPost, helpFixture, helpListingFields, membershipFixture, password, configureVouch, vouchFixture, admin, failedDelivery } from './backend';
 import { localDelivery } from '../../supabase/functions/notifications/local';
 import { deliverOne } from '../../supabase/functions/notifications/worker';
-import { borrowingFixture, requestItem } from './backend';
+import { borrowingFixture, itemNeedFixture, requestItem, workflowEffects } from './backend';
 import { borrowViewSchema } from '../../src/features/borrowing/model';
 import { z } from 'zod';
 import { vouchSchema } from '../../src/features/vouches/model';
@@ -23,7 +23,8 @@ import { conversationSchema, messageSchema } from '../../src/features/messages/m
 import { helpExchangeSchema, helpPostSchema } from '../../src/features/help/model';
 
 const { values } = parseArgs({ options: { issue: { type: 'string' }, base: { type: 'string' }, head: { type: 'string' }, pairs: { type: 'string', default: '10' } } });
-if (values.issue === '7') await verifyIssue7(values);
+if (values.issue === '11') await verifyIssue11(values);
+else if (values.issue === '7') await verifyIssue7(values);
 else if (values.issue === '23') await verifyIssue23(values);
 else if (values.issue === '6') await verifyIssue6(values);
 else if (values.issue === '22') await (await import('../../supabase/functions/stripe-checkout/perf')).verifyBillingPerf(values);
@@ -493,6 +494,140 @@ async function verifyIssue6(values: PerfArguments) {
     const ranges = { readinessMs: [Math.min(...samples.map(row => row.readinessMs)), Math.max(...samples.map(row => row.readinessMs))], commandMs: [Math.min(...actions.map(row => row.commandMs)), Math.max(...actions.map(row => row.commandMs))], visibleMs: [Math.min(...actions.map(row => row.visibleMs)), Math.max(...actions.map(row => row.visibleMs))] };
     persist({ errors: 0, baseline, head: current, added, queryP95Ms, checks, ranges, claim: 'Local serial development probe meets regression and absolute budgets. No production throughput or speedup claim.', baselineAction: 'Borrow Requests absent at trunk; shared authorized Community readiness/read compared instead.', providerWait: 'None in this path; notices are enqueued in the transaction and delivered after commit.' });
     writeFileSync(`${directory}/report.md`, `P06 at ${head}.\n\n${pairs} interleaved trunk/head pairs against ${base}. Both sides reload Alice's home and read the identical authorized Community. Trunk cannot submit or approve Borrow Requests, so the added owner request read, approval command, and visible reserved dates use absolute budgets.\n\nTrunk ${JSON.stringify(baseline)}. Head ${JSON.stringify(current)}. Added ${JSON.stringify(added)}. Query p95 ${queryP95Ms} ms. Ranges ${JSON.stringify(ranges)}. Checks ${JSON.stringify(checks)}.\n\nEvery head sample submits Bob's Friday through Sunday Borrow Request, reads it as Alice through RLS, approves it in the browser, asserts HTTP 200, one persisted blocking reservation [2027-01-15,2027-01-18) read by Bob, and a reload. Zero failed samples. Local serial Chrome and Vite development timings include HTTP, PostgreSQL and render work. Notices are enqueued in the approval transaction and delivered after commit, so no provider wait is included. No production throughput or speedup claim. Host observations and raw samples are in samples.json.\n`);
+    assert.ok(Object.values(checks).every(Boolean), JSON.stringify(checks));
+    process.stdout.write(`${JSON.stringify({ baseline, head: current, added, queryP95Ms, checks })}\n`);
+  } catch (error) { persist({ error: error instanceof Error ? error.message : String(error) }); throw error; }
+  finally {
+    await browser.close();
+    await Promise.all(servers.map(server => new Promise<void>(done => { if (server.exitCode !== null) done(); else { server.once('exit', () => done()); server.kill(); } })));
+    if (existsSync(trunkModules)) unlinkSync(trunkModules);
+    if (existsSync(trunkRoot)) execFileSync('git', ['worktree', 'remove', '--force', trunkRoot], { stdio: 'inherit' });
+    assert.ok(existsSync('node_modules/vite/package.json'));
+  }
+}
+
+async function verifyIssue11(values: PerfArguments) {
+  const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+  assert.equal(values.head, head, 'Measure the committed candidate head.');
+  assert.ok(values.base);
+  const base = values.base;
+  const pairs = Number(values.pairs);
+  assert.ok(Number.isInteger(pairs) && pairs >= 10);
+  const tree = execFileSync('git', ['ls-tree', '-r', '--name-only', base], { encoding: 'utf8' }).split('\n');
+  assert.ok(tree.includes('package.json'));
+  assert.ok(!tree.some(path => path.startsWith('src/features/item-needs/')), 'The added-action exception requires item Need Posts to be absent at the base.');
+  assert.equal(execFileSync('git', ['diff', base, head, '--', 'package-lock.json'], { encoding: 'utf8' }), '');
+  const directory = `${process.env.EVIDENCE_DIR ?? '.pilot-evidence'}/perf`;
+  mkdirSync(directory, { recursive: true });
+  const trunkRoot = resolve('.pilot-evidence', 'perf-trunk-11');
+  assert.ok(!existsSync(trunkRoot), 'An existing probe checkout must be inspected before reuse.');
+  const trunkModules = join(trunkRoot, 'node_modules');
+  const servers: ReturnType<typeof spawn>[] = [];
+  const startup: Record<string, number> = {};
+  const samples: { index: number; side: string; readinessMs: number; queryMs: number; communityId: string }[] = [];
+  const actions: { index: number; requestQueryMs: number; commandMs: number; visibleMs: number; borrowCommandMs: number; borrowVisibleMs: number; requestId: string; responseId: string; needId: string }[] = [];
+  const trunkPort = Number(process.env.APP_PORT ?? 5173) + 1;
+  const headPort = trunkPort + 1;
+  const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH ?? (process.platform === 'win32' ? 'C:/Program Files/Google/Chrome/Application/chrome.exe' : undefined) });
+  const persist = (extra: unknown) => writeFileSync(`${directory}/samples.json`, JSON.stringify({ utc: new Date().toISOString(), head, base, pairs, startup, samples, actions, host: { cores: cpus().length, totalMemory: totalmem(), freeMemory: freemem(), loadAverage: loadavg() }, extra }, null, 2));
+  async function serve(label: string, root: string, port: number, config: string[] = []) {
+    const start = performance.now();
+    const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', root, ...config, '--host', '127.0.0.1', '--port', String(port), '--strictPort'], { stdio: 'ignore', windowsHide: true });
+    servers.push(server);
+    const deadline = Date.now() + 60000;
+    while (Date.now() < deadline) {
+      if (server.exitCode !== null) throw new Error(`${label} server exited ${server.exitCode}`);
+      if (await fetch(`http://127.0.0.1:${port}`).then(r => r.ok, () => false)) { startup[label] = performance.now() - start; return; }
+      await new Promise(done => setTimeout(done, 100));
+    }
+    throw new Error(`${label} startup exceeded 60 seconds`);
+  }
+  try {
+    execFileSync('git', ['worktree', 'add', '--detach', trunkRoot, base], { stdio: 'inherit' });
+    symlinkSync(resolve('node_modules'), trunkModules, 'junction');
+    copyFileSync('.env.local', join(trunkRoot, '.env.local'));
+    writeFileSync(join(trunkRoot, 'perf.vite.config.ts'), "import { mergeConfig } from 'vite';\nimport config from './vite.config';\nexport default mergeConfig(config, { cacheDir: '.vite-perf-cache' });\n");
+    await serve('trunk', trunkRoot, trunkPort, ['--config', join(trunkRoot, 'perf.vite.config.ts')]);
+    await serve('head', '.', headPort);
+    for (let index = 0; index < pairs; index++) {
+      const f = await itemNeedFixture(`perf11-${index}`);
+      for (const [side, port] of [['trunk', trunkPort], ['head', headPort]] satisfies [string, number][]) {
+        const context = await browser.newContext({ baseURL: `http://127.0.0.1:${port}`, viewport: { width: 1440, height: 1000 } });
+        try {
+          const page = await context.newPage(); await page.goto('/');
+          await page.getByLabel('Email address').fill(f.alice.email); await page.getByLabel('Password', { exact: true }).fill(password);
+          await page.getByRole('button', { name: 'Sign in', exact: true }).last().click();
+          const home = page.getByRole('heading', { name: `Welcome to ${f.community.name}.` }); await expect(home).toBeVisible();
+          const readyStart = performance.now(); await page.reload(); await expect(home).toBeVisible(); const readinessMs = performance.now() - readyStart;
+          const queryStart = performance.now(); const query = await f.alice.client.from('communities').select('id,name').eq('id', f.community.id); const queryMs = performance.now() - queryStart;
+          assert.equal(query.error, null); assert.deepEqual(query.data, [f.community]);
+          samples.push({ index, side, readinessMs, queryMs, communityId: f.community.id }); persist({ errors: 0, phase: 'paired reads' });
+          if (side === 'head') {
+            await page.goto(`/communities/${f.community.id}/needs/${f.need.id}`);
+            const offer = page.getByRole('form', { name: 'Answer with a Listing' }).getByRole('button', { name: 'Offer this Listing', exact: true }); await expect(offer).toBeVisible();
+            let commandStart = 0;
+            page.on('request', value => { if (value.url().includes('/rpc/respond_to_item_need')) commandStart = performance.now(); });
+            const response = page.waitForResponse(value => value.url().includes('/rpc/respond_to_item_need')).then(async value => {
+              await value.finished(); assert.equal(value.status(), 200);
+              return { commandMs: performance.now() - commandStart, row: z.object({ id: z.uuid(), listing_id: z.uuid(), status: z.literal('offered') }).parse(await value.json()) };
+            });
+            const actionStart = performance.now(); await offer.click();
+            const offered = page.getByRole('article', { name: `Response: ${drillDetails.title}`, exact: true });
+            await expect(offered).toContainText('You offered your Listing'); const visibleMs = performance.now() - actionStart;
+            const result = await response;
+            const requestStart = performance.now();
+            const persisted = await f.bob.client.from('item_need_responses').select('id,listing_id,status').eq('need_id', f.need.id);
+            const requestQueryMs = performance.now() - requestStart;
+            assert.equal(persisted.error, null); assert.deepEqual(persisted.data, [{ id: result.row.id, listing_id: f.listing.id, status: 'offered' }]);
+            assert.deepEqual(await workflowEffects(f.community.id), { exchanges: 0, reservations: 0, reputationEvents: 0, qualifyingInteractions: 0, borrowRequests: 0 });
+            await page.reload(); await expect(offered).toBeVisible();
+            const borrowerContext = await browser.newContext({ baseURL: `http://127.0.0.1:${port}`, viewport: { width: 1440, height: 1000 } });
+            try {
+              const borrower = await borrowerContext.newPage(); await borrower.goto('/');
+              await borrower.getByLabel('Email address').fill(f.bob.email); await borrower.getByLabel('Password', { exact: true }).fill(password);
+              await borrower.getByRole('button', { name: 'Sign in', exact: true }).last().click();
+              await expect(borrower.getByRole('button', { name: 'Sign out' })).toBeVisible();
+              await borrower.goto(`/communities/${f.community.id}/needs/${f.need.id}`);
+              const requestForm = borrower.getByRole('form', { name: `Borrow Request for ${drillDetails.title}` });
+              await expect(requestForm.getByLabel('First day', { exact: true })).toHaveValue('2027-01-15');
+              let borrowStart = 0;
+              borrower.on('request', value => { if (value.url().includes('/rpc/submit_borrow_request')) borrowStart = performance.now(); });
+              const requested = borrower.waitForResponse(value => value.url().includes('/rpc/submit_borrow_request')).then(async value => {
+                await value.finished(); assert.equal(value.status(), 200);
+                return { commandMs: performance.now() - borrowStart, row: z.object({ id: z.uuid(), status: z.literal('requested'), exchange_id: z.null() }).parse(await value.json()) };
+              });
+              const visibleStart = performance.now(); await requestForm.getByRole('button', { name: 'Send Borrow Request', exact: true }).click();
+              await expect(requestForm.getByRole('status')).toContainText('Borrow Request sent');
+              const borrowVisibleMs = performance.now() - visibleStart;
+              const requestResult = await requested;
+              const savedRequest = await f.bob.client.from('borrow_requests').select('id,status,exchange_id').eq('id', requestResult.row.id);
+              assert.equal(savedRequest.error, null); assert.deepEqual(savedRequest.data, [requestResult.row]);
+              assert.deepEqual(await workflowEffects(f.community.id), { exchanges: 0, reservations: 0, reputationEvents: 0, qualifyingInteractions: 0, borrowRequests: 1 });
+              await borrower.reload(); await expect(borrower.getByText('Your Borrow Request for', { exact: false })).toBeVisible();
+              actions.push({ index, requestQueryMs, commandMs: result.commandMs, visibleMs, borrowCommandMs: requestResult.commandMs, borrowVisibleMs, requestId: requestResult.row.id, responseId: result.row.id, needId: f.need.id });
+              persist({ errors: 0, phase: 'separate Borrow Request persisted' });
+            } finally { await borrowerContext.close(); }
+          }
+        } finally { await context.close(); }
+      }
+    }
+    const median = (numbers: number[]) => { const sorted = [...numbers].sort((a, b) => a - b); const mid = Math.floor(sorted.length / 2); return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2; };
+    const summary = (side: string) => ({ readinessMedianMs: median(samples.filter(row => row.side === side).map(row => row.readinessMs)), queryMedianMs: median(samples.filter(row => row.side === side).map(row => row.queryMs)) });
+    const baseline = summary('trunk'); const current = summary('head');
+    const added = { requestQueryMedianMs: median(actions.map(row => row.requestQueryMs)), commandMedianMs: median(actions.map(row => row.commandMs)), visibleMedianMs: median(actions.map(row => row.visibleMs)), borrowCommandMedianMs: median(actions.map(row => row.borrowCommandMs)), borrowVisibleMedianMs: median(actions.map(row => row.borrowVisibleMs)) };
+    const queries = [...samples.filter(row => row.side === 'head').map(row => row.queryMs), ...actions.map(row => row.requestQueryMs)].sort((a, b) => a - b);
+    const queryP95Ms = queries[Math.ceil(queries.length * .95) - 1];
+    const checks = { comparableReadiness: current.readinessMedianMs <= Math.max(1.2 * baseline.readinessMedianMs, baseline.readinessMedianMs + 100), comparableRead: current.queryMedianMs <= Math.max(1.2 * baseline.queryMedianMs, baseline.queryMedianMs + 100), command: added.commandMedianMs <= 1000, visible: added.visibleMedianMs <= 2000, borrowCommand: added.borrowCommandMedianMs <= 1000, borrowVisible: added.borrowVisibleMedianMs <= 2000, query: queryP95Ms <= 3000, startup: Object.values(startup).every(value => value <= 60000) };
+    const ranges = { readinessMs: [Math.min(...samples.map(row => row.readinessMs)), Math.max(...samples.map(row => row.readinessMs))], commandMs: [Math.min(...actions.map(row => row.commandMs)), Math.max(...actions.map(row => row.commandMs))], visibleMs: [Math.min(...actions.map(row => row.visibleMs)), Math.max(...actions.map(row => row.visibleMs))] };
+    persist({ errors: 0, baseline, head: current, added, queryP95Ms, checks, ranges, claim: 'Local serial development probe meets regression and absolute budgets. No production throughput or speedup claim.', baselineAction: 'Item Need Posts absent at trunk; shared authorized Community readiness/read compared instead.', providerWait: 'None in this path; the response notice is enqueued in the transaction and delivered after commit.' });
+    writeFileSync(`${directory}/report.md`, `P11 at ${head}.
+
+${pairs} interleaved trunk/head pairs against ${base}. Both sides reload Alice's home and read the identical authorized Community. Trunk has no item Need Posts, so the added response command, Bob's RLS read of the persisted response, and the visible offered response use absolute budgets.
+
+Trunk ${JSON.stringify(baseline)}. Head ${JSON.stringify(current)}. Added ${JSON.stringify(added)}. Query p95 ${queryP95Ms} ms. Ranges ${JSON.stringify(ranges)}. Checks ${JSON.stringify(checks)}.
+
+Every head sample opens Bob's posted drill need as Alice, offers her drill Listing in the browser, asserts HTTP 200, reads the one offered response as Bob through RLS, asserts zero Exchanges, reservations, Reputation Events, Qualifying Interactions, and Borrow Requests, and reloads. Bob then sends a separate Borrow Request in the browser. Its command and visible result have separate absolute budgets. An authorized read and reload prove that one requested Borrow Request persists and no Exchange exists. Zero failed samples. Local serial Chrome and Vite development timings include HTTP, PostgreSQL and render work. The response notice is enqueued in the transaction and delivered after commit, so no provider wait is included. No production throughput or speedup claim. Host observations and raw samples are in samples.json.
+`);
     assert.ok(Object.values(checks).every(Boolean), JSON.stringify(checks));
     process.stdout.write(`${JSON.stringify({ baseline, head: current, added, queryP95Ms, checks })}\n`);
   } catch (error) { persist({ error: error instanceof Error ? error.message : String(error) }); throw error; }
