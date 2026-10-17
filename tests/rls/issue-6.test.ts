@@ -51,6 +51,22 @@ test('Only the two participants read requests, reservations, Exchanges, and audi
   receipt('issue-6-rls-reads', seen);
 });
 
+test('Borrow policy preserves billing privacy and ordinary Community events for an active peer', async () => {
+  const f = await borrowingFixture('borrow-billing-privacy');
+  const billing = await f.owner.client.rpc('request_test_billing', { p_intent_id: randomUUID(), p_community_id: f.community.id, p_kind: 'checkout' });
+  assert.equal(billing.error, null);
+  const persisted = await admin.from('community_events').select('id').eq('community_id', f.community.id).eq('kind', 'test_billing_requested');
+  assert.equal(persisted.error, null);
+  assert.equal(persisted.data?.length, 1);
+  const privateEvents = await f.carol.client.from('community_events').select('id,kind,actor_id').eq('community_id', f.community.id).eq('kind', 'test_billing_requested');
+  assert.equal(privateEvents.error, null);
+  assert.deepEqual(privateEvents.data, []);
+  const ordinaryEvents = await f.carol.client.from('community_events').select('kind').eq('community_id', f.community.id).eq('kind', 'community_created');
+  assert.equal(ordinaryEvents.error, null);
+  assert.deepEqual(ordinaryEvents.data, [{ kind: 'community_created' }]);
+  receipt('issue-6-rls-billing-privacy', { persistedBillingEvents: persisted.data.length, peerBillingEvents: privateEvents.data, peerOrdinaryEvents: ordinaryEvents.data });
+});
+
 test('Borrowers, members, administrators, and anonymous callers cannot forge approvals, reservations, trust, or worker effects', async () => {
   const f = await borrowingFixture('borrow-rls-forge');
   const request = await requestItem(f.bob, f.listing.id);

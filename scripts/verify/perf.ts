@@ -20,6 +20,7 @@ import { helpExchangeSchema, helpPostSchema } from '../../src/features/help/mode
 
 const { values } = parseArgs({ options: { issue: { type: 'string' }, base: { type: 'string' }, head: { type: 'string' }, pairs: { type: 'string', default: '10' } } });
 if (values.issue === '6') await verifyIssue6(values);
+else if (values.issue === '22') await (await import('../../supabase/functions/stripe-checkout/perf')).verifyBillingPerf(values);
 else if (values.issue === '14') await verifyIssue14(values);
 else if (values.issue === '12') await verifyIssue12(values);
 else if (values.issue === '15') await verifyIssue15(values);

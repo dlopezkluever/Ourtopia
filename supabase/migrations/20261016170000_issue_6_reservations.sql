@@ -67,7 +67,7 @@ drop policy event_read on public.community_events;
 create policy event_read on public.community_events for select to authenticated
   using (public.is_active_member(community_id) and kind not in ('conversation_started', 'message_sent',
     'help_commitment_offered', 'help_commitment_accepted', 'help_scheduled', 'help_cancelled',
-    'borrow_requested', 'borrow_approved', 'borrow_rejected', 'borrow_expired'));
+    'test_billing_requested', 'borrow_requested', 'borrow_approved', 'borrow_rejected', 'borrow_expired'));
 create trigger borrow_audit_append_only before update or delete on public.community_events
   for each row when (old.kind like 'borrow\_%') execute function private.reject_history_rewrite();
 
