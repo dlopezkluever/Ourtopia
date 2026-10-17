@@ -132,10 +132,19 @@ test('lane 6 reschedule suppresses obsolete due reminder work', async ({ page },
     const event = await admin.from('community_events').insert({ community_id: f.community.id, actor_id: f.owner.id, kind: 'handoff_rescheduled', intent_id: randomUUID() }).select('id').single(); expect(event.error).toBeNull();
     const result = await admin.rpc('schedule_notification_reminder', { p_community_id: f.community.id, p_source_key: source, p_event_id: event.data!.id, p_recipient_id: f.applicant.id, p_kind: 'handoff_reminder', p_channel: 'in_app', p_due_at: new Date(Date.now() - 1000).toISOString() }); expect(result.error).toBeNull(); return result.data;
   }
-  const old = await schedule(); const current = await schedule(); const { client, send } = localDelivery();
+  const old = await schedule();
+  const claimedSchedule = await schedule();
+  const claim = await admin.rpc('claim_notification', { p_outbox_id: claimedSchedule }); expect(claim.error).toBeNull(); expect(claim.data).toBeTruthy();
+  const current = await schedule(); const { client, send } = localDelivery();
+  const suppressed = await admin.rpc('finish_notification', { p_outbox_id: claimedSchedule, p_claim_token: claim.data.claim_token }); expect(suppressed.error).toBeNull(); expect(suppressed.data.state).toBe('suppressed');
   expect(await deliverOne(client, send, old)).toBeNull(); await deliverOne(client, send, current);
-  const notices = await f.applicant.client.from('notifications').select('outbox_id').in('outbox_id', [old, current]); expect(notices.data).toEqual([{ outbox_id: current }]);
-  await consoleFor(page, f); await expect(page.getByText('Obsolete reminder suppressed', { exact: true })).toBeVisible(); await capture(page, info, 6, { source, old, current, notices: notices.data });
+  const notices = await f.applicant.client.from('notifications').select('outbox_id').in('outbox_id', [old, claimedSchedule, current]); expect(notices.data).toEqual([{ outbox_id: current }]);
+  await consoleFor(page, f);
+  const card = page.getByRole('article', { name: `Handoff reminder in_app ${claimedSchedule}`, exact: true });
+  await expect(card.getByText('Obsolete reminder suppressed', { exact: true })).toBeVisible();
+  await card.getByText('Attempt history (1)', { exact: true }).click();
+  await expect(card.getByText(/Attempt 1\. Started/)).toContainText('Suppressed because the reminder schedule changed.');
+  await capture(page, info, 6, { source, old, claimedSchedule, current, notices: notices.data });
 });
 
 test('lane 7 recipient reads own notice and foreign administrator cannot inspect failures', async ({ page }, info) => {

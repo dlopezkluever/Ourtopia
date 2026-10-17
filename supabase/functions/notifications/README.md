@@ -11,3 +11,21 @@ Commands enqueue notices with unique `(event_id, recipient_id, channel, kind)` i
 An administrator can inspect delivery rows and attempts through RLS and request an immediate retry with `retry_notification`. Delivery does not change application or membership state. Only `notification_hints`, containing IDs, is published to realtime. Clients fetch notice and application content through RLS.
 
 Later features reuse the same outbox and commands. `application_id` is optional for non-membership events. Add presentation text for each new kind in the worker and in the authorized feature UI. Do not put messages, evidence, signed URLs, or other private bodies in realtime hints or email text.
+
+## Controlled failure drill
+
+The issue-23 failure drill owns its worker steps so it can inspect pending and
+failed state before recovery. Set `OURTOPIA_MANUAL_NOTIFICATION_DELIVERY=1` for
+that journey suite. This stops only the automatic local polling loop. The suite
+still invokes the real claim and finish commands, sends recovered email to
+Mailpit, and checks persisted notices. Lane 9 starts a fresh delivery process.
+CI sets this variable only on the issue-23 journey step.
+
+In PowerShell, run the suite with the lane's `APP_PORT` and this variable set.
+Remove the variable afterward to restore automatic delivery.
+
+```powershell
+$env:OURTOPIA_MANUAL_NOTIFICATION_DELIVERY = '1'
+node ../journey-lock.mjs issue-23 -- npm.cmd run test:journey -- tests/journeys/issue-23.spec.ts
+Remove-Item Env:OURTOPIA_MANUAL_NOTIFICATION_DELIVERY
+```

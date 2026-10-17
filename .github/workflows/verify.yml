@@ -44,6 +44,8 @@ jobs:
       - run: npm run test:rls -- tests/rls/issue-14.test.ts
       - run: npm run test:journey -- tests/journeys/issue-2.spec.ts
       - run: npm run test:journey -- tests/journeys/issue-23.spec.ts
+        env:
+          OURTOPIA_MANUAL_NOTIFICATION_DELIVERY: '1'
       - run: npm run test:journey -- tests/journeys/issue-3.spec.ts
       - run: npm run test:journey -- tests/journeys/issue-4.spec.ts
       - run: npm run test:journey -- tests/journeys/issue-5.spec.ts
