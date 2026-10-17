@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { historyEventSchema, standingSchema, trustSchema } from '../reputation/model';
 import { supabase } from '../../lib/supabase/client';
+import { publicThankYouSchema } from '../thank-yous/model';
 
 export const directoryEntrySchema = z.object({
   user_id: z.uuid(), email: z.string(), role: z.enum(['administrator', 'member']), joined_at: z.string(),
@@ -43,4 +44,9 @@ export async function readCommunityName(communityId: string) {
 }
 export const readDirectory = (communityId: string) => unwrap(supabase.rpc('member_directory', { p_community_id: communityId }), z.array(directoryEntrySchema));
 export const readProfile = (communityId: string, subjectId: string) => unwrap(supabase.rpc('member_profile', { p_community_id: communityId, p_subject: subjectId }), memberProfileSchema);
+export async function readPublicThankYous(communityId: string, subjectId: string) {
+  const rows = await unwrap(supabase.from('exchange_thank_yous').select('id,author_id,message,created_at')
+    .eq('community_id', communityId).eq('recipient_id', subjectId).order('created_at', { ascending: false }).limit(20), publicThankYouSchema.array());
+  return rows;
+}
 export const readOwnReputation = () => unwrap(supabase.rpc('my_reputation'), ownReputationSchema);

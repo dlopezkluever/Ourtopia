@@ -6,6 +6,7 @@ import { Button } from '../../components/ui/button';
 import { helpExchangeStateLabels } from '../exchanges/model';
 import { ScoreCard } from '../reputation/Standing';
 import { localExplanation } from '../reputation/model';
+import { ThankExchange } from '../thank-yous/ThankExchange';
 import {
   commitResultSchema, errorMessage, helpCategories, helpCompletionSchema, helpExchangeSchema, helpPostDetailSchema, helpPostSchema, helpRoute, intentFor,
   listingFields, localInput, needPostFields, postKindLabels, postPath, scheduleFields, skillLevels, when,
@@ -389,6 +390,7 @@ function ExchangeCard({ exchange, userId, canSchedule, onChanged }: { exchange: 
       <p>{exchange.completion.awards.some(award => award.recipientId === userId)
         ? 'You earned +3 for completing help. Both participants gained one Qualifying Interaction.'
         : 'Receiving help does not change your score. Both participants gained one Qualifying Interaction.'}</p>
+      <ThankExchange userId={userId} communityId={exchange.communityId} exchangeId={exchange.id} onChanged={onChanged}/>
       <a href="/standing">View your Reputation Event history</a>
     </section>}
   </section>;

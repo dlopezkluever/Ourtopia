@@ -1,7 +1,7 @@
 import { ArrowLeft, LockKeyhole, Users } from 'lucide-react';
 import { HistoryList, ScoreCard, TrustIndicators } from '../reputation/Standing';
 import { exchangeCount, globalExplanation, localExplanation, standingText } from '../reputation/model';
-import { readCommunityName, readDirectory, readProfile, roleLabel, type ProfileRoute } from './model';
+import { readCommunityName, readDirectory, readProfile, readPublicThankYous, roleLabel, type ProfileRoute } from './model';
 import { useAccessScopedRead } from './useAccessScopedRead';
 
 function Unavailable({ message }: { message: string }) {
@@ -11,19 +11,20 @@ function Unavailable({ message }: { message: string }) {
 export function ProfilesPage({ userId, route }: { userId: string; route: ProfileRoute }) {
   const { communityId, subjectId } = route;
   const state = useAccessScopedRead(userId, `${communityId}-${subjectId ?? 'directory'}`, async () => {
-    const [name, directory, profile] = await Promise.all([
+    const [name, directory, profile, thankYous] = await Promise.all([
       readCommunityName(communityId),
-      subjectId ? Promise.resolve(null) : readDirectory(communityId),
+      readDirectory(communityId),
       subjectId ? readProfile(communityId, subjectId) : Promise.resolve(null),
+      subjectId ? readPublicThankYous(communityId, subjectId) : Promise.resolve([]),
     ]);
-    return { name, directory, profile };
+    return { name, directory, profile, thankYous };
   });
   if (state.status === 'loading') return <p role="status" className="loading">Opening member standing…</p>;
   if (state.status === 'denied') return <Unavailable message={state.message}/>;
-  const { name, directory, profile } = state.data;
+  const { name, directory, profile, thankYous } = state.data;
   const directoryHref = `/communities/${communityId}/members`;
 
-  if (directory) return <section className="profiles-layout">
+  if (!subjectId && directory) return <section className="profiles-layout">
     <a className="text-button back-link" href={`/communities/${communityId}`}><ArrowLeft size={16}/> {name} home</a>
     <span className="eyebrow"><Users size={14}/> MEMBER DIRECTORY</span>
     <h1>Members of {name}</h1>
@@ -49,6 +50,9 @@ export function ProfilesPage({ userId, route }: { userId: string; route: Profile
     </div>
     <TrustIndicators trust={profile.trust}/>
     <HistoryList heading={`Reputation history in ${name}`} events={profile.history}/>
+    <section className="profile-thank-yous" aria-label="Thank-yous received"><h2>Thank-yous</h2>
+      {thankYous.length === 0 ? <p>No thank-yous yet.</p> : <ul>{thankYous.map(thankYou => <li key={thankYou.id}><blockquote>{thankYou.message}</blockquote><p>From {directory.find(member => member.user_id === thankYou.author_id)?.email ?? 'a former member'} · <time dateTime={thankYou.created_at}>{new Date(thankYou.created_at).toLocaleDateString()}</time></p></li>)}</ul>}
+    </section>
     <section className="shared-communities" aria-label="Shared Communities"><h3>Communities you share</h3><ul>{profile.sharedCommunities.map(community => <li key={community.communityId}><a href={`/communities/${community.communityId}/members/${profile.userId}`}>{community.name}</a> · {roleLabel(community.role)}</li>)}</ul></section>
     {self && <a className="text-button" href="/standing">See your full standing across Communities</a>}
   </section>;

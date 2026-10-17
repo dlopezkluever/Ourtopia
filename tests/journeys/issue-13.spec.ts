@@ -39,6 +39,12 @@ test('both participants confirm one Help Exchange before it completes and awards
   const helperCard = page.getByRole('region', { name: `Help Exchange with ${f.author.email}` });
   await expect(helperCard.getByRole('region', { name: 'Community Solidarity Score' })).toContainText('53');
   await expect(helperCard).toContainText('You earned +3 for completing help.');
+  const thanks = helperCard.getByRole('region', { name: 'Thank your Exchange partner' });
+  await thanks.getByLabel(/A public thank-you/).fill('Thank you for asking for help and sharing the repair.');
+  await thanks.getByRole('button', { name: 'Thank your partner', exact: true }).click();
+  await expect(thanks.getByRole('status')).toContainText('one thank-you point');
+  expect((await admin.from('reputation_events').select('recipient_id,points').eq('exchange_id', exchange.id).eq('rule', 'exchange_thank_you')).data).toEqual([{ recipient_id: f.author.id, points: 1 }]);
+  expect((await admin.from('qualifying_interactions').select('id').eq('exchange_id', exchange.id)).data).toHaveLength(2);
 });
 
 function assertNoError(result: { error: { message: string } | null }) {
