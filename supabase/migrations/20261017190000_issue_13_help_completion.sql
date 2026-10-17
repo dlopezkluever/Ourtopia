@@ -60,7 +60,7 @@ drop policy event_read on public.community_events;
 create policy event_read on public.community_events for select to authenticated using (
   public.is_active_member(community_id) and kind not like 'item\_%' and kind not like 'issue\_%'
   and kind not in ('conversation_started', 'message_sent', 'help_commitment_offered', 'help_commitment_accepted',
-    'help_scheduled', 'help_cancelled', 'help_completion_confirmed', 'help_completion_due', 'help_completed',
+    'help_scheduled', 'help_cancelled', 'help_completion_confirmed', 'help_completion_disputed', 'help_completion_due', 'help_completed',
     'help_completion_review_queued', 'test_billing_requested', 'borrow_requested', 'borrow_approved', 'borrow_rejected', 'borrow_expired'));
 
 create function private.help_completion_view(p_exchange uuid)
@@ -225,22 +225,31 @@ $$;
 select cron.schedule('ourtopia-help-completion-deadlines', '* * * * *', 'select public.process_due_help_completions()');
 
 create or replace function public.read_community_feed(p_community_id uuid) returns jsonb language plpgsql stable security definer set search_path = '' as $$
+declare result jsonb; query text;
 begin
   if not public.is_active_member(p_community_id) then raise exception using errcode = '42501', message = 'Current active Community membership is required.'; end if;
-  return coalesce((select jsonb_agg(item order by created_at desc) from (
+  query := $feed$select coalesce(jsonb_agg(item order by created_at desc), '[]'::jsonb) from (
     select jsonb_build_object('id', f.id, 'kind', f.kind, 'title', l.title, 'completed_at', f.created_at,
       'owner', (select u.email from auth.users u join public.memberships m on m.user_id=u.id where u.id=f.owner_id and m.community_id=f.community_id and m.status='active'),
       'borrower', (select u.email from auth.users u join public.memberships m on m.user_id=u.id where u.id=f.borrower_id and m.community_id=f.community_id and m.status='active')) item, f.created_at
-      from public.community_feed f join public.listings l on l.id=f.listing_id where f.community_id=p_community_id
+      from public.community_feed f join public.listings l on l.id=f.listing_id where f.community_id=$1
     union all
     select jsonb_build_object('id', f.id, 'kind', 'help_completed', 'title', coalesce(l.title,p.title), 'completed_at', f.created_at,
       'owner', (select u.email from auth.users u join public.memberships m on m.user_id=u.id where u.id=f.helper_id and m.community_id=f.community_id and m.status='active'),
       'borrower', (select u.email from auth.users u join public.memberships m on m.user_id=u.id where u.id=f.requester_id and m.community_id=f.community_id and m.status='active')) item, f.created_at
       from public.help_completion_feed f join public.exchanges e on e.id=f.exchange_id
       left join public.help_listings l on e.source_kind='listing' and l.id=e.source_id
-      left join public.help_need_posts p on e.source_kind='need_post' and p.id=e.source_id where f.community_id=p_community_id
-    order by created_at desc limit 20
-  ) items), '[]'::jsonb);
+      left join public.help_need_posts p on e.source_kind='need_post' and p.id=e.source_id where f.community_id=$1$feed$;
+  if to_regclass('public.exchange_thank_yous') is not null then
+    query := query || $feed$ union all
+      select jsonb_build_object('id', t.id, 'kind', 'exchange_thank_you', 'message', t.message, 'created_at', t.created_at,
+        'author', (select u.email from auth.users u join public.memberships m on m.user_id=u.id where u.id=t.author_id and m.community_id=t.community_id and m.status='active'),
+        'recipient', (select u.email from auth.users u join public.memberships m on m.user_id=u.id where u.id=t.recipient_id and m.community_id=t.community_id and m.status='active')) item, t.created_at
+      from public.exchange_thank_yous t where t.community_id=$1$feed$;
+  end if;
+  query := query || $feed$ order by created_at desc limit 20) items$feed$;
+  execute query into result using p_community_id;
+  return result;
 end;
 $$;
 

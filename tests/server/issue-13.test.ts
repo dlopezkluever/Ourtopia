@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { acceptHelp, admin, commitHelp, createHelpPost, helpFixture, helpListingFields, helpNeedFields, helpScheduleFields } from '../../scripts/verify/backend';
+import { feedSchema, feedSentence } from '../../src/features/feed/model';
 
 const schedule = (member: Awaited<ReturnType<typeof helpFixture>>['author'], id: string) => member.client.rpc('schedule_help_exchange', {
   p_intent_id: randomUUID(), p_exchange_id: id, p_fields: helpScheduleFields(),
@@ -30,6 +31,10 @@ test('both participants confirm one helper Exchange before shared completion and
   assert.equal((await admin.from('exchanges').select('state').eq('id', second.id).single()).data?.state, 'committed');
   assert.equal((await admin.from('help_slots').select('status').eq('exchange_id', second.id).single()).data?.status, 'active');
   assert.equal((await admin.from('help_completion_feed').select('exchange_id').eq('exchange_id', first.id)).data?.length, 1);
+  const feed = await helper.client.rpc('read_community_feed', { p_community_id: f.community.id });
+  assert.equal(feed.error, null);
+  const entries = feedSchema.parse(feed.data);
+  assert.equal(feedSentence(entries.find(entry => entry.kind === 'help_completed')!), `${helper.email} completed help for ${f.author.email}: ${need.title}.`);
 });
 
 test('a conflicting completion account enters the shared Dispute and blocks awards', async () => {
