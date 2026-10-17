@@ -9,9 +9,9 @@ Deno.serve(async request => {
   const expiry = await fetch(`${Deno.env.get('SUPABASE_URL')}/rest/v1/rpc/expire_due_item_approvals`, {
     method: 'POST', headers: { Authorization: `Bearer ${key}`, apikey: key, 'Content-Type': 'application/json' }, body: '{}',
   });
-  if (!expiry.ok) return new Response('Expiry worker failed. Durable work remains retryable.', { status: 503 });
   const result = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/notifications`, {
     method: 'POST', headers: { Authorization: `Bearer ${key}` },
   });
-  return new Response(await result.text(), { status: result.status, headers: { 'Content-Type': 'application/json' } });
+  const delivery = await result.text();
+  return Response.json({ expiry: expiry.ok, delivery }, { status: expiry.ok && result.ok ? 200 : 503 });
 });

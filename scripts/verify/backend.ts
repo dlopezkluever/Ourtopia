@@ -322,6 +322,49 @@ export async function borrowNotices(communityId: string, kind: string) {
   return result.data;
 }
 
+export async function handoffFixture(label = 'handoff') {
+  const f = await borrowingFixture(label);
+  const loan = await approveBorrow(f.alice, await requestItem(f.bob, f.listing.id));
+  return { ...f, exchangeId: loan.exchange_id!, loan };
+}
+export async function itemHandoff(member: Awaited<ReturnType<typeof actor>>, exchangeId: string) {
+  const result = await member.client.rpc('read_item_handoff', { p_exchange_id: exchangeId });
+  if (result.error) throw result.error;
+  const { handoffSchema } = await import('../../src/features/handoff/model');
+  return handoffSchema.parse(result.data);
+}
+export async function handoffAction(member: Awaited<ReturnType<typeof actor>>, exchangeId: string, revision: number, action: string, details: Record<string, string | boolean> = {}, intent = randomUUID()) {
+  return member.client.rpc('command_item_handoff', { p_intent_id: intent, p_exchange_id: exchangeId, p_expected_revision: revision, p_action: action, p_details: details });
+}
+// Upcoming Handoff notices with the same currency rule as private.reminder_current.
+export async function handoffReminders(exchangeId: string) {
+  const reminders = await admin.from('notification_reminders').select('id,event_id,due_at').eq('source_key', exchangeId).eq('kind', 'item_handoff_upcoming');
+  if (reminders.error) throw reminders.error;
+  const outbox = await admin.from('notification_outbox').select('id,channel,kind,state,event_id,reminder_id,reminder_due_at').in('reminder_id', reminders.data.map(row => row.id));
+  if (outbox.error) throw outbox.error;
+  return outbox.data.map(row => {
+    const reminder = reminders.data.find(r => r.id === row.reminder_id)!;
+    return { ...row, current: reminder.event_id === row.event_id && Date.parse(reminder.due_at) === Date.parse(row.reminder_due_at!) };
+  });
+}
+export const handoffTerms = { return_date: true, condition: true, replacement_value: true, responsibility: true };
+export const handoffSchedule = () => ({ starts_at: new Date(Date.now() + 2 * 3600000).toISOString(), location: 'Front porch at 12 Maple Street' });
+export const handoffCondition = { condition: 'Good. Light marks on the case.', accessories: 'Two batteries and charger' };
+export async function advanceHandoff(f: Awaited<ReturnType<typeof handoffFixture>>, through: 'terms' | 'schedule' | 'condition' | 'checked_out' = 'checked_out') {
+  const steps = [
+    [f.bob, 'acknowledge_terms', handoffTerms], [f.alice, 'propose_schedule', handoffSchedule()],
+    [f.bob, 'confirm_schedule', {}], [f.alice, 'record_condition', handoffCondition],
+    [f.bob, 'confirm_handoff', { condition_acknowledged: true }],
+  ] as const;
+  const end = { terms: 1, schedule: 3, condition: 4, checked_out: 5 }[through];
+  for (let index = 0; index < end; index++) {
+    const [member, action, details] = steps[index];
+    const result = await handoffAction(member, f.exchangeId, index, action, details);
+    if (result.error) throw result.error;
+  }
+  return itemHandoff(f.bob, f.exchangeId);
+}
+
 export const helpListingFields = (overrides: Record<string, unknown> = {}) => ({ title: 'Moving help with a van', description: 'I can lift and drive.', category: 'moving', skill: 'Lifting and van driving', skill_level: 'experienced', availability: 'Weekend mornings', geographic_constraints: 'Within 3 miles of Maple Street', scheduling_preferences: 'Two days notice', ...overrides });
 export const helpNeedFields = (helpers = 2, overrides: Record<string, unknown> = {}) => ({ title: 'Move a couch upstairs', description: 'Third floor, no lift.', category: 'moving', starts_at: new Date(Date.now() + 3 * 86400000).toISOString(), duration_minutes: 120, location: '12 Maple Street', helpers_needed: helpers, ...overrides });
 export const helpScheduleFields = (overrides: Record<string, unknown> = {}) => ({ starts_at: new Date(Date.now() + 2 * 86400000).toISOString(), duration_minutes: 90, meeting_point: 'Side gate on Maple Street', ...overrides });
