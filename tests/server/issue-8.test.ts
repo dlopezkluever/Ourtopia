@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { test } from 'node:test';
-import { admin, advanceHandoff, completedItemFixture, disputeFixture, disputeView, handoffFixture, reportingBoundaryFixture, listingImageBytes, receipt, reportIssue } from '../../scripts/verify/backend';
+import { after, test } from 'node:test';
+import { admin, advanceHandoff, completedItemFixture, disputeFixture, disputeView, handoffFixture, reportingBoundaryFixture, listingImageBytes, receipt, reportIssue, settleFixtureNotices } from '../../scripts/verify/backend';
 import { evidenceSchema } from '../../src/features/handoff/model';
 import { deliverOne } from '../../supabase/functions/notifications/worker';
 import { localDelivery } from '../../supabase/functions/notifications/local';
+
+const suiteStarted = new Date().toISOString();
+after(() => settleFixtureNotices(['case-primary', 'case-before-deadline', 'case-after-deadline', 'case-atomic', 'case-completed', 'case-race', 'case-racing-completion', 'case-evidence', 'case-notices'], suiteStarted));
 
 test('Report, repeat report and respondent reply retain one case with append-only history and semantic retries', async () => {
   const f = await handoffFixture('case-primary'); await advanceHandoff(f);

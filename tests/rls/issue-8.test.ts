@@ -2,11 +2,13 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { before, test } from 'node:test';
-import { actor, activeMember, admin, advanceHandoff, backendUrl, completedItemFixture, createCommunity, disputeFixture, disputeView, handoffFixture, listingImageBytes, publicClient, realtimeReady, receipt, reportIssue, startConversation, sendMessage } from '../../scripts/verify/backend';
+import { after, before, test } from 'node:test';
+import { actor, activeMember, admin, advanceHandoff, backendUrl, completedItemFixture, createCommunity, disputeFixture, disputeView, handoffFixture, listingImageBytes, publicClient, realtimeReady, receipt, reportIssue, settleFixtureNotices, startConversation, sendMessage } from '../../scripts/verify/backend';
 import { evidenceSchema } from '../../src/features/handoff/model';
 
+const suiteStarted = new Date().toISOString();
 before(() => realtimeReady(), { timeout: 70000 });
+after(() => settleFixtureNotices(['case-privacy', 'case-surfaces', 'case-prior-removed', 'case-prior-suspended', 'case-prior-late-removed', 'case-prior-late-suspended', 'case-redacted', 'case-realtime'], suiteStarted));
 
 test('Case rows, commands, submitted Storage and unsubmitted Handoff evidence enforce each actor boundary', async () => {
   const f = await handoffFixture('case-privacy'); await advanceHandoff(f, 'schedule');

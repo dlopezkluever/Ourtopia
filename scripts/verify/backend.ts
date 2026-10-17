@@ -420,6 +420,14 @@ export async function completedItemFixture(label = 'dispute-completed', ageDays 
   if (settled.error) throw settled.error;
   return { ...f, exchangeId: result.data.id };
 }
+// The shared local worker drains notices oldest first, so queued suite fixture notices delay later journeys' delivery checks.
+export async function settleFixtureNotices(labels: string[], since: string) {
+  const communities = await admin.from('communities').select('id').in('name', labels.map(label => `${label} circle`)).gte('created_at', since);
+  if (communities.error) throw communities.error;
+  if (communities.data.length === 0) return;
+  const settled = await admin.from('notification_outbox').update({ state: 'suppressed', lease_until: null }).in('community_id', communities.data.map(row => row.id)).in('state', ['pending', 'failed']);
+  if (settled.error) throw settled.error;
+}
 export function reportingBoundaryFixture() {
   const query = "select private.dispute_reporting_window('completed', '2026-01-01T00:00:00Z', t) from unnest(array['2026-01-30T23:59:59.999999Z'::timestamptz,'2026-01-31T00:00:00Z'::timestamptz,'2026-01-31T00:00:00.000001Z'::timestamptz]) t";
   const project = /^project_id\s*=\s*"([^"]+)"/m.exec(readFileSync('supabase/config.toml', 'utf8'))?.[1];
