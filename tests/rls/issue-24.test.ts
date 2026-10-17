@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { before, test } from 'node:test';
 import { randomUUID } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { actor, activeMember, admin, membershipFixture, publicClient, realtimeReady, receipt, handoffFixture, advanceHandoff, handoffAction, itemHandoff, listingImageBytes } from '../../scripts/verify/backend';
 import { evidenceSchema } from '../../src/features/handoff/model';
 
@@ -20,6 +22,7 @@ test('Only the same currently active account and Community can restore or mutate
     assert.ok((await client.from('contribution_drafts').insert({ owner_id: author.id, community_id: community.id, kind: 'item', revision: 1, status: 'editing', fields: {} })).error);
     assert.ok((await client.from('contribution_drafts').update({ fields: { title: 'forged' } }).eq('owner_id', author.id)).error);
     assert.ok((await client.from('contribution_drafts').delete().eq('owner_id', author.id)).error);
+    assert.equal((await client.rpc('command_contribution_draft', args)).error?.code, '42501');
     assert.deepEqual((await client.from('community_events').select('*').eq('actor_id', author.id).like('kind', 'contribution_draft_%')).data ?? [], []);
   }
   for (const client of [outsider.client, foreign.owner.client, publicClient()]) assert.equal((await client.rpc('command_contribution_draft', { ...args, p_intent_id: randomUUID() })).error?.code, '42501');
@@ -36,18 +39,24 @@ test('Only the same currently active account and Community can restore or mutate
 test('Draft bodies are never delivered through realtime even to other Community administrators', async () => {
   const { owner, community } = await membershipFixture('draft-realtime');
   const member = await activeMember(owner, community.id);
-  const bodies: unknown[] = [];
-  const channels = await Promise.all([owner, member].map(async person => {
+  const events: Record<string, unknown>[][] = [[], []];
+  const channels = await Promise.all([owner, member].map(async (person, index) => {
     const { data } = await person.client.auth.getSession(); await person.client.realtime.setAuth(data.session!.access_token);
-    const channel = person.client.channel(`draft-private-${randomUUID()}`).on('postgres_changes', { event: '*', schema: 'public', table: 'contribution_drafts' }, change => bodies.push(change));
+    const channel = person.client.channel(`draft-private-${randomUUID()}`).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'community_events', filter: `community_id=eq.${community.id}` }, change => { if (String(change.new.kind).startsWith('contribution_draft_')) events[index].push(change.new); });
     await new Promise<void>((resolve, reject) => { const timer = setTimeout(() => reject(new Error('Subscription timed out')), 15000); channel.subscribe(status => { if (status === 'SUBSCRIBED') { clearTimeout(timer); resolve(); } }); });
     return { channel, person };
   }));
   try {
     assert.equal((await member.client.rpc('command_contribution_draft', { p_intent_id: randomUUID(), p_owner_id: member.id, p_community_id: community.id, p_kind: 'item', p_expected_revision: 0, p_action: 'save', p_fields: { title: 'Secret draft body' } })).error, null);
-    await new Promise(resolve => setTimeout(resolve, 1500)); assert.deepEqual(bodies, []);
-    receipt('issue-24-realtime', { draftBodyEvents: 0, subscribedActors: ['author', 'administrator'] });
-  } finally { await Promise.all(channels.map(({ person, channel }) => person.client.removeChannel(channel))); }
+    const deadline = Date.now() + 10000;
+    while (events[1].length === 0 && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 100));
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    assert.deepEqual(events[0], []); assert.equal(events[1].length, 1);
+    assert.deepEqual(Object.keys(events[1][0]).sort(), ['actor_id', 'community_id', 'created_at', 'id', 'intent_id', 'kind']);
+    const project = /^project_id\s*=\s*"([^"]+)"/m.exec(readFileSync('supabase/config.toml', 'utf8'))?.[1]; assert.match(project ?? '', /^ourtopia-issue-\d+$/);
+    const published = execFileSync('docker', ['exec', `supabase_db_${project}`, 'psql', '-U', 'postgres', '-d', 'postgres', '-Atc', "select tablename from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'contribution_drafts'"], { encoding: 'utf8' }).trim(); assert.equal(published, '');
+    receipt('issue-24-realtime', { draftTablesPublished: [], administratorEvents: 0, authorIdOnlyAuditEvents: 1 });
+  } finally { await Promise.all(channels.map(({ person, channel }) => person.client.removeChannel(channel))); for (const { person } of channels) person.client.realtime.disconnect(); }
 });
 
 test('Interrupted evidence cannot bypass current obligation state, participant boundaries, private Storage, or client write bans', async () => {

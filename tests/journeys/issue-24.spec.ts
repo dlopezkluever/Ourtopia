@@ -2,6 +2,7 @@ import { test, expect, type Page, type TestInfo } from '@playwright/test';
 import { execFileSync, spawn } from 'node:child_process';
 import { copyFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
+import { resolve } from 'node:path';
 import { communitySchema } from '../../src/features/communities/model';
 import { admin, membershipFixture, activeMember, createCommunity, password, handoffFixture, advanceHandoff, listingImageBytes, itemHandoff, handoffAction } from '../../scripts/verify/backend';
 
@@ -18,7 +19,10 @@ async function capture(page: Page, info: TestInfo, lane: number, data: unknown) 
 }
 async function shell(page: Page) {
   await page.goto('/');
-  await expect.poll(() => page.evaluate(() => navigator.serviceWorker.getRegistration().then(registration => Boolean(registration?.active)))).toBe(true);
+  await expect.poll(() => page.evaluate(async () => {
+    const registration = await navigator.serviceWorker.getRegistration();
+    return { active: registration?.active?.state, installing: registration?.installing?.state, waiting: registration?.waiting?.state };
+  })).toEqual({ active: 'activated', installing: undefined, waiting: undefined });
   await page.reload();
   await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true);
 }
@@ -55,16 +59,34 @@ test('lane 1 trunk lacks install and recovery; head provides the public shell an
   await capture(page, info, 1, { trunk: 'No manifest or durable contribution drafts', head: (await f.owner.client.from('contribution_drafts').select('*')).data });
 });
 
-test('lane 2 install metadata, active service worker and offline shell reload have clear retry states', async ({ page, context }, info) => {
-  await shell(page);
-  const manifest = await page.evaluate(async () => (await fetch('/manifest.webmanifest')).json());
-  expect(manifest.display).toBe('standalone'); expect(manifest.start_url).toBe('/');
-  expect((await page.request.get('/manifest-icon.png')).status()).toBe(200);
-  await page.getByText('Use Ourtopia as an app', { exact: true }).click(); await expect(page.getByText(/Add to Home Screen/)).toBeVisible();
-  await context.setOffline(true); await page.goto('/communities/private-route');
-  await expect(page.getByRole('heading', { name: "You're offline." })).toBeVisible(); await expect(page.getByRole('link', { name: 'Retry connection' })).toBeVisible();
-  await capture(page, info, 2, { manifest, offline: 'Public shell only; no account or Community content' });
-  await context.setOffline(false); await page.getByRole('link', { name: 'Retry connection' }).click(); await expect(page.getByLabel('Email address')).toBeVisible();
+test('lane 2 install metadata, active service worker and offline shell reload have clear retry states', async ({ browser }, info) => {
+  test.setTimeout(120000);
+  const baseURL = process.env.TEST_APP_URL ?? `http://127.0.0.1:${process.env.APP_PORT ?? 5173}`;
+  const { viewport, isMobile, hasTouch, userAgent, deviceScaleFactor } = info.project.use;
+  const profile = resolve('.pilot-evidence', `pwa-${randomUUID().slice(0, 8)}`);
+  const context = await browser.browserType().launchPersistentContext(profile, { baseURL, viewport, isMobile, hasTouch, userAgent, deviceScaleFactor, headless: true, executablePath: process.env.CHROME_PATH ?? (process.platform === 'win32' ? 'C:/Program Files/Google/Chrome/Application/chrome.exe' : undefined) });
+  let browserCdp: Awaited<ReturnType<typeof browser.newBrowserCDPSession>> | undefined;
+  let installed = false;
+  try {
+    const page = context.pages()[0]; await shell(page);
+    browserCdp = await context.browser()!.newBrowserCDPSession();
+    const manifest = await page.evaluate(async () => (await fetch('/manifest.webmanifest')).json());
+    expect(manifest.display).toBe('standalone'); expect(manifest.start_url).toBe('/');
+    const cdp = await context.newCDPSession(page); const installability = await cdp.send('Page.getInstallabilityErrors'); expect(installability.installabilityErrors).toEqual([]);
+    await browserCdp.send('PWA.install', { manifestId: `${baseURL}/`, installUrlOrBundleUrl: `${baseURL}/manifest-offline.html` }); installed = true;
+    await browserCdp.send('PWA.changeAppUserSettings', { manifestId: `${baseURL}/`, displayMode: 'standalone' });
+    const newPage = context.waitForEvent('page'); const launch = await browserCdp.send('PWA.launch', { manifestId: `${baseURL}/` }); const app = await newPage;
+    expect(launch.targetId).toMatch(/^[A-F0-9]+$/i); await expect(app.getByLabel('Email address')).toBeVisible();
+    expect(await app.evaluate(() => matchMedia('(display-mode: standalone)').matches)).toBe(true);
+    await app.reload(); await expect(app.getByLabel('Email address')).toBeVisible();
+    await context.setOffline(true); await app.goto('/communities/private-route');
+    await expect(app.getByRole('heading', { name: "You're offline." })).toBeVisible(); await expect(app.getByRole('link', { name: 'Retry connection' })).toBeVisible();
+    await capture(app, info, 2, { manifest, installability, launch, standalone: true, offline: 'Installed public shell only; no account or Community content' });
+    await context.setOffline(false); await app.getByRole('link', { name: 'Retry connection' }).click(); await expect(app.getByLabel('Email address')).toBeVisible();
+  } finally {
+    if (installed) await browserCdp!.send('PWA.uninstall', { manifestId: `${baseURL}/` });
+    await context.close();
+  }
 });
 
 test('lane 3 practical item and Help drafts survive interruption and reload only within their account and Community', async ({ page }, info) => {
@@ -124,7 +146,9 @@ test('lane 7 offline privileged action is not queued and reconnect after cancell
   await expect(page.getByRole('status').filter({ hasText: "You're offline." })).toBeVisible();
   expect((await handoffAction(f.alice, f.exchangeId, 3, 'cancel', { reason: 'Item no longer available' })).error).toBeNull();
   await page.getByLabel('Item condition', { exact: true }).fill('Attempted offline'); await page.getByLabel('Included accessories', { exact: true }).fill('Battery'); await page.getByRole('button', { name: 'Record condition', exact: true }).click(); await expect(page.getByRole('alert')).toBeVisible();
-  await context.setOffline(false); await page.getByRole('button', { name: 'Record condition', exact: true }).click(); await expect(page.getByRole('alert')).toBeVisible();
+  await context.setOffline(false);
+  const stale = await handoffAction(f.bob, f.exchangeId, 3, 'record_condition', { condition: 'Attempted offline', accessories: 'Battery' }); expect(stale.error?.code).toBe('55000');
+  await page.reload(); await expect(page.getByRole('status').filter({ hasText: 'Cancelled' })).toBeVisible();
   expect((await itemHandoff(f.alice, f.exchangeId)).state).toBe('cancelled');
   expect((await admin.from('item_handoffs').select('condition').eq('exchange_id', f.exchangeId)).data).toEqual([{ condition: null }]); await capture(page, info, 7, { state: 'cancelled', offlineQueue: 'none', condition: null });
 });
@@ -142,14 +166,21 @@ test('lane 8 shared Return recovery adapter contract survives a lost completion 
 
 test('lane 9 registration, draft errors, scheduling and confirmation expose names and keyboard focus', async ({ page }, info) => {
   const f = await handoffFixture('pwa-a11y'); await page.goto('/');
-  await page.getByLabel('Email address').focus(); await expect(page.getByLabel('Email address')).toBeFocused(); await page.keyboard.type(f.bob.email); await page.keyboard.press('Tab'); await expect(page.getByLabel('Password', { exact: true })).toBeFocused(); await page.keyboard.type(password);
+  const registeredEmail = `keyboard-${randomUUID()}@example.test`;
+  await page.getByRole('button', { name: 'Create account', exact: true }).focus(); await page.keyboard.press('Enter');
+  await page.getByLabel('Email address').focus(); await page.keyboard.type(registeredEmail); await page.keyboard.press('Tab'); await expect(page.getByLabel('Password', { exact: true })).toBeFocused(); await page.keyboard.type(password); await page.keyboard.press('Tab'); await expect(page.getByRole('button', { name: 'Create account', exact: true }).last()).toBeFocused(); await page.keyboard.press('Enter');
+  await expect(page.getByRole('status').filter({ hasText: 'Check your inbox to verify your email.' })).toBeVisible();
+  const registration = await page.locator('main').ariaSnapshot();
+  const people = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 }); expect(people.error).toBeNull(); expect(people.data.users.filter(person => person.email === registeredEmail)).toHaveLength(1);
+  await page.goto('/');
+  await page.getByLabel('Email address').focus(); await expect(page.getByLabel('Email address')).toBeFocused(); await page.keyboard.type(f.bob.email); await page.keyboard.press('Tab'); await expect(page.getByRole('button', { name: 'Forgot password?' })).toBeFocused(); await page.keyboard.press('Tab'); await expect(page.getByLabel('Password', { exact: true })).toBeFocused(); await page.keyboard.type(password);
   await page.getByRole('button', { name: 'Sign in', exact: true }).last().focus(); await page.keyboard.press('Enter'); await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible();
   await page.goto('/drafts'); await page.getByRole('button', { name: 'Publish contribution' }).focus(); await page.keyboard.press('Enter'); await expect(page.getByRole('alert')).toBeFocused();
   await advanceHandoff(f, 'terms'); await page.goto(`/handoffs/${f.exchangeId}`);
   await page.getByLabel('Handoff time', { exact: true }).focus(); await expect(page.getByLabel('Handoff time', { exact: true })).toBeFocused();
   await advanceHandoffFromTerms(f); await page.reload();
   const acknowledgment = page.getByLabel('I acknowledge the item is received', { exact: false }); await acknowledgment.focus(); await page.keyboard.press('Space'); await expect(acknowledgment).toBeChecked(); await page.getByRole('button', { name: 'Confirm Handoff', exact: true }).focus(); await page.keyboard.press('Enter'); await expect(page.getByRole('heading', { name: 'Handoff recorded', exact: true })).toBeVisible();
-  await capture(page, info, 9, { accessibility: await page.locator('main').ariaSnapshot(), state: (await itemHandoff(f.bob, f.exchangeId)).state });
+  await capture(page, info, 9, { registration, accessibility: await page.locator('main').ariaSnapshot(), state: (await itemHandoff(f.bob, f.exchangeId)).state });
 });
 async function advanceHandoffFromTerms(f: Awaited<ReturnType<typeof handoffFixture>>) {
   for (const [actor, revision, action, details] of [[f.alice, 1, 'propose_schedule', { starts_at: new Date(Date.now() + 3600000).toISOString(), location: 'Front porch' }], [f.bob, 2, 'confirm_schedule', {}], [f.alice, 3, 'record_condition', { condition: 'Good', accessories: 'Battery' }]] as const) expect((await handoffAction(actor, f.exchangeId, revision, action, details)).error).toBeNull();

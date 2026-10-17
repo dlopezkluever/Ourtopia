@@ -5,7 +5,7 @@ import { PwaStatus } from '../features/pwa/PwaStatus';
 import { clearProtectedClientStorage } from '../features/pwa/privacy';
 import { HandoffPage, HandoffLinks } from '../features/handoff/HandoffPage';
 import { DeliveryConsole } from '../features/notification-delivery/DeliveryConsole';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { ArrowUpRight, Leaf, LockKeyhole, Sprout } from 'lucide-react';
 import { supabase } from '../lib/supabase/client';
@@ -29,12 +29,15 @@ import { communityHomeRoute, needRoute } from '../features/item-needs/model';
 
 export function App() {
   const [session, setSession] = useState<Session | null>(null);
+  const account = useRef<string | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   useProtectedCacheInvalidation(session?.user.id);
   const [recovery, setRecovery] = useState(location.hash.includes('type=recovery'));
   const [error, setError] = useState(() => new URLSearchParams(location.hash.slice(1)).get('error_description') ?? '');
   useEffect(() => {
     const { data } = supabase.auth.onAuthStateChange((event, next) => {
+      if (account.current && account.current !== next?.user.id) clearProtectedClientStorage();
+      account.current = next?.user.id;
       setSession(next); setLoading(false);
       if (event === 'PASSWORD_RECOVERY') setRecovery(true);
       if (event === 'SIGNED_OUT') {

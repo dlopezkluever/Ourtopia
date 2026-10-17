@@ -60,6 +60,22 @@ test('Draft validation, discard, and revoked membership are authoritative on eve
   assert.equal(discarded.error, null); assert.equal(resultSchema.parse(discarded.data).draft.status, 'discarded'); assert.deepEqual(resultSchema.parse(discarded.data).draft.fields, {});
 });
 
+test('A failure after nested publication rolls back the post, draft, child intent and audit together', async () => {
+  const { owner, community } = await membershipFixture('draft-late-rollback');
+  const base = { p_owner_id: owner.id, p_community_id: community.id, p_kind: 'item', p_fields: drillDetails };
+  assert.equal((await owner.client.rpc('command_contribution_draft', { ...base, p_intent_id: randomUUID(), p_expected_revision: 0, p_action: 'save' })).error, null);
+  const intent = randomUUID();
+  assert.equal((await admin.from('community_events').insert({ community_id: community.id, actor_id: owner.id, intent_id: intent, kind: 'contribution_draft_publish' })).error, null);
+  const failed = await owner.client.rpc('command_contribution_draft', { ...base, p_intent_id: intent, p_expected_revision: 1, p_action: 'publish' }); assert.equal(failed.error?.code, '23505');
+  assert.deepEqual((await admin.from('listings').select('id').eq('community_id', community.id)).data, []);
+  assert.deepEqual((await owner.client.from('contribution_drafts').select('revision,status').eq('community_id', community.id)).data, [{ revision: 1, status: 'editing' }]);
+  assert.deepEqual((await admin.from('command_intents').select('intent_id').eq('actor_id', owner.id).eq('command', 'save_listing')).data, []);
+  assert.deepEqual((await admin.from('community_events').select('id').eq('community_id', community.id).eq('kind', 'listing_created')).data, []);
+  assert.equal((await owner.client.rpc('command_contribution_draft', { ...base, p_intent_id: randomUUID(), p_expected_revision: 1, p_action: 'publish' })).error, null);
+  assert.equal((await admin.from('listings').select('id').eq('community_id', community.id)).data?.length, 1);
+  receipt('issue-24-late-rollback', { injected: 'Final outer audit unique violation', failed: '23505', afterFailure: { listings: 0, revision: 1, childIntents: 0 }, subsequentPublishCount: 1 });
+});
+
 test('Kind-independent evidence recovery completes a real interrupted object once without changing Exchange state', async () => {
   const f = await handoffFixture('draft-recovery'); await advanceHandoff(f, 'schedule');
   const file = new File([listingImageBytes], 'camera.png', { type: 'image/png' });

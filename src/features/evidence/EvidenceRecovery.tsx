@@ -41,7 +41,7 @@ export function EvidenceRecovery({ userId, exchangeId }: { userId: string; excha
     finally { setBusy(false); }
   }
   return <section className="draft-layout"><h1>Recover an optional photo</h1><p>Select the same camera photo after an interruption. A retry reuses its evidence identity. This never confirms Handoff or Return.</p>
-    {access.status === 'ready' ? <><label htmlFor="recover-photo">Camera or photo</label><input id="recover-photo" type="file" capture="environment" accept="image/jpeg,image/png,image/webp" disabled={busy} onChange={event => setFile(event.target.files?.[0] ?? null)}/><button type="button" disabled={!file || busy} onClick={() => void retry()}>{busy ? 'Checking and uploading...' : 'Retry optional photo'}</button></> : <p role="status">Photo recovery unavailable until current access is checked online.</p>}
+    {access.status === 'ready' ? <><label htmlFor="recover-photo">Camera or photo</label><input id="recover-photo" type="file" capture="environment" accept="image/jpeg,image/png,image/webp" disabled={busy} onChange={event => setFile(event.target.files?.[0] ?? null)}/><button className="primary-button" type="button" disabled={!file || busy} onClick={() => void retry()}>{busy ? 'Checking and uploading...' : 'Retry optional photo'}</button></> : <p role="status">Photo recovery unavailable until current access is checked online.</p>}
     {message && <p role="status">{message}</p>}<p><a href={`/handoffs/${exchangeId}`}>Back to Handoff without adding photos</a></p>
   </section>;
 }

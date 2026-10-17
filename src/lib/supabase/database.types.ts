@@ -183,6 +183,26 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"contribution_drafts": {
+                  Row: {
+                    "community_id": string,"fields": NonNullable<Json>,"kind": string,"owner_id": string,"revision": number,"status": string,"updated_at": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "community_id": string,"fields"?: NonNullable<Json>,"kind": string,"owner_id": string,"revision": number,"status": string,"updated_at"?: string
+                  }
+                  Update: {
+                    "community_id"?: string,"fields"?: NonNullable<Json>,"kind"?: string,"owner_id"?: string,"revision"?: number,"status"?: string,"updated_at"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "contribution_drafts_community_id_fkey"
+      columns: ["community_id"]
+isOneToOne: false
+      referencedRelation: "communities"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"conversations": {
                   Row: {
                     "community_id": string,"created_at": string,"id": string,"participant_high": string,"participant_low": string,"started_by": string
@@ -1153,6 +1173,9 @@ isOneToOne: true
                            },
 "claim_test_billing":
 { Args: { "p_job_id": string }; Returns: Json
+                           },
+"command_contribution_draft":
+{ Args: { "p_action": string,"p_community_id": string,"p_expected_revision": number,"p_fields"?: Json,"p_intent_id": string,"p_kind": string,"p_owner_id": string }; Returns: Json
                            },
 "command_item_handoff":
 { Args: { "p_action": string,"p_details"?: Json,"p_exchange_id": string,"p_expected_revision": number,"p_intent_id": string }; Returns: Json
