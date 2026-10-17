@@ -13,7 +13,7 @@ export const handoffSchema = z.object({
 export type Handoff = z.infer<typeof handoffSchema>;
 export type HandoffAction = 'acknowledge_terms' | 'propose_schedule' | 'confirm_schedule' | 'record_condition' | 'confirm_handoff' | 'cancel';
 export const termsAcknowledgment = { return_date: true, condition: true, replacement_value: true, responsibility: true };
-export const stateLabels: Record<string, string> = { approved: 'Awaiting terms', handoff_pending: 'Arranging Handoff', checked_out: 'Checked out', cancelled: 'Cancelled', expired: 'Approval expired', closed_without_completion: 'Closed without completion', completed: 'Completed' };
+export const stateLabels: Record<string, string> = { approved: 'Awaiting terms', handoff_pending: 'Arranging Handoff', checked_out: 'Checked out', return_pending: 'Return awaiting confirmation', returned: 'Returned', cancelled: 'Cancelled', expired: 'Approval expired', closed_without_completion: 'Closed without completion', completed: 'Completed' };
 export function nextActor(h: Handoff, userId: string) {
   if (h.state === 'approved') return h.borrower_id === userId ? 'You acknowledge the terms before the deadline.' : 'The borrower acknowledges the terms before the deadline.';
   if (h.state !== 'handoff_pending') return h.state === 'checked_out' ? 'The borrower returns the item by the agreed date.' : 'No Handoff action remains.';

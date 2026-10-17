@@ -183,7 +183,7 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
-                },"contribution_drafts": {
+},"contribution_drafts": {
                   Row: {
                     "community_id": string,"fields": NonNullable<Json>,"kind": string,"owner_id": string,"revision": number,"status": string,"updated_at": string
                   }
@@ -200,6 +200,38 @@ isOneToOne: false
       columns: ["community_id"]
 isOneToOne: false
       referencedRelation: "communities"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"community_feed": {
+                  Row: {
+                    "borrower_id": string,"community_id": string,"created_at": string,"exchange_id": string,"id": string,"kind": string,"listing_id": string,"owner_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "borrower_id": string,"community_id": string,"created_at"?: string,"exchange_id": string,"id"?: string,"kind": string,"listing_id": string,"owner_id": string
+                  }
+                  Update: {
+                    "borrower_id"?: string,"community_id"?: string,"created_at"?: string,"exchange_id"?: string,"id"?: string,"kind"?: string,"listing_id"?: string,"owner_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "community_feed_community_id_fkey"
+      columns: ["community_id"]
+isOneToOne: false
+      referencedRelation: "communities"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "community_feed_exchange_id_fkey"
+      columns: ["exchange_id"]
+isOneToOne: true
+      referencedRelation: "exchanges"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "community_feed_listing_id_fkey"
+      columns: ["listing_id"]
+isOneToOne: false
+      referencedRelation: "listings"
       referencedColumns: ["id"]
     }
                   ]
@@ -321,6 +353,32 @@ isOneToOne: false
       referencedColumns: ["id"]
     },{
       foreignKeyName: "exchange_evidence_exchange_id_fkey"
+      columns: ["exchange_id"]
+isOneToOne: false
+      referencedRelation: "exchanges"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"exchange_review_items": {
+                  Row: {
+                    "community_id": string,"exchange_id": string,"id": string,"queued_at": string,"reason": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "community_id": string,"exchange_id": string,"id"?: string,"queued_at"?: string,"reason": string
+                  }
+                  Update: {
+                    "community_id"?: string,"exchange_id"?: string,"id"?: string,"queued_at"?: string,"reason"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "exchange_review_items_community_id_fkey"
+      columns: ["community_id"]
+isOneToOne: false
+      referencedRelation: "communities"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "exchange_review_items_exchange_id_fkey"
       columns: ["exchange_id"]
 isOneToOne: false
       referencedRelation: "exchanges"
@@ -630,6 +688,46 @@ isOneToOne: false
       columns: ["request_id"]
 isOneToOne: true
       referencedRelation: "borrow_requests"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"item_return_settings": {
+                  Row: {
+                    "confirmation_reminder_after": string,"review_after": string,"singleton": boolean
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "confirmation_reminder_after"?: string,"review_after"?: string,"singleton"?: boolean
+                  }
+                  Update: {
+                    "confirmation_reminder_after"?: string,"review_after"?: string,"singleton"?: boolean
+                  }
+                  Relationships: [
+
+                  ]
+                },"item_returns": {
+                  Row: {
+                    "accessories": string,"borrower_confirmed_at": string | null,"community_id": string,"condition": string,"confirmation_reminder_due_at": string,"contested_at": string | null,"contested_by": string | null,"contested_condition": string | null,"exchange_id": string,"owner_confirmed_at": string | null,"recorded_by": string,"returned_at": string,"review_due_at": string,"revision": number
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "accessories": string,"borrower_confirmed_at"?: string | null,"community_id": string,"condition": string,"confirmation_reminder_due_at": string,"contested_at"?: string | null,"contested_by"?: string | null,"contested_condition"?: string | null,"exchange_id": string,"owner_confirmed_at"?: string | null,"recorded_by": string,"returned_at": string,"review_due_at": string,"revision"?: number
+                  }
+                  Update: {
+                    "accessories"?: string,"borrower_confirmed_at"?: string | null,"community_id"?: string,"condition"?: string,"confirmation_reminder_due_at"?: string,"contested_at"?: string | null,"contested_by"?: string | null,"contested_condition"?: string | null,"exchange_id"?: string,"owner_confirmed_at"?: string | null,"recorded_by"?: string,"returned_at"?: string,"review_due_at"?: string,"revision"?: number
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "item_returns_community_id_fkey"
+      columns: ["community_id"]
+isOneToOne: false
+      referencedRelation: "communities"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "item_returns_exchange_id_fkey"
+      columns: ["exchange_id"]
+isOneToOne: true
+      referencedRelation: "exchanges"
       referencedColumns: ["id"]
     }
                   ]
@@ -1241,6 +1339,9 @@ isOneToOne: true
 "command_item_handoff":
 { Args: { "p_action": string,"p_details"?: Json,"p_exchange_id": string,"p_expected_revision": number,"p_intent_id": string }; Returns: Json
                            },
+"command_item_return":
+{ Args: { "p_action": string,"p_details"?: Json,"p_exchange_id": string,"p_expected_revision": number,"p_intent_id": string }; Returns: Json
+                           },
 "commit_help":
 { Args: { "p_intent_id": string,"p_note"?: string,"p_post_id": string,"p_post_kind": string }; Returns: Json
                            },
@@ -1355,10 +1456,22 @@ isOneToOne: true
 "prepare_listing_image":
 { Args: { "p_byte_size": number,"p_image_id": string,"p_intent_id": string,"p_listing_id": string,"p_mime_type": string }; Returns: Json
                            },
+"prepare_return_evidence":
+{ Args: { "p_byte_size": number,"p_evidence_id": string,"p_exchange_id": string,"p_intent_id": string,"p_mime_type": string }; Returns: Json
+                           },
+"process_due_item_returns":
+{ Args: Record<PropertyKey, never>; Returns: Json
+                           },
+"read_community_feed":
+{ Args: { "p_community_id": string }; Returns: Json
+                           },
 "read_exchange_disputes":
 { Args: { "p_exchange_id": string }; Returns: Json
                            },
 "read_item_handoff":
+{ Args: { "p_exchange_id": string }; Returns: Json
+                           },
+"read_item_return":
 { Args: { "p_exchange_id": string }; Returns: Json
                            },
 "receive_stripe_receipt":

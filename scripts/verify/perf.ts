@@ -25,6 +25,7 @@ import { helpExchangeSchema, helpPostSchema } from '../../src/features/help/mode
 
 const { values } = parseArgs({ options: { issue: { type: 'string' }, base: { type: 'string' }, head: { type: 'string' }, pairs: { type: 'string', default: '10' } } });
 if (values.issue === '24') await verifyIssue24(values);
+else if (values.issue === '9') await verifyIssue9(values);
 else if (values.issue === '8') await verifyIssue8(values);
 else if (values.issue === '11') await verifyIssue11(values);
 else if (values.issue === '7') await verifyIssue7(values);
@@ -1242,4 +1243,3 @@ async function verifyIssue8(values: PerfArguments) {
     assert.equal(trunkRoot, resolve('.pilot-evidence', 'perf-trunk-8')); if (existsSync(trunkRoot)) rmSync(trunkRoot, { recursive: true });
   }
 }
-
