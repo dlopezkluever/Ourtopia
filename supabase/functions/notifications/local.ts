@@ -32,6 +32,7 @@ export function localDelivery() {
 }
 
 async function run() {
+  if (process.env.OURTOPIA_MANUAL_NOTIFICATION_DELIVERY === '1') return;
   process.stdin.on('end', () => process.exit(0));
   process.stdin.resume();
   const { client, send } = localDelivery();

@@ -330,3 +330,11 @@ a.sidebar-nav { text-decoration: none; }
 .vouches-page article, .vouches-page blockquote, .vouches-page select { overflow-wrap: anywhere; max-width: 100%; }
 .vouches-page blockquote { margin: 16px 0; padding: 12px 16px; border-left: 3px solid #647b45; }
 .vouches-page blockquote footer { font-size: 12px; margin-top: 8px; }
+
+.delivery-console > select { max-width: 100%; margin: 0.5rem 1rem 1rem 0; }
+.delivery-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 1rem; }
+.delivery-card { min-width: 0; overflow-wrap: anywhere; }
+.delivery-card dl { display: grid; grid-template-columns: 8rem minmax(0, 1fr); gap: 0.4rem; }
+.delivery-card dd { margin: 0; }
+.delivery-card details { margin-top: 1rem; }
+.delivery-card summary { cursor: pointer; padding: 0.5rem 0; }
