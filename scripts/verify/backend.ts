@@ -497,6 +497,17 @@ export async function completeReturn(f: Awaited<ReturnType<typeof handoffFixture
   if (result.error) throw result.error;
   return itemReturn(f.alice, f.exchangeId);
 }
+// Service-role fixture for upstream suites that need a checked-out loan parked in `returned` without running Finalize.
+// The issue-9 transition guard requires a Return record both participants confirmed, so the fixture writes one first.
+export async function adminReturned(f: Awaited<ReturnType<typeof handoffFixture>>) {
+  const now = new Date().toISOString();
+  const pending = await admin.from('exchanges').update({ state: 'return_pending' }).eq('id', f.exchangeId);
+  if (pending.error) throw pending.error;
+  const record = await admin.from('item_returns').insert({ exchange_id: f.exchangeId, community_id: f.community.id, returned_at: now, condition: returnCondition.condition,
+    accessories: returnCondition.accessories, recorded_by: f.bob.id, owner_confirmed_at: now, borrower_confirmed_at: now, confirmation_reminder_due_at: now, review_due_at: now });
+  if (record.error) throw record.error;
+  return admin.from('exchanges').update({ state: 'returned' }).eq('id', f.exchangeId);
+}
 // Test-only shortening of the configured Return reminder and review windows; always restored.
 export async function withReturnWindows<T>(windows: { confirmation_reminder_after?: string; review_after?: string }, run: () => Promise<T>) {
   const set = async (value: Record<string, string>) => { const result = await admin.from('item_return_settings').update(value).eq('singleton', true); if (result.error) throw result.error; };

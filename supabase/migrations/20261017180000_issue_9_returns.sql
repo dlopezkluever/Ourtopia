@@ -104,13 +104,21 @@ returns boolean language sql immutable set search_path = '' as $$
     else p_unresolved or p_after in ('checked_out', 'return_pending') end;
 $$;
 
+-- Fails closed: returned, and completion of a reserved loan, need a recorded Return that both participants confirmed,
+-- that nobody contested, and no open Dispute. A missing Return row is a rejection, never a pass.
+-- The only exemption is completing an item Exchange that has no reservation: no borrowing command creates one,
+-- it holds no custody, and issue 4's generic settlement fixtures complete such rows directly.
 create function private.guard_item_return_transition() returns trigger language plpgsql set search_path = '' as $$
 declare r public.item_returns;
 begin
   if new.state = old.state or new.state not in ('returned', 'completed') then return new; end if;
+  if new.state = 'completed' and not exists(select 1 from public.item_reservations where exchange_id = new.id) then return new; end if;
   select * into r from public.item_returns where exchange_id = new.id;
-  if found and (r.owner_confirmed_at is null or r.borrower_confirmed_at is null or r.contested_at is not null) then
+  if not found or r.owner_confirmed_at is null or r.borrower_confirmed_at is null or r.contested_at is not null then
     raise exception using errcode = '55000', message = 'Both participants must confirm a matching Return condition.';
+  end if;
+  if exists(select 1 from public.disputes d where d.exchange_id = new.id and d.closed_at is null) then
+    raise exception using errcode = '55000', message = 'An open Exchange issue blocks ordinary Return confirmation.';
   end if;
   return new;
 end;

@@ -3,7 +3,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { copyFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { dirname } from 'node:path';
-import { activeMember, admin, advanceHandoff, completedItemFixture, createCommunity, disputeFixture, disputeView, handoffFixture, reportingBoundaryFixture, listingImageBytes, password, reportIssue } from '../../scripts/verify/backend';
+import { activeMember, admin, adminReturned, advanceHandoff, completedItemFixture, createCommunity, disputeFixture, disputeView, handoffFixture, reportingBoundaryFixture, listingImageBytes, password, reportIssue } from '../../scripts/verify/backend';
 
 const base = '91cc7b00d9edd075c205464ef90235507e6a7b3b';
 async function signIn(page: Page, email: string) {
@@ -92,7 +92,7 @@ test('lane 5 repeat reports append to one case and retain response and evidence 
 
 test('lane 6 racing reports and ordinary finalization cannot bypass the open-case guard', async ({ page }, info) => {
   const f = await handoffFixture('case-browser-race'); await advanceHandoff(f);
-  for (const state of ['return_pending', 'returned']) expect((await admin.from('exchanges').update({ state }).eq('id', f.exchangeId)).error).toBeNull();
+  expect((await adminReturned(f)).error).toBeNull();
   const [first, second, finalize] = await Promise.all([reportIssue(f.bob, f.exchangeId), reportIssue(f.alice, f.exchangeId), admin.from('exchanges').update({ state: 'completed' }).eq('id', f.exchangeId)]);
   expect(first.error).toBeNull(); expect(second.error).toBeNull(); expect([null, '55000']).toContain(finalize.error?.code ?? null);
   await open(page, f.bob.email, f.exchangeId); await expect(page.getByRole('note')).toContainText('Ordinary completion is blocked');

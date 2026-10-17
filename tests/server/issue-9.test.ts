@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { after, test } from 'node:test';
 import {
   admin, approveBorrow, checkedOutFixture, completeReturn, decideBorrow, disputeView, itemHandoff, itemReturn, listingImageBytes, loanEffects, localScores,
-  overdueCheckedOutFixture, receipt, recordReturn, requestItem, returnAction, returnCondition, returnReminders, settleFixtureNotices, withReturnWindows,
+  overdueCheckedOutFixture, receipt, recordReturn, reportIssue, requestItem, returnAction, returnCondition, returnReminders, settleFixtureNotices, withReturnWindows,
 } from '../../scripts/verify/backend';
 import { evidenceSchema } from '../../src/features/handoff/model';
 import { deliverOne } from '../../supabase/functions/notifications/worker';
@@ -11,7 +11,8 @@ import { localDelivery } from '../../supabase/functions/notifications/local';
 
 const suiteStarted = new Date().toISOString();
 const labels = ['return-primary', 'return-race', 'return-conflict', 'return-silence', 'return-reschedule', 'return-custody-confirmed', 'return-custody-missing',
-  'return-custody-disputed', 'return-custody-closed', 'return-custody-checked-out', 'return-overdue', 'return-rollback', 'return-photos'];
+  'return-custody-disputed', 'return-custody-closed', 'return-custody-checked-out', 'return-overdue', 'return-rollback', 'return-photos',
+  'return-guard-missing', 'return-guard-unconfirmed', 'return-guard-disputed'];
 after(() => settleFixtureNotices(labels, suiteStarted));
 const wait = (ms: number) => new Promise(done => setTimeout(done, ms));
 
@@ -191,6 +192,30 @@ test('Custody: only confirmed physical recovery releases the reservation; missin
   for (const f of [missing, disputed, closed, held]) assert.deepEqual((await admin.from('reputation_events').select('id').eq('exchange_id', f.exchangeId)).data, []);
   assert.equal((await admin.from('item_reservations').update({ custody_unresolved: false }).eq('exchange_id', missing.exchangeId)).error?.code, '55000');
   receipt('issue-9-custody', results);
+});
+
+test('The returned transition fails closed: a privileged update without a confirmed, uncontested, undisputed Return keeps custody', async () => {
+  const blocked = { state: 'return_pending', interactions: 0, events: [], feed: 0, reservation: { blocking: true, custody_unresolved: true } };
+  const effectsOf = async (exchangeId: string) => {
+    const e = await loanEffects(exchangeId);
+    return { state: e.state, interactions: e.interactions, events: e.events, feed: e.feed, reservation: e.reservation };
+  };
+  const missing = await checkedOutFixture('return-guard-missing');
+  assert.equal((await admin.from('exchanges').update({ state: 'return_pending' }).eq('id', missing.exchangeId)).error, null);
+  assert.equal((await admin.from('exchanges').update({ state: 'returned' }).eq('id', missing.exchangeId)).error?.code, '55000');
+  assert.deepEqual(await effectsOf(missing.exchangeId), blocked);
+  const unconfirmed = await checkedOutFixture('return-guard-unconfirmed'); await recordReturn(unconfirmed);
+  assert.equal((await admin.from('exchanges').update({ state: 'returned' }).eq('id', unconfirmed.exchangeId)).error?.code, '55000');
+  assert.deepEqual(await effectsOf(unconfirmed.exchangeId), blocked);
+  const disputed = await checkedOutFixture('return-guard-disputed'); await recordReturn(disputed);
+  assert.equal((await reportIssue(disputed.alice, disputed.exchangeId, 'The chuck is loose.')).error, null);
+  assert.equal((await admin.from('item_returns').update({ owner_confirmed_at: new Date().toISOString() }).eq('exchange_id', disputed.exchangeId)).error, null);
+  assert.equal((await admin.from('exchanges').update({ state: 'returned' }).eq('id', disputed.exchangeId)).error?.code, '55000');
+  assert.deepEqual(await effectsOf(disputed.exchangeId), blocked);
+  for (const f of [missing, unconfirmed, disputed]) {
+    assert.equal((await decideBorrow(f.alice, await requestItem(f.carol, f.listing.id, '2027-02-01', '2027-02-02'))).error?.code, '23P01');
+  }
+  receipt('issue-9-returned-guard', { missing: await effectsOf(missing.exchangeId), unconfirmed: await effectsOf(unconfirmed.exchangeId), disputed: await effectsOf(disputed.exchangeId) });
 });
 
 test('An overdue unrecorded Return queues review after seven days while the item stays checked out', async () => {
