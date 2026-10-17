@@ -31,6 +31,7 @@ jobs:
       - run: npm run test:server -- tests/server/issue-15.test.ts
       - run: npm run test:server -- tests/server/issue-12.test.ts
       - run: npm run test:server -- tests/server/issue-6.test.ts
+      - run: npm run test:server -- tests/server/issue-7.test.ts
       - run: npm run test:server -- tests/server/issue-22.test.ts
       - run: npm run test:server -- tests/server/issue-14.test.ts
       - run: npm run test:rls -- tests/rls/issue-2.test.ts
@@ -40,6 +41,7 @@ jobs:
       - run: npm run test:rls -- tests/rls/issue-15.test.ts
       - run: npm run test:rls -- tests/rls/issue-12.test.ts
       - run: npm run test:rls -- tests/rls/issue-6.test.ts
+      - run: npm run test:rls -- tests/rls/issue-7.test.ts
       - run: npm run test:rls -- tests/rls/issue-22.test.ts
       - run: npm run test:rls -- tests/rls/issue-14.test.ts
       - run: npm run test:journey -- tests/journeys/issue-2.spec.ts
@@ -49,6 +51,7 @@ jobs:
       - run: npm run test:journey -- tests/journeys/issue-15.spec.ts
       - run: npm run test:journey -- tests/journeys/issue-12.spec.ts
       - run: npm run test:journey -- tests/journeys/issue-6.spec.ts
+      - run: npm run test:journey -- tests/journeys/issue-7.spec.ts
       - run: npm run test:journey -- tests/journeys/issue-14.spec.ts
       - run: npm run verify:perf -- --issue 2 --base 2af28e7a06db971e8e5fbbf01b0b8bda07f81c76 --head $(git rev-parse HEAD) --pairs 10
       - run: npm run verify:perf -- --issue 3 --base a0eff460f5707d128141857d275f21c1a111ac1c --head $(git rev-parse HEAD) --pairs 10
@@ -58,6 +61,7 @@ jobs:
       - run: npm run verify:perf -- --issue 12 --base 26e3bb37c7dbc7f14bdf95a36c8cd4b838dba413 --head $(git rev-parse HEAD) --pairs 10
       - run: npm run verify:perf -- --issue 6 --base 7aa1af9cf1dae27a32226bb0f52f408e29749aa2 --head $(git rev-parse HEAD) --pairs 10
       - run: npm run verify:perf -- --issue 14 --base 998b29ade3134035cf627dc1a1a8ee07cd504ab0 --head $(git rev-parse HEAD) --pairs 10
+      - run: npm run verify:perf -- --issue 7 --base 8be7fe60908341f41beea49bc0f7ccb718ae3c7e --head $(git rev-parse HEAD) --pairs 10
       - if: always()
         run: npx supabase stop --project-id ourtopia-issue-2
   billing-live:
