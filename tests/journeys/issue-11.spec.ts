@@ -129,7 +129,7 @@ test('lane 3 Carol shares a new Listing while answering and returns to the respo
   await expect(form.getByLabel('Your Listing')).toHaveValue(/[0-9a-f-]{36}/);
   await expect(form.getByLabel('Your Listing').locator('option:checked')).toHaveText("Carol's impact drill");
   await offerInBrowser(page, "Carol's impact drill", 'Brand new to the Community.');
-  const listing = await admin.from('listings').select('id,community_id,owner_id,status').eq('title', "Carol's impact drill").single();
+  const listing = await admin.from('listings').select('id,community_id,owner_id,status').eq('community_id', f.community.id).eq('title', "Carol's impact drill").single();
   const response = await admin.from('item_need_responses').select('listing_id,community_id,responder_id').eq('need_id', f.need.id).single();
   expect(listing.data).toMatchObject({ community_id: f.community.id, owner_id: f.carol.id, status: 'published' });
   expect(response.data).toEqual({ listing_id: listing.data!.id, community_id: f.community.id, responder_id: f.carol.id });
