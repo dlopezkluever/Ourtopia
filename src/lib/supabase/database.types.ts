@@ -23,7 +23,21 @@ export type Database = {
           }
         },"public": {
           Tables: {
-            "billing_accounts": {
+            "allocation_settings": {
+                  Row: {
+                    "acknowledgment_window": string,"singleton": boolean
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "acknowledgment_window"?: string,"singleton"?: boolean
+                  }
+                  Update: {
+                    "acknowledgment_window"?: string,"singleton"?: boolean
+                  }
+                  Relationships: [
+
+                  ]
+                },"billing_accounts": {
                   Row: {
                     "account_id": string,"created_at": string,"customer_id": string | null
                   }
@@ -87,6 +101,38 @@ isOneToOne: false
 isOneToOne: false
       referencedRelation: "billing_accounts"
       referencedColumns: ["customer_id"]
+    }
+                  ]
+                },"borrow_requests": {
+                  Row: {
+                    "borrower_id": string,"community_id": string,"created_at": string,"decided_at": string | null,"ends_on": string,"exchange_id": string | null,"id": string,"listing_id": string,"owner_id": string,"starts_on": string,"status": string,"version": number
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "borrower_id": string,"community_id": string,"created_at"?: string,"decided_at"?: string | null,"ends_on": string,"exchange_id"?: string | null,"id"?: string,"listing_id": string,"owner_id": string,"starts_on": string,"status"?: string,"version"?: number
+                  }
+                  Update: {
+                    "borrower_id"?: string,"community_id"?: string,"created_at"?: string,"decided_at"?: string | null,"ends_on"?: string,"exchange_id"?: string | null,"id"?: string,"listing_id"?: string,"owner_id"?: string,"starts_on"?: string,"status"?: string,"version"?: number
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "borrow_requests_community_id_fkey"
+      columns: ["community_id"]
+isOneToOne: false
+      referencedRelation: "communities"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "borrow_requests_exchange_id_fkey"
+      columns: ["exchange_id"]
+isOneToOne: true
+      referencedRelation: "exchanges"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "borrow_requests_listing_id_community_id_fkey"
+      columns: ["listing_id","community_id"]
+isOneToOne: false
+      referencedRelation: "listings"
+      referencedColumns: ["id","community_id"]
     }
                   ]
                 },"command_intents": {
@@ -362,6 +408,38 @@ isOneToOne: false
       columns: ["community_id"]
 isOneToOne: false
       referencedRelation: "communities"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"item_reservations": {
+                  Row: {
+                    "acknowledged_at": string | null,"acknowledgment_due_at": string,"blocking": boolean,"condition": string,"created_at": string,"custody_unresolved": boolean,"dates": unknown,"ends_on": string,"exchange_id": string,"lending_conditions": string,"listing_id": string,"replacement_value": number,"request_id": string,"starts_on": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "acknowledged_at"?: string | null,"acknowledgment_due_at": string,"blocking"?: boolean,"condition": string,"created_at"?: string,"custody_unresolved"?: boolean,"dates"?: never,"ends_on": string,"exchange_id": string,"lending_conditions": string,"listing_id": string,"replacement_value": number,"request_id": string,"starts_on": string
+                  }
+                  Update: {
+                    "acknowledged_at"?: string | null,"acknowledgment_due_at"?: string,"blocking"?: boolean,"condition"?: string,"created_at"?: string,"custody_unresolved"?: boolean,"dates"?: never,"ends_on"?: string,"exchange_id"?: string,"lending_conditions"?: string,"listing_id"?: string,"replacement_value"?: number,"request_id"?: string,"starts_on"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "item_reservations_exchange_id_fkey"
+      columns: ["exchange_id"]
+isOneToOne: true
+      referencedRelation: "exchanges"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "item_reservations_listing_id_fkey"
+      columns: ["listing_id"]
+isOneToOne: false
+      referencedRelation: "listings"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "item_reservations_request_id_fkey"
+      columns: ["request_id"]
+isOneToOne: true
+      referencedRelation: "borrow_requests"
       referencedColumns: ["id"]
     }
                   ]
@@ -980,11 +1058,20 @@ isOneToOne: true
 "create_help_post":
 { Args: { "p_community_id": string,"p_fields": Json,"p_intent_id": string,"p_post_kind": string }; Returns: Json
                            },
+"decide_borrow_request":
+{ Args: { "p_decision": string,"p_expected_version": number,"p_intent_id": string,"p_request_id": string }; Returns: Json
+                           },
 "decide_membership":
 { Args: { "p_application_id": string,"p_decision": string,"p_intent_id": string,"p_reason"?: string }; Returns: Json
                            },
 "edit_help_post":
 { Args: { "p_fields": Json,"p_intent_id": string,"p_post_id": string,"p_post_kind": string }; Returns: Json
+                           },
+"expire_due_item_approvals":
+{ Args: Record<PropertyKey, never>; Returns: number
+                           },
+"expire_item_approval":
+{ Args: { "p_exchange_id": string }; Returns: Json
                            },
 "finish_notification":
 { Args: { "p_claim_token": string,"p_error"?: string,"p_outbox_id": string }; Returns: Json
@@ -1080,6 +1167,9 @@ isOneToOne: true
                            },
 "start_conversation":
 { Args: { "p_community_id": string,"p_intent_id": string,"p_participant_id": string }; Returns: Json
+                           },
+"submit_borrow_request":
+{ Args: { "p_ends_on": string,"p_intent_id": string,"p_listing_id": string,"p_starts_on": string }; Returns: Json
                            },
 "submit_vouch":
 { Args: { "p_application_id": string,"p_intent_id": string,"p_statement": string }; Returns: Json
