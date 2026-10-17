@@ -1,4 +1,5 @@
 import { helpExchangeSchema, helpPostSchema } from '../../src/features/help/model';
+import { borrowViewSchema } from '../../src/features/borrowing/model';
 import { createClient } from '@supabase/supabase-js';
 import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -242,6 +243,62 @@ export async function uploadListingImage(member: Awaited<ReturnType<typeof actor
   const completed = await member.client.rpc('complete_listing_image', { p_intent_id: randomUUID(), p_image_id: image.id });
   if (completed.error) throw completed.error;
   return image;
+}
+
+export async function borrowingFixture(label = 'borrowing') {
+  const f = await listingFixture(label);
+  const carol = await activeMember(f.owner, f.community.id, `${label}-carol`);
+  const listing = await publishDrill(f.alice, f.community.id);
+  return { ...f, carol, listing };
+}
+export async function requestItem(borrower: Awaited<ReturnType<typeof actor>>, listingId: string, startsOn = '2027-01-15', endsOn = '2027-01-17', intent = randomUUID()) {
+  const result = await borrower.client.rpc('submit_borrow_request', { p_intent_id: intent, p_listing_id: listingId, p_starts_on: startsOn, p_ends_on: endsOn });
+  if (result.error) throw result.error;
+  return borrowViewSchema.parse(result.data);
+}
+export async function decideBorrow(owner: Awaited<ReturnType<typeof actor>>, request: { id: string; version: number }, decision: 'approved' | 'rejected' = 'approved', intent = randomUUID()) {
+  return owner.client.rpc('decide_borrow_request', { p_intent_id: intent, p_request_id: request.id, p_expected_version: request.version, p_decision: decision });
+}
+export async function approveBorrow(owner: Awaited<ReturnType<typeof actor>>, request: { id: string; version: number }) {
+  const result = await decideBorrow(owner, request);
+  if (result.error) throw result.error;
+  return borrowViewSchema.parse(result.data);
+}
+// Test-only shortening of the configured 48-hour acknowledgment window; always restored.
+export async function withAcknowledgmentWindow<T>(window: string, run: () => Promise<T>) {
+  const set = async (value: string) => { const result = await admin.from('allocation_settings').update({ acknowledgment_window: value }).eq('singleton', true); if (result.error) throw result.error; };
+  await set(window);
+  try { return await run(); } finally { await set('48 hours'); }
+}
+// Stands in for issue 7 Handoff: the borrower acknowledged in time and took the item.
+export async function checkOutFixture(exchangeId: string) {
+  for (const update of [admin.from('item_reservations').update({ acknowledged_at: new Date().toISOString() }).eq('exchange_id', exchangeId), admin.from('exchanges').update({ state: 'handoff_pending' }).eq('id', exchangeId), admin.from('exchanges').update({ state: 'checked_out' }).eq('id', exchangeId)]) {
+    const result = await update; if (result.error) throw result.error;
+  }
+}
+export async function overdueBorrowFixture(f: Awaited<ReturnType<typeof borrowingFixture>>) {
+  const exchange = await admin.from('exchanges').insert({ community_id: f.community.id, kind: 'item', provider_id: f.alice.id, receiver_id: f.bob.id, source_kind: 'listing', source_id: f.listing.id, state: 'approved' }).select('id').single();
+  if (exchange.error) throw exchange.error;
+  const request = await admin.from('borrow_requests').insert({ community_id: f.community.id, listing_id: f.listing.id, owner_id: f.alice.id, borrower_id: f.bob.id, starts_on: '2020-01-15', ends_on: '2020-01-17', status: 'approved', version: 2, exchange_id: exchange.data.id, decided_at: new Date().toISOString() }).select('id').single();
+  if (request.error) throw request.error;
+  const reservation = await admin.from('item_reservations').insert({ exchange_id: exchange.data.id, request_id: request.data.id, listing_id: f.listing.id, starts_on: '2020-01-15', ends_on: '2020-01-17', acknowledgment_due_at: new Date(Date.now() + 48 * 3600000).toISOString(), condition: drillDetails.condition, replacement_value: drillDetails.replacement_value, lending_conditions: drillDetails.lending_conditions });
+  if (reservation.error) throw reservation.error;
+  await checkOutFixture(exchange.data.id);
+  return { exchange_id: exchange.data.id, request_id: request.data.id };
+}
+export async function borrowRecords(listingId: string) {
+  const [requests, reservations, exchanges] = await Promise.all([
+    admin.from('borrow_requests').select('id,borrower_id,status,version,exchange_id,starts_on,ends_on').eq('listing_id', listingId).order('created_at'),
+    admin.from('item_reservations').select('exchange_id,request_id,dates,blocking,custody_unresolved,acknowledgment_due_at').eq('listing_id', listingId).order('starts_on'),
+    admin.from('exchanges').select('id,kind,state,provider_id,receiver_id').eq('source_id', listingId).order('created_at'),
+  ]);
+  for (const result of [requests, reservations, exchanges]) if (result.error) throw result.error;
+  return { requests: requests.data ?? [], reservations: reservations.data ?? [], exchanges: exchanges.data ?? [] };
+}
+export async function borrowNotices(communityId: string, kind: string) {
+  const result = await admin.from('notification_outbox').select('recipient_id,channel,kind').eq('community_id', communityId).eq('kind', kind).order('recipient_id').order('channel');
+  if (result.error) throw result.error;
+  return result.data;
 }
 
 export const helpListingFields = (overrides: Record<string, unknown> = {}) => ({ title: 'Moving help with a van', description: 'I can lift and drive.', category: 'moving', skill: 'Lifting and van driving', skill_level: 'experienced', availability: 'Weekend mornings', geographic_constraints: 'Within 3 miles of Maple Street', scheduling_preferences: 'Two days notice', ...overrides });
