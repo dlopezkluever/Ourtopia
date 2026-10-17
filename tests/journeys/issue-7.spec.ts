@@ -1,7 +1,7 @@
 import { test, expect, type Browser, type Page, type TestInfo } from '@playwright/test';
 import { execFileSync, spawn } from 'node:child_process';
 import { copyFileSync, mkdirSync, writeFileSync } from 'node:fs';
-import { admin, advanceHandoff, approveBorrow, borrowingFixture, handoffAction, handoffCondition, handoffFixture, handoffSchedule, handoffTerms, itemHandoff, listingImageBytes, password, requestItem, withAcknowledgmentWindow } from '../../scripts/verify/backend';
+import { admin, advanceHandoff, handoffReminders, approveBorrow, borrowingFixture, handoffAction, handoffCondition, handoffFixture, handoffSchedule, handoffTerms, itemHandoff, listingImageBytes, password, requestItem, withAcknowledgmentWindow } from '../../scripts/verify/backend';
 import { deliverOne } from '../../supabase/functions/notifications/worker';
 import { localDelivery } from '../../supabase/functions/notifications/local';
 
@@ -95,10 +95,12 @@ test('lane 4 reschedule updates both participants and suppresses obsolete remind
     await expect(owner.page.getByRole('region', { name: 'Current Handoff schedule' })).toContainText('Library side entrance');
     await owner.page.getByRole('button', { name: 'Confirm schedule', exact: true }).click();
     await page.getByRole('button', { name: 'Refresh Handoff', exact: true }).click(); await expect(page.getByRole('region', { name: 'Current Handoff schedule' })).toContainText('Schedule confirmed');
-    const outbox = (await admin.from('notification_outbox').select('id,invalidated_at,handoff_schedule_revision').eq('handoff_exchange_id', f.exchangeId)).data!;
-    expect(outbox.filter(r => r.invalidated_at !== null)).toHaveLength(2); expect(outbox.filter(r => r.invalidated_at === null)).toHaveLength(2);
-    for (const row of outbox.filter(r => r.invalidated_at !== null)) expect((await admin.rpc('claim_notification', { p_outbox_id: row.id })).data).toBeNull();
-    const currentIds = outbox.filter(r => r.invalidated_at === null).map(r => r.id);
+    const outbox = await handoffReminders(f.exchangeId);
+    expect(outbox.filter(r => !r.current)).toHaveLength(2); expect(outbox.filter(r => r.current)).toHaveLength(2);
+    expect((await admin.from('notification_outbox').update({ next_attempt_at: new Date().toISOString() }).in('id', outbox.filter(r => !r.current).map(r => r.id))).error).toBeNull();
+    for (const row of outbox.filter(r => !r.current)) expect((await admin.rpc('claim_notification', { p_outbox_id: row.id })).data).toBeNull();
+    expect((await handoffReminders(f.exchangeId)).filter(r => !r.current).map(r => r.state)).toEqual(['suppressed', 'suppressed']);
+    const currentIds = outbox.filter(r => r.current).map(r => r.id);
     expect((await admin.from('notification_outbox').update({ next_attempt_at: new Date().toISOString() }).in('id', currentIds)).error).toBeNull();
     const { send } = localDelivery(); for (const id of currentIds) await deliverOne(admin, send, id);
     await owner.page.reload(); await expect(owner.page.getByRole('region', { name: 'Handoff notices' })).toContainText('Your upcoming Handoff needs your attention.');

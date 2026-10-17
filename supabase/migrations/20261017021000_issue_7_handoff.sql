@@ -160,15 +160,11 @@ begin
 end;
 $$;
 
-alter table public.notification_outbox add column handoff_exchange_id uuid references public.item_handoffs(exchange_id);
-alter table public.notification_outbox add column handoff_schedule_revision integer;
-alter table public.notification_outbox add column invalidated_at timestamptz;
-alter table public.notification_outbox add constraint handoff_notice_identity check (
-  (handoff_exchange_id is null) = (handoff_schedule_revision is null));
-
-create function private.invalidate_handoff_reminders(p_exchange uuid) returns void language sql set search_path = '' as $$
-  update public.notification_outbox set invalidated_at = clock_timestamp()
-    where handoff_exchange_id = p_exchange and invalidated_at is null;
+-- Upcoming Handoff reminders use the issue-23 reminder identity keyed by the Exchange.
+-- A due time no notice carries makes every queued reminder obsolete until a new confirmation reschedules it.
+create function private.invalidate_handoff_reminders(p_exchange uuid) returns void language sql security definer set search_path = '' as $$
+  update public.notification_reminders set due_at = 'infinity'
+    where source_key = p_exchange and kind = 'item_handoff_upcoming' and due_at <> 'infinity';
 $$;
 
 create function public.command_item_handoff(p_intent_id uuid, p_exchange_id uuid, p_expected_revision integer, p_action text, p_details jsonb default '{}'::jsonb)
@@ -259,9 +255,8 @@ begin
     select event_id, e.community_id, case when actor = e.provider_id then e.receiver_id else e.provider_id end, channel, notice_kind
       from unnest(array['in_app','email']) channel;
   if p_action = 'confirm_schedule' then
-    insert into public.notification_outbox(event_id, community_id, recipient_id, channel, kind, next_attempt_at, handoff_exchange_id, handoff_schedule_revision)
-      select event_id, e.community_id, e.provider_id, channel, 'item_handoff_upcoming', greatest(clock_timestamp(), h.starts_at - interval '24 hours'), e.id, h.schedule_revision
-      from unnest(array['in_app','email']) channel;
+    perform public.schedule_notification_reminder(e.community_id, e.id, event_id, e.provider_id, channel, 'item_handoff_upcoming',
+      greatest(clock_timestamp(), h.starts_at - interval '24 hours')) from unnest(array['in_app','email']) channel;
   end if;
   insert into public.notification_hints(recipient_id) values(e.provider_id), (e.receiver_id);
   outcome := private.handoff_view(e.id);
@@ -337,71 +332,3 @@ grant execute on function public.read_item_handoff(uuid), public.command_item_ha
   public.prepare_exchange_evidence(uuid, uuid, uuid, text, integer), public.complete_exchange_evidence(uuid, uuid) to authenticated;
 
 notify pgrst, 'reload schema';
-
-create or replace function public.claim_notification(p_outbox_id uuid default null)
-returns jsonb language plpgsql security definer set search_path = '' as $$
-declare item public.notification_outbox; token uuid := gen_random_uuid(); address text;
-begin
-  select * into item from public.notification_outbox
-    where invalidated_at is null and (p_outbox_id is null or id = p_outbox_id) and (
-      (state in ('pending', 'failed') and next_attempt_at <= clock_timestamp())
-      or (state = 'processing' and lease_until <= clock_timestamp())
-    ) order by next_attempt_at, id for update skip locked limit 1;
-  if not found then return null; end if;
-  update public.notification_attempts set finished_at = clock_timestamp(), error = 'Delivery lease expired.'
-    where id = item.claim_token and finished_at is null;
-  update public.notification_outbox set state = 'processing', attempts = attempts + 1,
-    claim_token = token, lease_until = clock_timestamp() + interval '2 minutes'
-    where id = item.id returning * into item;
-  insert into public.notification_attempts(id, outbox_id, number) values(token, item.id, item.attempts);
-  select email into address from auth.users where id = item.recipient_id;
-  return to_jsonb(item) || jsonb_build_object('recipient_email', address);
-end;
-$$;
-revoke all on function public.claim_notification(uuid) from public, anon, authenticated;
-grant execute on function public.claim_notification(uuid) to service_role;
-
-create or replace function public.finish_notification(p_outbox_id uuid, p_claim_token uuid, p_error text default null)
-returns jsonb language plpgsql security definer set search_path = '' as $$
-declare item public.notification_outbox;
-begin
-  select * into item from public.notification_outbox where id = p_outbox_id for update;
-  if not found then raise exception using errcode = '22023', message = 'Notice unavailable.'; end if;
-  if item.state = 'delivered' then return to_jsonb(item); end if;
-  if item.state <> 'processing' or item.claim_token <> p_claim_token or item.lease_until <= clock_timestamp() then
-    raise exception using errcode = '55000', message = 'Delivery lease is no longer current.';
-  end if;
-  update public.notification_attempts set finished_at = clock_timestamp(), error = left(p_error, 500) where id = p_claim_token;
-  if p_error is not null then
-    update public.notification_outbox set state = 'failed', last_error = left(p_error, 500),
-      next_attempt_at = clock_timestamp() + least(interval '1 hour', interval '30 seconds' * power(2, least(item.attempts - 1, 7))),
-      lease_until = null where id = item.id returning * into item;
-  else
-    if item.channel = 'in_app' and item.invalidated_at is null and (item.handoff_exchange_id is null
-      or public.is_handoff_notice_current(item.id, p_claim_token)) then
-      insert into public.notifications(outbox_id, recipient_id, application_id, kind)
-        values(item.id, item.recipient_id, item.application_id, item.kind) on conflict (outbox_id) do nothing;
-      insert into public.notification_hints(recipient_id) values(item.recipient_id);
-    end if;
-    update public.notification_outbox set state = 'delivered', delivered_at = clock_timestamp(), last_error = null,
-      lease_until = null where id = item.id returning * into item;
-  end if;
-  return to_jsonb(item);
-end;
-$$;
-revoke all on function public.finish_notification(uuid, uuid, text) from public, anon, authenticated;
-grant execute on function public.finish_notification(uuid, uuid, text) to service_role;
-
-
-create function public.is_handoff_notice_current(p_outbox_id uuid, p_claim_token uuid)
-returns boolean language sql stable security definer set search_path = '' as $$
-  select exists(select 1 from public.notification_outbox o
-    join public.item_handoffs h on h.exchange_id = o.handoff_exchange_id
-    join public.exchanges e on e.id = h.exchange_id
-    where o.id = p_outbox_id and o.claim_token = p_claim_token and o.state = 'processing'
-      and o.lease_until > clock_timestamp() and o.invalidated_at is null
-      and o.handoff_schedule_revision = h.schedule_revision
-      and h.schedule_confirmed_at is not null and e.state = 'handoff_pending');
-$$;
-revoke all on function public.is_handoff_notice_current(uuid, uuid) from public, anon, authenticated;
-grant execute on function public.is_handoff_notice_current(uuid, uuid) to service_role;

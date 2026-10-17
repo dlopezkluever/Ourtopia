@@ -345,3 +345,11 @@ a.sidebar-nav { text-decoration: none; }
 .handoff-photo-grid { display: flex; flex-wrap: wrap; gap: 1rem; }
 .handoff-photo-grid img { width: 150px; height: 150px; object-fit: cover; border-radius: 8px; }
 .handoff-card :focus-visible { outline: 3px solid #2b7951; outline-offset: 3px; }
+
+.delivery-console > select { max-width: 100%; margin: 0.5rem 1rem 1rem 0; }
+.delivery-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 1rem; }
+.delivery-card { min-width: 0; overflow-wrap: anywhere; }
+.delivery-card dl { display: grid; grid-template-columns: 8rem minmax(0, 1fr); gap: 0.4rem; }
+.delivery-card dd { margin: 0; }
+.delivery-card details { margin-top: 1rem; }
+.delivery-card summary { cursor: pointer; padding: 0.5rem 0; }

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { randomUUID } from 'node:crypto';
-import { admin, approveBorrow, borrowingFixture, handoffFixture, advanceHandoff, handoffAction, handoffTerms, handoffSchedule, handoffCondition, itemHandoff, requestItem, withAcknowledgmentWindow, listingImageBytes, receipt } from '../../scripts/verify/backend';
+import { admin, approveBorrow, handoffReminders, borrowingFixture, handoffFixture, advanceHandoff, handoffAction, handoffTerms, handoffSchedule, handoffCondition, itemHandoff, requestItem, withAcknowledgmentWindow, listingImageBytes, receipt } from '../../scripts/verify/backend';
 import { handoffSchema, evidenceSchema } from '../../src/features/handoff/model';
 import { deliverOne } from '../../supabase/functions/notifications/worker';
 import { localDelivery } from '../../supabase/functions/notifications/local';
@@ -101,22 +101,25 @@ test('A failure after mutation rolls back acknowledgment, Exchange, audit, inten
 
 test('Reschedule rejects stale confirmation and suppresses queued and already claimed reminders; current reminder delivers both channels', async () => {
   const f = await handoffFixture('handoff-reminder'); await advanceHandoff(f, 'schedule');
-  const outbox = await admin.from('notification_outbox').select('id,channel').eq('handoff_exchange_id', f.exchangeId);
-  assert.equal(outbox.data?.length, 2);
+  const outbox = { data: await handoffReminders(f.exchangeId) };
+  assert.equal(outbox.data.length, 2); assert.ok(outbox.data.every(row => row.current));
   const claimed = await admin.rpc('claim_notification', { p_outbox_id: outbox.data!.find(row => row.channel === 'in_app')!.id });
   assert.equal(claimed.error, null);
   const old = await itemHandoff(f.bob, f.exchangeId);
   assert.equal((await handoffAction(f.alice, f.exchangeId, old.revision, 'propose_schedule', { ...handoffSchedule(), location: 'Side gate' })).error, null);
   assert.equal((await handoffAction(f.bob, f.exchangeId, old.revision, 'confirm_schedule')).error?.code, '55000');
   const claimedValue = claimed.data as { id: string; claim_token: string };
-  assert.equal((await admin.rpc('is_handoff_notice_current', { p_outbox_id: claimedValue.id, p_claim_token: claimedValue.claim_token })).data, false);
-  assert.equal((await admin.rpc('finish_notification', { p_outbox_id: claimedValue.id, p_claim_token: claimedValue.claim_token })).error, null);
+  assert.equal((await admin.rpc('check_notification_claim', { p_outbox_id: claimedValue.id, p_claim_token: claimedValue.claim_token })).data, false);
+  assert.equal((await admin.from('notification_outbox').select('state').eq('id', claimedValue.id).single()).data?.state, 'suppressed');
   assert.deepEqual((await admin.from('notifications').select('id').in('outbox_id', outbox.data!.map(row => row.id))).data, []);
   const staleEmail = outbox.data!.find(row => row.channel === 'email')!;
   assert.equal((await admin.rpc('claim_notification', { p_outbox_id: staleEmail.id })).data, null);
   const current = await itemHandoff(f.bob, f.exchangeId);
   assert.equal((await handoffAction(f.bob, f.exchangeId, current.revision, 'confirm_schedule')).error, null);
-  const currentRows = (await admin.from('notification_outbox').select('id,channel,kind').eq('handoff_exchange_id', f.exchangeId).is('invalidated_at', null)).data!;
+  const reminders = await handoffReminders(f.exchangeId);
+  assert.deepEqual(reminders.filter(row => !row.current).map(row => row.state), ['suppressed', 'suppressed']);
+  const currentRows = reminders.filter(row => row.current);
+  assert.equal(currentRows.length, 2);
   const email = currentRows.find(row => row.channel === 'email')!;
   const failed = await deliverOne(admin, async () => { throw new Error('Provider unavailable'); }, email.id) as { state: string };
   assert.equal(failed.state, 'failed'); assert.equal((await itemHandoff(f.alice, f.exchangeId)).state, 'handoff_pending');
