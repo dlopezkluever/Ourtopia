@@ -18,6 +18,7 @@ const ruleLabels: Record<string, string> = {
   item_owner_share: 'Shared an item',
   item_borrower_return: 'Returned a borrowed item',
   help_helper_completed: 'Completed help',
+  exchange_thank_you: 'Received an Exchange thank-you',
 };
 export function ruleLabel(rule: string) { return ruleLabels[rule] ?? 'Verified standing change'; }
 

@@ -365,6 +365,38 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"exchange_thank_yous": {
+                  Row: {
+                    "author_id": string,"community_id": string,"created_at": string,"event_id": string,"exchange_id": string,"id": string,"message": string,"recipient_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "author_id": string,"community_id": string,"created_at"?: string,"event_id": string,"exchange_id": string,"id"?: string,"message": string,"recipient_id": string
+                  }
+                  Update: {
+                    "author_id"?: string,"community_id"?: string,"created_at"?: string,"event_id"?: string,"exchange_id"?: string,"id"?: string,"message"?: string,"recipient_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "exchange_thank_yous_community_id_fkey"
+      columns: ["community_id"]
+isOneToOne: false
+      referencedRelation: "communities"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "exchange_thank_yous_event_id_fkey"
+      columns: ["event_id"]
+isOneToOne: true
+      referencedRelation: "community_events"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "exchange_thank_yous_exchange_id_fkey"
+      columns: ["exchange_id"]
+isOneToOne: false
+      referencedRelation: "exchanges"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"exchanges": {
                   Row: {
                     "community_id": string,"completed_at": string | null,"created_at": string,"id": string,"kind": string,"provider_id": string,"receiver_id": string,"source_id": string,"source_kind": string,"state": string
@@ -1441,6 +1473,9 @@ isOneToOne: true
                            },
 "read_community_feed":
 { Args: { "p_community_id": string }; Returns: Json
+                           },
+"thank_exchange":
+{ Args: { "p_exchange_id": string,"p_intent_id": string,"p_message": string }; Returns: Json
                            },
 "read_exchange_disputes":
 { Args: { "p_exchange_id": string }; Returns: Json
