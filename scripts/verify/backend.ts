@@ -469,3 +469,83 @@ export async function workflowEffects(communityId: string) {
   for (const result of [exchanges, reservations, reputation, interactions, requests]) if (result.error) throw result.error;
   return { exchanges: exchanges.count, reservations: reservations.count, reputationEvents: reputation.count, qualifyingInteractions: interactions.count, borrowRequests: requests.count };
 }
+
+// Issue 9 Return fixtures. A checked-out loan comes from the real Handoff commands.
+export async function checkedOutFixture(label = 'return') {
+  const f = await handoffFixture(label); await advanceHandoff(f);
+  return f;
+}
+export const returnCondition = { condition: 'Good. Light marks on the case.', accessories: 'Two batteries and charger' };
+export async function returnAction(member: Awaited<ReturnType<typeof actor>>, exchangeId: string, revision: number, action: string, details: Record<string, string | boolean> = {}, intent = randomUUID()) {
+  return member.client.rpc('command_item_return', { p_intent_id: intent, p_exchange_id: exchangeId, p_expected_revision: revision, p_action: action, p_details: details });
+}
+export async function itemReturn(member: Awaited<ReturnType<typeof actor>>, exchangeId: string) {
+  const result = await member.client.rpc('read_item_return', { p_exchange_id: exchangeId });
+  if (result.error) throw result.error;
+  const { returnViewSchema } = await import('../../src/features/returns/model');
+  return returnViewSchema.parse(result.data);
+}
+export async function recordReturn(f: Awaited<ReturnType<typeof handoffFixture>>, member = f.bob, details: Record<string, string> = returnCondition) {
+  const current = await itemReturn(member, f.exchangeId);
+  const result = await returnAction(member, f.exchangeId, current.revision, 'record_return', details);
+  if (result.error) throw result.error;
+  return itemReturn(member, f.exchangeId);
+}
+export async function completeReturn(f: Awaited<ReturnType<typeof handoffFixture>>) {
+  const recorded = await recordReturn(f);
+  const result = await returnAction(f.alice, f.exchangeId, recorded.revision, 'confirm_return', { condition_matches: true });
+  if (result.error) throw result.error;
+  return itemReturn(f.alice, f.exchangeId);
+}
+// Test-only shortening of the configured Return reminder and review windows; always restored.
+export async function withReturnWindows<T>(windows: { confirmation_reminder_after?: string; review_after?: string }, run: () => Promise<T>) {
+  const set = async (value: Record<string, string>) => { const result = await admin.from('item_return_settings').update(value).eq('singleton', true); if (result.error) throw result.error; };
+  await set(windows);
+  try { return await run(); } finally { await set({ confirmation_reminder_after: '24 hours', review_after: '7 days' }); }
+}
+export async function returnReminders(exchangeId: string, kind: string) {
+  const reminders = await admin.from('notification_reminders').select('id,event_id,due_at,recipient_id').eq('source_key', exchangeId).eq('kind', kind);
+  if (reminders.error) throw reminders.error;
+  const outbox = await admin.from('notification_outbox').select('id,channel,kind,state,recipient_id,event_id,reminder_id,reminder_due_at,next_attempt_at').in('reminder_id', reminders.data.map(row => row.id)).order('created_at');
+  if (outbox.error) throw outbox.error;
+  return outbox.data.map(row => {
+    const reminder = reminders.data.find(r => r.id === row.reminder_id)!;
+    return { ...row, current: reminder.event_id === row.event_id && Date.parse(reminder.due_at) === Date.parse(row.reminder_due_at!) };
+  });
+}
+// A loan whose reserved dates are already over, checked out through the real Handoff commands.
+export async function overdueCheckedOutFixture(label = 'return-overdue') {
+  const f = await borrowingFixture(label);
+  const loan = await overdueApprovedLoan(f);
+  const h = { ...f, exchangeId: loan, loan: { exchange_id: loan } as unknown as Awaited<ReturnType<typeof approveBorrow>> };
+  await advanceHandoff(h);
+  return h;
+}
+async function overdueApprovedLoan(f: Awaited<ReturnType<typeof borrowingFixture>>) {
+  const exchange = await admin.from('exchanges').insert({ community_id: f.community.id, kind: 'item', provider_id: f.alice.id, receiver_id: f.bob.id, source_kind: 'listing', source_id: f.listing.id, state: 'approved' }).select('id').single();
+  if (exchange.error) throw exchange.error;
+  const request = await admin.from('borrow_requests').insert({ community_id: f.community.id, listing_id: f.listing.id, owner_id: f.alice.id, borrower_id: f.bob.id, starts_on: '2020-01-15', ends_on: '2020-01-17', status: 'approved', version: 2, exchange_id: exchange.data.id, decided_at: new Date().toISOString() }).select('id').single();
+  if (request.error) throw request.error;
+  const reservation = await admin.from('item_reservations').insert({ exchange_id: exchange.data.id, request_id: request.data.id, listing_id: f.listing.id, starts_on: '2020-01-15', ends_on: '2020-01-17', acknowledgment_due_at: new Date(Date.now() + 48 * 3600000).toISOString(), condition: drillDetails.condition, replacement_value: drillDetails.replacement_value, lending_conditions: drillDetails.lending_conditions });
+  if (reservation.error) throw reservation.error;
+  return exchange.data.id as string;
+}
+export async function loanEffects(exchangeId: string) {
+  const [exchange, interactions, events, feed, completed] = await Promise.all([
+    admin.from('exchanges').select('state,completed_at,community_id').eq('id', exchangeId).single(),
+    admin.from('qualifying_interactions').select('participant_id').eq('exchange_id', exchangeId).order('participant_id'),
+    admin.from('reputation_events').select('rule,points,recipient_id').eq('exchange_id', exchangeId).order('rule'),
+    admin.from('community_feed').select('id,kind').eq('exchange_id', exchangeId),
+    admin.from('exchange_events').select('kind').eq('exchange_id', exchangeId).in('kind', ['item_returned', 'item_completed', 'completion_settled']).order('kind'),
+  ]);
+  for (const result of [exchange, interactions, events, feed, completed]) if (result.error) throw result.error;
+  const reservation = await admin.from('item_reservations').select('blocking,custody_unresolved').eq('exchange_id', exchangeId).single();
+  if (reservation.error) throw reservation.error;
+  return { state: exchange.data!.state, completedAt: exchange.data!.completed_at, interactions: interactions.data!.length, events: events.data, feed: feed.data!.length,
+    milestones: completed.data!.map(row => row.kind), reservation: reservation.data, communityId: exchange.data!.community_id as string };
+}
+export async function localScores(communityId: string, ...members: { id: string }[]) {
+  const result = await admin.from('reputation_events').select('recipient_id,points').eq('community_id', communityId);
+  if (result.error) throw result.error;
+  return members.map(member => 50 + result.data.filter(row => row.recipient_id === member.id).reduce((sum, row) => sum + row.points, 0));
+}

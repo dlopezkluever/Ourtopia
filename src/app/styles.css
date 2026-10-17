@@ -369,3 +369,8 @@ a.sidebar-nav { text-decoration: none; }
 .dispute-history time { display: block; font-size: .85rem; }
 .dispute-history p { white-space: pre-wrap; }
 .dispute-block { padding: 1rem; border-left: 4px solid #b77926; background: #fff5df; color: #493111; }
+.return-page { margin-top: 0; padding-top: 0; }
+.return-compare { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); }
+.return-compare > div { min-width: 0; border: 1px solid #d4dfd7; border-radius: 12px; padding: 1rem; }
+.return-card select { width: 100%; min-height: 44px; padding: .5rem; border: 1px solid #899e91; border-radius: 8px; background: white; }
+.community-feed ul, .review-queue ul { margin: 1rem 0; padding-left: 1.2rem; line-height: 2; overflow-wrap: anywhere; }
