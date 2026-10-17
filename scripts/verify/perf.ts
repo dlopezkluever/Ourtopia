@@ -24,7 +24,8 @@ import { conversationSchema, messageSchema } from '../../src/features/messages/m
 import { helpExchangeSchema, helpPostSchema } from '../../src/features/help/model';
 
 const { values } = parseArgs({ options: { issue: { type: 'string' }, base: { type: 'string' }, head: { type: 'string' }, pairs: { type: 'string', default: '10' } } });
-if (values.issue === '8') await verifyIssue8(values);
+if (values.issue === '24') await verifyIssue24(values);
+else if (values.issue === '8') await verifyIssue8(values);
 else if (values.issue === '11') await verifyIssue11(values);
 else if (values.issue === '7') await verifyIssue7(values);
 else if (values.issue === '23') await verifyIssue23(values);
@@ -37,6 +38,78 @@ else if (values.issue === '3' || values.issue === '4' || values.issue === '5') a
 else await verifyIssue2(values);
 
 type PerfArguments = { issue?: string; base?: string; head?: string; pairs?: string };
+
+async function verifyIssue24(values: PerfArguments) {
+  const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+  assert.equal(values.head, head); assert.ok(values.base);
+  const base = values.base; const pairs = Number(values.pairs); assert.ok(Number.isInteger(pairs) && pairs >= 10);
+  const tree = execFileSync('git', ['ls-tree', '-r', '--name-only', base], { encoding: 'utf8' }).split('\n');
+  assert.ok(!tree.some(path => path.startsWith('src/features/drafts/')));
+  assert.equal(execFileSync('git', ['diff', base, head, '--', 'package-lock.json'], { encoding: 'utf8' }), '');
+  const directory = `${process.env.EVIDENCE_DIR ?? '.pilot-evidence'}/perf`; mkdirSync(directory, { recursive: true });
+  const trunkRoot = resolve('.pilot-evidence', 'perf-trunk-24'); assert.ok(!existsSync(trunkRoot));
+  const samples: { pair: number; side: string; readinessMs: number; queryMs: number; communityId: string }[] = [];
+  const actions: { pair: number; commandMs: number; visibleMs: number; queryMs: number; revision: number }[] = [];
+  const servers: ReturnType<typeof spawn>[] = []; const startup: number[] = [];
+  const port = Number(process.env.APP_PORT ?? 5173) + 1;
+  const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH ?? (process.platform === 'win32' ? 'C:/Program Files/Google/Chrome/Application/chrome.exe' : undefined) });
+  const persist = (result: unknown) => writeFileSync(`${directory}/samples.json`, JSON.stringify({ head, base, pairs, samples, actions, startup, host: { cores: cpus().length, totalMemory: totalmem(), freeMemory: freemem(), loadAverage: loadavg() }, result }, null, 2));
+  async function serve(root: string, at: number) {
+    const started = performance.now();
+    const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', root, '--host', '127.0.0.1', '--port', String(at), '--strictPort'], { stdio: 'ignore', windowsHide: true }); servers.push(server);
+    const deadline = Date.now() + 60000;
+    while (Date.now() < deadline) {
+      assert.equal(server.exitCode, null);
+      if (await fetch(`http://127.0.0.1:${at}`).then(result => result.ok, () => false)) { startup.push(performance.now() - started); return; }
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    throw new Error('P24 probe exceeded 60-second startup budget.');
+  }
+  try {
+    for (const path of tree.filter(path => /^(src\/|vite.config.ts$|index.html$|package.json$)/.test(path))) {
+      const target = join(trunkRoot, path); mkdirSync(resolve(target, '..'), { recursive: true }); writeFileSync(target, execFileSync('git', ['show', `${base}:${path}`]));
+    }
+    copyFileSync('.env.local', join(trunkRoot, '.env.local'));
+    await serve(trunkRoot, port); await serve('.', port + 1);
+    for (let pair = 0; pair < pairs; pair++) {
+      const f = await membershipFixture(`perf24-${pair}`);
+      for (const [side, at] of [['trunk', port], ['head', port + 1]] satisfies [string, number][]) {
+        const context = await browser.newContext({ baseURL: `http://127.0.0.1:${at}`, viewport: { width: 1440, height: 1000 } });
+        try {
+          const page = await context.newPage(); await page.goto('/'); await page.getByLabel('Email address').fill(f.owner.email); await page.getByLabel('Password', { exact: true }).fill(password); await page.getByRole('button', { name: 'Sign in', exact: true }).last().click();
+          const home = page.getByRole('heading', { name: `Welcome to ${f.community.name}.` }); await expect(home).toBeVisible();
+          const readyAt = performance.now(); await page.reload(); await expect(home).toBeVisible(); const readinessMs = performance.now() - readyAt;
+          const readAt = performance.now(); const read = await f.owner.client.from('communities').select('id,name').eq('id', f.community.id); const queryMs = performance.now() - readAt;
+          assert.equal(read.error, null); assert.deepEqual(read.data, [{ id: f.community.id, name: f.community.name }]);
+          samples.push({ pair, side, readinessMs, queryMs, communityId: f.community.id }); persist({ failures: 0 });
+          if (side === 'head') {
+            await page.getByRole('link', { name: 'Draft contributions', exact: true }).click(); await expect(page.getByRole('heading', { name: 'Item Listing draft' })).toBeVisible();
+            let commandAt = 0; page.on('request', request => { if (request.url().includes('/rpc/command_contribution_draft')) commandAt = performance.now(); });
+            const response = page.waitForResponse(response => response.url().includes('/rpc/command_contribution_draft')).then(async response => { await response.finished(); assert.equal(response.status(), 200); return performance.now() - commandAt; });
+            const title = `Durable P24 draft ${pair}`; const actionAt = performance.now(); await page.getByLabel('Title', { exact: true }).fill(title); await expect(page.getByRole('status').filter({ hasText: 'Draft saved privately.' })).toBeVisible(); const visibleMs = performance.now() - actionAt;
+            const commandMs = await response; const queryAt = performance.now(); const draft = await f.owner.client.from('contribution_drafts').select('fields,revision,status').eq('community_id', f.community.id).eq('kind', 'item').single(); const endQueryMs = performance.now() - queryAt;
+            assert.equal(draft.error, null); assert.equal(draft.data!.status, 'editing'); assert.equal((draft.data!.fields as Record<string, unknown>).title, title);
+            await page.reload(); await expect(page.getByLabel('Title', { exact: true })).toHaveValue(title);
+            actions.push({ pair, commandMs, visibleMs, queryMs: endQueryMs, revision: draft.data!.revision }); persist({ failures: 0 });
+          }
+        } finally { await context.close(); }
+      }
+    }
+    const median = (numbers: number[]) => { const sorted = [...numbers].sort((a, b) => a - b); return (sorted[Math.floor((sorted.length - 1) / 2)] + sorted[Math.floor(sorted.length / 2)]) / 2; };
+    const summary = (side: string) => ({ readinessMs: median(samples.filter(sample => sample.side === side).map(sample => sample.readinessMs)), queryMs: median(samples.filter(sample => sample.side === side).map(sample => sample.queryMs)) });
+    const baseline = summary('trunk'); const current = summary('head'); const added = { commandMs: median(actions.map(action => action.commandMs)), visibleMs: median(actions.map(action => action.visibleMs)) };
+    const queries = [...samples.filter(sample => sample.side === 'head').map(sample => sample.queryMs), ...actions.map(action => action.queryMs)].sort((a, b) => a - b); const p95 = queries[Math.ceil(queries.length * .95) - 1];
+    const checks = { readiness: current.readinessMs <= Math.max(1.2 * baseline.readinessMs, baseline.readinessMs + 100), read: current.queryMs <= Math.max(1.2 * baseline.queryMs, baseline.queryMs + 100), command: added.commandMs <= 1000, visible: added.visibleMs <= 2000, queryP95: p95 <= 3000, startup: startup.every(value => value <= 60000) };
+    const ranges = { commandMs: [Math.min(...actions.map(action => action.commandMs)), Math.max(...actions.map(action => action.commandMs))], visibleMs: [Math.min(...actions.map(action => action.visibleMs)), Math.max(...actions.map(action => action.visibleMs))] };
+    persist({ failures: 0, baseline, head: current, added, p95, ranges, checks });
+    writeFileSync(`${directory}/report.md`, `P24 at ${head}.\n\n${pairs} interleaved pairs against ${base}. Both reload the authorized Community home and read the same persisted Community as its owner. Trunk lacks durable contribution drafts. Head adds an autosaved draft, fresh RLS read and restored form after reload. All outputs asserted. No external provider is timed.\n\nBaseline ${JSON.stringify(baseline)}. Head ${JSON.stringify(current)}. Added ${JSON.stringify(added)} ms. Query p95 ${p95} ms. Ranges ${JSON.stringify(ranges)}. Checks ${JSON.stringify(checks)}. Zero failures.\n\nThis is a local serial Chrome/Vite gate, including HTTP, Postgres and rendering. The visible path includes the deliberate 600 ms autosave debounce. Host observations are in samples.json. No production throughput or speedup claim; production performance and a saturation limiter are inconclusive.\n`);
+    assert.ok(Object.values(checks).every(Boolean), JSON.stringify(checks)); process.stdout.write(`${JSON.stringify({ baseline, head: current, added, p95, checks })}\n`);
+  } catch (error) { persist({ error: error instanceof Error ? error.message : String(error) }); throw error; }
+  finally {
+    await browser.close(); for (const server of servers) if (server.exitCode === null) server.kill();
+    assert.equal(trunkRoot, resolve('.pilot-evidence', 'perf-trunk-24')); if (existsSync(trunkRoot)) rmSync(trunkRoot, { recursive: true });
+  }
+}
 
 async function verifyIssue7(values: PerfArguments) {
   const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
