@@ -134,7 +134,11 @@ test('lane 10 report, photo and reply controls work with keyboard and fit the vi
   await page.getByLabel('Issue type').focus(); await expect(page.getByLabel('Issue type')).toBeFocused();
   await page.keyboard.press('Tab'); await expect(page.getByLabel('What happened?')).toBeFocused(); await page.keyboard.type('Keyboard report of damage.');
   await page.keyboard.press('Tab'); await expect(page.getByRole('button', { name: 'Report issue', exact: true })).toBeFocused(); await page.keyboard.press('Enter');
-  await expect(page.getByRole('article', { name: 'Structured case' })).toContainText('Keyboard report of damage.'); await upload(page);
+  await expect(page.getByRole('article', { name: 'Structured case' })).toContainText('Keyboard report of damage.');
+  await page.getByLabel('Camera or photo').setInputFiles({ name: 'invalid.txt', mimeType: 'text/plain', buffer: Buffer.from('not a photo') });
+  await page.getByRole('button', { name: 'Upload or retry photo' }).click();
+  await expect(page.getByRole('alert')).toHaveText('Choose a JPEG, PNG, or WebP photo up to 5 MB.');
+  await upload(page);
   await page.getByLabel('Your response').focus(); await page.keyboard.type('Additional accessible response.'); await page.keyboard.press('Tab'); await page.keyboard.press('Enter');
   await expect(page.getByRole('article', { name: 'Structured case' })).toContainText('Additional accessible response.'); await expect(page.getByRole('note')).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

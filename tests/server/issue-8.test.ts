@@ -40,6 +40,27 @@ test('Original reporting boundary includes exactly 30 days and rejects later tim
   receipt('issue-8-boundary', { exactGuardResults: rows, before: 'accepted', after: '22023', partialEffects: 0 });
 });
 
+test('Invalid reports and closed-case mutations leave no partial effects', async () => {
+  const f = await handoffFixture('case-atomic'); await advanceHandoff(f);
+  for (const [body, type] of [['', 'damage'], ['A problem', 'unsupported']]) {
+    const intent = randomUUID();
+    assert.equal((await reportIssue(f.bob, f.exchangeId, body, type, intent)).error?.code, '22023');
+    assert.deepEqual((await admin.from('command_intents').select('intent_id').eq('actor_id', f.bob.id).eq('intent_id', intent)).data, []);
+  }
+  assert.deepEqual((await admin.from('disputes').select('id').eq('exchange_id', f.exchangeId)).data, []);
+  assert.deepEqual((await admin.from('trust_incidents').select('id').eq('community_id', f.community.id)).data, []);
+  assert.deepEqual((await admin.from('notification_outbox').select('id').eq('community_id', f.community.id).like('kind', 'item_dispute_%')).data, []);
+  assert.equal((await reportIssue(f.bob, f.exchangeId)).error, null);
+  const view = await disputeView(f.bob, f.exchangeId); const id = view.cases[0].id;
+  assert.equal((await admin.from('disputes').update({ status: 'resolved', closed_at: new Date().toISOString() }).eq('id', id)).error, null);
+  const replies = await admin.from('dispute_responses').select('id,body').eq('dispute_id', id);
+  assert.equal((await f.alice.client.rpc('respond_to_dispute', { p_intent_id: randomUUID(), p_dispute_id: id, p_body: 'Too late' })).error?.code, '55000');
+  assert.equal((await f.bob.client.rpc('prepare_dispute_evidence', { p_intent_id: randomUUID(), p_dispute_id: id, p_evidence_id: randomUUID(), p_mime_type: 'image/png', p_byte_size: listingImageBytes.length })).error?.code, '55000');
+  assert.deepEqual((await admin.from('dispute_responses').select('id,body').eq('dispute_id', id)).data, replies.data);
+  assert.deepEqual((await admin.from('exchange_evidence').select('id').eq('dispute_id', id)).data, []);
+  receipt('issue-8-atomic', { invalidReports: '22023', noPartialEffects: true, closedResponseAndUpload: '55000', history: replies.data });
+});
+
 test('Post-completion cases preserve fulfillment, completion time, Qualifying Interactions and numeric reputation', async () => {
   const f = await completedItemFixture('case-completed');
   const before = await admin.from('exchanges').select('state,completed_at').eq('id', f.exchangeId).single();

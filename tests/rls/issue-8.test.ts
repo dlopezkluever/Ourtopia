@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { before, test } from 'node:test';
 import { actor, activeMember, admin, advanceHandoff, backendUrl, completedItemFixture, createCommunity, disputeFixture, disputeView, handoffFixture, listingImageBytes, publicClient, realtimeReady, receipt, reportIssue, startConversation, sendMessage } from '../../scripts/verify/backend';
 import { evidenceSchema } from '../../src/features/handoff/model';
@@ -134,6 +136,10 @@ test('Global incident output contains type and status without source case identi
 });
 
 test('Realtime contains recipient ID hints and never case, response, evidence, audit, outbox or reminder bodies', async () => {
+  const project = /^project_id\s*=\s*"([^"]+)"/m.exec(readFileSync('supabase/config.toml', 'utf8'))?.[1];
+  assert.match(project ?? '', /^ourtopia-issue-\d+$/);
+  const published = execFileSync('docker', ['exec', `supabase_db_${project}`, 'psql', '-U', 'postgres', '-d', 'postgres', '-Atc', "select tablename from pg_publication_tables where pubname = 'supabase_realtime' and tablename in ('disputes', 'dispute_responses', 'exchange_evidence', 'notification_outbox', 'notification_reminders')"], { encoding: 'utf8' }).trim();
+  assert.equal(published, '', 'case, evidence and delivery bodies are not published');
   const f = await handoffFixture('case-realtime'); await advanceHandoff(f);
   const foreign = await actor({ label: 'case-realtime-foreign' }); assert.equal((await createCommunity(foreign.client)).error, null);
   const members = [f.bob, f.alice, f.owner, f.carol, foreign];
@@ -141,11 +147,8 @@ test('Realtime contains recipient ID hints and never case, response, evidence, a
   const prior = new Set((await admin.from('notification_hints').select('id').in('recipient_id', members.map(m => m.id))).data!.map(r => r.id));
   const channels = await Promise.all(members.map(async (member, index) => {
     const session = await member.client.auth.getSession(); await member.client.realtime.setAuth(session.data.session!.access_token);
-    let channel = member.client.channel(`case-privacy-${randomUUID()}`);
-    for (const table of ['disputes', 'dispute_responses', 'exchange_evidence', 'notification_outbox', 'notification_reminders']) {
-      channel = channel.on('postgres_changes', { event: '*', schema: 'public', table }, change => bodies[index].push(change.new));
-    }
-    channel = channel.on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'community_events', filter: `community_id=eq.${f.community.id}` }, change => { if (String(change.new.kind).startsWith('item_dispute')) bodies[index].push(change.new); })
+    const channel = member.client.channel(`case-privacy-${randomUUID()}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'community_events', filter: `community_id=eq.${f.community.id}` }, change => { if (String(change.new.kind).startsWith('item_dispute')) bodies[index].push(change.new); })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notification_hints' }, change => { if (!prior.has(String(change.new.id))) hints[index].push(change.new); });
     await new Promise<void>((resolve, reject) => { const timer = setTimeout(() => reject(new Error('Realtime subscribe timed out')), 15000); channel.subscribe(status => { if (status === 'SUBSCRIBED') { clearTimeout(timer); resolve(); } }); });
     return channel;
@@ -156,10 +159,10 @@ test('Realtime contains recipient ID hints and never case, response, evidence, a
     while (hints.slice(0, 3).some(rows => rows.length === 0) && Date.now() < limit) await new Promise(resolve => setTimeout(resolve, 100));
     assert.deepEqual(bodies.map(rows => rows.length), [0, 0, 0, 0, 0]);
     for (let index = 0; index < 3; index++) {
-      assert.ok(hints[index].length >= 1);
+      assert.ok(hints[index].length >= 1, `recipient ${index} hint counts ${JSON.stringify(hints.map(rows => rows.length))}`);
       for (const row of hints[index]) { assert.equal(row.recipient_id, members[index].id); assert.deepEqual(Object.keys(row).sort(), ['id', 'recipient_id']); }
     }
     assert.deepEqual(hints.slice(3).map(rows => rows.length), [0, 0]);
-    receipt('issue-8-realtime', { bodyCounts: bodies.map(rows => rows.length), hints: hints.map(rows => rows.length), hintKeys: ['id', 'recipient_id'] });
-  } finally { await Promise.all(members.map((member, index) => member.client.removeChannel(channels[index]))); }
+    receipt('issue-8-realtime', { unpublishedCaseTables: true, bodyCounts: bodies.map(rows => rows.length), hints: hints.map(rows => rows.length), hintKeys: ['id', 'recipient_id'] });
+  } finally { await Promise.all(members.map((member, index) => member.client.removeChannel(channels[index]))); members.forEach(member => member.client.realtime.disconnect()); }
 });

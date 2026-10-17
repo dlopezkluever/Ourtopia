@@ -203,6 +203,52 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"dispute_responses": {
+                  Row: {
+                    "author_id": string,"body": string,"created_at": string,"dispute_id": string,"id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "author_id": string,"body": string,"created_at"?: string,"dispute_id": string,"id"?: string
+                  }
+                  Update: {
+                    "author_id"?: string,"body"?: string,"created_at"?: string,"dispute_id"?: string,"id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "dispute_responses_dispute_id_fkey"
+      columns: ["dispute_id"]
+isOneToOne: false
+      referencedRelation: "disputes"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"disputes": {
+                  Row: {
+                    "closed_at": string | null,"community_id": string,"created_at": string,"exchange_id": string,"id": string,"issue_type": string,"reporter_id": string,"respondent_id": string,"status": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "closed_at"?: string | null,"community_id": string,"created_at"?: string,"exchange_id": string,"id"?: string,"issue_type": string,"reporter_id": string,"respondent_id": string,"status"?: string
+                  }
+                  Update: {
+                    "closed_at"?: string | null,"community_id"?: string,"created_at"?: string,"exchange_id"?: string,"id"?: string,"issue_type"?: string,"reporter_id"?: string,"respondent_id"?: string,"status"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "disputes_community_id_fkey"
+      columns: ["community_id"]
+isOneToOne: false
+      referencedRelation: "communities"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "disputes_exchange_id_fkey"
+      columns: ["exchange_id"]
+isOneToOne: false
+      referencedRelation: "exchanges"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"exchange_events": {
                   Row: {
                     "actor_id": string | null,"community_id": string,"created_at": string,"exchange_id": string,"id": string,"kind": string
@@ -231,14 +277,14 @@ isOneToOne: false
                   ]
                 },"exchange_evidence": {
                   Row: {
-                    "byte_size": number,"community_id": string,"created_at": string,"exchange_id": string,"id": string,"mime_type": string,"object_path": string,"purpose": string,"state": string,"uploader_id": string
+                    "byte_size": number,"community_id": string,"created_at": string,"dispute_id": string | null,"exchange_id": string,"id": string,"mime_type": string,"object_path": string,"purpose": string,"state": string,"uploader_id": string
                   }
                   ComputedFields: never
                   Insert: {
-                    "byte_size": number,"community_id": string,"created_at"?: string,"exchange_id": string,"id": string,"mime_type": string,"object_path": string,"purpose"?: string,"state"?: string,"uploader_id": string
+                    "byte_size": number,"community_id": string,"created_at"?: string,"dispute_id"?: string | null,"exchange_id": string,"id": string,"mime_type": string,"object_path": string,"purpose"?: string,"state"?: string,"uploader_id": string
                   }
                   Update: {
-                    "byte_size"?: number,"community_id"?: string,"created_at"?: string,"exchange_id"?: string,"id"?: string,"mime_type"?: string,"object_path"?: string,"purpose"?: string,"state"?: string,"uploader_id"?: string
+                    "byte_size"?: number,"community_id"?: string,"created_at"?: string,"dispute_id"?: string | null,"exchange_id"?: string,"id"?: string,"mime_type"?: string,"object_path"?: string,"purpose"?: string,"state"?: string,"uploader_id"?: string
                   }
                   Relationships: [
                     {
@@ -246,6 +292,12 @@ isOneToOne: false
       columns: ["community_id"]
 isOneToOne: false
       referencedRelation: "communities"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "exchange_evidence_dispute_id_fkey"
+      columns: ["dispute_id"]
+isOneToOne: false
+      referencedRelation: "disputes"
       referencedColumns: ["id"]
     },{
       foreignKeyName: "exchange_evidence_exchange_id_fkey"
@@ -257,14 +309,14 @@ isOneToOne: false
                   ]
                 },"exchanges": {
                   Row: {
-                    "community_id": string,"created_at": string,"id": string,"kind": string,"provider_id": string,"receiver_id": string,"source_id": string,"source_kind": string,"state": string
+                    "community_id": string,"completed_at": string | null,"created_at": string,"id": string,"kind": string,"provider_id": string,"receiver_id": string,"source_id": string,"source_kind": string,"state": string
                   }
                   ComputedFields: never
                   Insert: {
-                    "community_id": string,"created_at"?: string,"id"?: string,"kind": string,"provider_id": string,"receiver_id": string,"source_id": string,"source_kind": string,"state": string
+                    "community_id": string,"completed_at"?: string | null,"created_at"?: string,"id"?: string,"kind": string,"provider_id": string,"receiver_id": string,"source_id": string,"source_kind": string,"state": string
                   }
                   Update: {
-                    "community_id"?: string,"created_at"?: string,"id"?: string,"kind"?: string,"provider_id"?: string,"receiver_id"?: string,"source_id"?: string,"source_kind"?: string,"state"?: string
+                    "community_id"?: string,"completed_at"?: string | null,"created_at"?: string,"id"?: string,"kind"?: string,"provider_id"?: string,"receiver_id"?: string,"source_id"?: string,"source_kind"?: string,"state"?: string
                   }
                   Relationships: [
                     {
@@ -723,14 +775,14 @@ isOneToOne: false
                   ]
                 },"notification_outbox": {
                   Row: {
-                    "application_id": string | null,"attempts": number,"channel": string,"claim_token": string | null,"community_id": string,"created_at": string,"delivered_at": string | null,"event_id": string,"id": string,"kind": string,"last_error": string | null,"lease_until": string | null,"next_attempt_at": string,"recipient_id": string,"reminder_due_at": string | null,"reminder_id": string | null,"state": string
+                    "application_id": string | null,"attempts": number,"channel": string,"claim_token": string | null,"community_id": string,"created_at": string,"delivered_at": string | null,"dispute_id": string | null,"event_id": string,"id": string,"kind": string,"last_error": string | null,"lease_until": string | null,"next_attempt_at": string,"recipient_id": string,"reminder_due_at": string | null,"reminder_id": string | null,"state": string
                   }
                   ComputedFields: never
                   Insert: {
-                    "application_id"?: string | null,"attempts"?: number,"channel": string,"claim_token"?: string | null,"community_id": string,"created_at"?: string,"delivered_at"?: string | null,"event_id": string,"id"?: string,"kind": string,"last_error"?: string | null,"lease_until"?: string | null,"next_attempt_at"?: string,"recipient_id": string,"reminder_due_at"?: string | null,"reminder_id"?: string | null,"state"?: string
+                    "application_id"?: string | null,"attempts"?: number,"channel": string,"claim_token"?: string | null,"community_id": string,"created_at"?: string,"delivered_at"?: string | null,"dispute_id"?: string | null,"event_id": string,"id"?: string,"kind": string,"last_error"?: string | null,"lease_until"?: string | null,"next_attempt_at"?: string,"recipient_id": string,"reminder_due_at"?: string | null,"reminder_id"?: string | null,"state"?: string
                   }
                   Update: {
-                    "application_id"?: string | null,"attempts"?: number,"channel"?: string,"claim_token"?: string | null,"community_id"?: string,"created_at"?: string,"delivered_at"?: string | null,"event_id"?: string,"id"?: string,"kind"?: string,"last_error"?: string | null,"lease_until"?: string | null,"next_attempt_at"?: string,"recipient_id"?: string,"reminder_due_at"?: string | null,"reminder_id"?: string | null,"state"?: string
+                    "application_id"?: string | null,"attempts"?: number,"channel"?: string,"claim_token"?: string | null,"community_id"?: string,"created_at"?: string,"delivered_at"?: string | null,"dispute_id"?: string | null,"event_id"?: string,"id"?: string,"kind"?: string,"last_error"?: string | null,"lease_until"?: string | null,"next_attempt_at"?: string,"recipient_id"?: string,"reminder_due_at"?: string | null,"reminder_id"?: string | null,"state"?: string
                   }
                   Relationships: [
                     {
@@ -744,6 +796,12 @@ isOneToOne: false
       columns: ["community_id"]
 isOneToOne: false
       referencedRelation: "communities"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "notification_outbox_dispute_id_fkey"
+      columns: ["dispute_id"]
+isOneToOne: false
+      referencedRelation: "disputes"
       referencedColumns: ["id"]
     },{
       foreignKeyName: "notification_outbox_event_id_fkey"
@@ -1064,6 +1122,9 @@ isOneToOne: true
 "can_read_conversation":
 { Args: { "p_conversation_id": string,"p_message_at"?: string }; Returns: boolean
                            },
+"can_read_dispute":
+{ Args: { "p_dispute_id": string }; Returns: boolean
+                           },
 "can_read_exchange":
 { Args: { "p_exchange_id": string }; Returns: boolean
                            },
@@ -1095,6 +1156,9 @@ isOneToOne: true
 { Args: { "p_intent_id": string,"p_note"?: string,"p_post_id": string,"p_post_kind": string }; Returns: Json
                            },
 "complete_exchange_evidence":
+{ Args: { "p_evidence_id": string,"p_intent_id": string }; Returns: Json
+                           },
+"complete_handoff_evidence":
 { Args: { "p_evidence_id": string,"p_intent_id": string }; Returns: Json
                            },
 "complete_listing_image":
@@ -1187,11 +1251,17 @@ isOneToOne: true
 "my_vouch_statements":
 { Args: Record<PropertyKey, never>; Returns: Json
                            },
+"prepare_dispute_evidence":
+{ Args: { "p_byte_size": number,"p_dispute_id": string,"p_evidence_id": string,"p_intent_id": string,"p_mime_type": string }; Returns: Json
+                           },
 "prepare_exchange_evidence":
 { Args: { "p_byte_size": number,"p_evidence_id": string,"p_exchange_id": string,"p_intent_id": string,"p_mime_type": string }; Returns: Json
                            },
 "prepare_listing_image":
 { Args: { "p_byte_size": number,"p_image_id": string,"p_intent_id": string,"p_listing_id": string,"p_mime_type": string }; Returns: Json
+                           },
+"read_exchange_disputes":
+{ Args: { "p_exchange_id": string }; Returns: Json
                            },
 "read_item_handoff":
 { Args: { "p_exchange_id": string }; Returns: Json
@@ -1205,6 +1275,9 @@ isOneToOne: true
 "remove_listing_image":
 { Args: { "p_image_id": string,"p_intent_id": string }; Returns: Json
                            },
+"report_exchange_issue":
+{ Args: { "p_body": string,"p_exchange_id": string,"p_intent_id": string,"p_issue_type": string }; Returns: Json
+                           },
 "request_test_billing":
 { Args: { "p_community_id": string,"p_intent_id": string,"p_kind": string }; Returns: Json
                            },
@@ -1213,6 +1286,9 @@ isOneToOne: true
                            },
 "require_current_membership":
 { Args: { "p_administrator"?: boolean,"p_community_id": string }; Returns: undefined
+                           },
+"respond_to_dispute":
+{ Args: { "p_body": string,"p_dispute_id": string,"p_intent_id": string }; Returns: Json
                            },
 "retry_notification":
 { Args: { "p_intent_id": string,"p_outbox_id": string }; Returns: Json

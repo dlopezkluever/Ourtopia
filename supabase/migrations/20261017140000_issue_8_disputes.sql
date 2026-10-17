@@ -217,7 +217,7 @@ begin
   select * into d from public.disputes where exchange_id = e.id and issue_type = p_issue_type and closed_at is null for update;
   if not found then
     insert into public.disputes(exchange_id, community_id, reporter_id, respondent_id, issue_type)
-      values(e.id, e.community_id, actor, case when actor = e.provider_id then e.receiver_id else e.provider_id end) returning * into d;
+      values(e.id, e.community_id, actor, case when actor = e.provider_id then e.receiver_id else e.provider_id end, p_issue_type) returning * into d;
     insert into public.trust_incidents(community_id, subject_id, type, status, source_kind, source_id)
       select e.community_id, subject, 'unresolved_dispute', 'open', 'dispute', d.id from unnest(array[e.provider_id, e.receiver_id]) subject;
     opened := true;
