@@ -330,6 +330,11 @@ a.sidebar-nav { text-decoration: none; }
 .vouches-page article, .vouches-page blockquote, .vouches-page select { overflow-wrap: anywhere; max-width: 100%; }
 .vouches-page blockquote { margin: 16px 0; padding: 12px 16px; border-left: 3px solid #647b45; }
 .vouches-page blockquote footer { font-size: 12px; margin-top: 8px; }
+.need-urgency label { display: flex; align-items: center; gap: .6rem; min-height: 44px; margin: 0; font-size: 14px; }
+.need-urgency input { width: 20px; height: 20px; min-height: 0; margin: 0; }
+.borrow-form select, .borrow-form textarea { width: 100%; min-height: 44px; padding: .55rem; border: 1px solid #88997e; border-radius: 8px; font: inherit; background: white; margin: 0; }
+.item-needs-feed ul { margin: 1rem 0; padding-left: 1.2rem; line-height: 2; }
+.listings-layout > .borrowing-panel { max-width: none; margin: 1.5rem 0 0; }
 
 .handoff-page, .handoff-links { max-width: 850px; margin: 2rem auto; padding: 1rem; }
 .handoff-card { background: var(--card, #fff); border: 1px solid #d4dfd7; border-radius: 20px; padding: clamp(1rem, 4vw, 2.5rem); margin-top: 1rem; overflow-wrap: anywhere; }
