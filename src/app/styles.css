@@ -335,3 +335,11 @@ a.sidebar-nav { text-decoration: none; }
 .borrow-form select, .borrow-form textarea { width: 100%; min-height: 44px; padding: .55rem; border: 1px solid #88997e; border-radius: 8px; font: inherit; background: white; margin: 0; }
 .item-needs-feed ul { margin: 1rem 0; padding-left: 1.2rem; line-height: 2; }
 .listings-layout > .borrowing-panel { max-width: none; margin: 1.5rem 0 0; }
+
+.delivery-console > select { max-width: 100%; margin: 0.5rem 1rem 1rem 0; }
+.delivery-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 1rem; }
+.delivery-card { min-width: 0; overflow-wrap: anywhere; }
+.delivery-card dl { display: grid; grid-template-columns: 8rem minmax(0, 1fr); gap: 0.4rem; }
+.delivery-card dd { margin: 0; }
+.delivery-card details { margin-top: 1rem; }
+.delivery-card summary { cursor: pointer; padding: 0.5rem 0; }

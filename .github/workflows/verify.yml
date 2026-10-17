@@ -25,6 +25,7 @@ jobs:
       - run: node scripts/verify/local-env.mjs
       - run: node scripts/verify/migrations.mjs --disposable-project ourtopia-issue-2
       - run: npm run test:server -- tests/server/issue-2.test.ts
+      - run: npm run test:server -- tests/server/issue-23.test.ts
       - run: npm run test:server -- tests/server/issue-3.test.ts
       - run: npm run test:server -- tests/server/issue-4.test.ts
       - run: npm run test:server -- tests/server/issue-5.test.ts
@@ -35,6 +36,7 @@ jobs:
       - run: npm run test:server -- tests/server/issue-14.test.ts
       - run: npm run test:server -- tests/server/issue-11.test.ts
       - run: npm run test:rls -- tests/rls/issue-2.test.ts
+      - run: npm run test:rls -- tests/rls/issue-23.test.ts
       - run: npm run test:rls -- tests/rls/issue-3.test.ts
       - run: npm run test:rls -- tests/rls/issue-4.test.ts
       - run: npm run test:rls -- tests/rls/issue-5.test.ts
@@ -45,6 +47,9 @@ jobs:
       - run: npm run test:rls -- tests/rls/issue-14.test.ts
       - run: npm run test:rls -- tests/rls/issue-11.test.ts
       - run: npm run test:journey -- tests/journeys/issue-2.spec.ts
+      - run: npm run test:journey -- tests/journeys/issue-23.spec.ts
+        env:
+          OURTOPIA_MANUAL_NOTIFICATION_DELIVERY: '1'
       - run: npm run test:journey -- tests/journeys/issue-3.spec.ts
       - run: npm run test:journey -- tests/journeys/issue-4.spec.ts
       - run: npm run test:journey -- tests/journeys/issue-5.spec.ts
@@ -62,6 +67,7 @@ jobs:
       - run: npm run verify:perf -- --issue 6 --base 7aa1af9cf1dae27a32226bb0f52f408e29749aa2 --head $(git rev-parse HEAD) --pairs 10
       - run: npm run verify:perf -- --issue 14 --base 998b29ade3134035cf627dc1a1a8ee07cd504ab0 --head $(git rev-parse HEAD) --pairs 10
       - run: npm run verify:perf -- --issue 11 --base 8be7fe60908341f41beea49bc0f7ccb718ae3c7e --head $(git rev-parse HEAD) --pairs 10
+      - run: npm run verify:perf -- --issue 23 --base 7aa1af9cf1dae27a32226bb0f52f408e29749aa2 --head $(git rev-parse HEAD) --pairs 10
       - if: always()
         run: npx supabase stop --project-id ourtopia-issue-2
   billing-live:

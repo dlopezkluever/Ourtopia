@@ -1,4 +1,5 @@
 import { helpExchangeSchema, helpPostSchema } from '../../src/features/help/model';
+import { deliverOne } from '../../supabase/functions/notifications/worker';
 import { borrowViewSchema } from '../../src/features/borrowing/model';
 import { createClient } from '@supabase/supabase-js';
 import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
@@ -86,6 +87,26 @@ export async function applyInvite(applicant: Awaited<ReturnType<typeof actor>>, 
 
 export async function decideApplication(owner: Awaited<ReturnType<typeof actor>>, applicationId: string, decision: 'approved' | 'rejected' = 'approved', reason = '', intent = randomUUID()) {
   return owner.client.rpc('decide_membership', { p_intent_id: intent, p_application_id: applicationId, p_decision: decision, p_reason: reason });
+}
+
+export async function deliveryFixture(label = 'delivery') {
+  const fixture = await membershipFixture(label);
+  const application = await applyInvite(fixture.applicant, (await issueInvite(fixture.owner, fixture.community.id, fixture.applicant.email)).id);
+  const decision = await decideApplication(fixture.owner, application.id);
+  if (decision.error) throw decision.error;
+  const outbox = await admin.from('notification_outbox').select('*').eq('event_id', decision.data.decision_event_id).order('channel');
+  if (outbox.error) throw outbox.error;
+  const email = outbox.data.find(row => row.channel === 'email');
+  const inApp = outbox.data.find(row => row.channel === 'in_app');
+  if (!email || !inApp) throw new Error('Approval must enqueue both delivery channels.');
+  return { ...fixture, application, email, inApp };
+}
+
+export async function failedDelivery(label = 'delivery-failure', error = 'Synthetic provider outage') {
+  const fixture = await deliveryFixture(label);
+  const failed = await deliverOne(admin, async () => { throw new Error(error); }, fixture.email.id) as { state: string };
+  if (failed.state !== 'failed') throw new Error('Expected a durable email failure.');
+  return fixture;
 }
 
 // Realtime starts delivering database changes several seconds after a reset; wait until a probe change arrives.

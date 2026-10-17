@@ -707,14 +707,14 @@ isOneToOne: false
                   ]
                 },"notification_outbox": {
                   Row: {
-                    "application_id": string | null,"attempts": number,"channel": string,"claim_token": string | null,"community_id": string,"created_at": string,"delivered_at": string | null,"event_id": string,"id": string,"kind": string,"last_error": string | null,"lease_until": string | null,"next_attempt_at": string,"recipient_id": string,"state": string
+                    "application_id": string | null,"attempts": number,"channel": string,"claim_token": string | null,"community_id": string,"created_at": string,"delivered_at": string | null,"event_id": string,"id": string,"kind": string,"last_error": string | null,"lease_until": string | null,"next_attempt_at": string,"recipient_id": string,"reminder_due_at": string | null,"reminder_id": string | null,"state": string
                   }
                   ComputedFields: never
                   Insert: {
-                    "application_id"?: string | null,"attempts"?: number,"channel": string,"claim_token"?: string | null,"community_id": string,"created_at"?: string,"delivered_at"?: string | null,"event_id": string,"id"?: string,"kind": string,"last_error"?: string | null,"lease_until"?: string | null,"next_attempt_at"?: string,"recipient_id": string,"state"?: string
+                    "application_id"?: string | null,"attempts"?: number,"channel": string,"claim_token"?: string | null,"community_id": string,"created_at"?: string,"delivered_at"?: string | null,"event_id": string,"id"?: string,"kind": string,"last_error"?: string | null,"lease_until"?: string | null,"next_attempt_at"?: string,"recipient_id": string,"reminder_due_at"?: string | null,"reminder_id"?: string | null,"state"?: string
                   }
                   Update: {
-                    "application_id"?: string | null,"attempts"?: number,"channel"?: string,"claim_token"?: string | null,"community_id"?: string,"created_at"?: string,"delivered_at"?: string | null,"event_id"?: string,"id"?: string,"kind"?: string,"last_error"?: string | null,"lease_until"?: string | null,"next_attempt_at"?: string,"recipient_id"?: string,"state"?: string
+                    "application_id"?: string | null,"attempts"?: number,"channel"?: string,"claim_token"?: string | null,"community_id"?: string,"created_at"?: string,"delivered_at"?: string | null,"event_id"?: string,"id"?: string,"kind"?: string,"last_error"?: string | null,"lease_until"?: string | null,"next_attempt_at"?: string,"recipient_id"?: string,"reminder_due_at"?: string | null,"reminder_id"?: string | null,"state"?: string
                   }
                   Relationships: [
                     {
@@ -731,6 +731,38 @@ isOneToOne: false
       referencedColumns: ["id"]
     },{
       foreignKeyName: "notification_outbox_event_id_fkey"
+      columns: ["event_id"]
+isOneToOne: false
+      referencedRelation: "community_events"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "notification_outbox_reminder_id_fkey"
+      columns: ["reminder_id"]
+isOneToOne: false
+      referencedRelation: "notification_reminders"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"notification_reminders": {
+                  Row: {
+                    "channel": string,"community_id": string,"due_at": string,"event_id": string,"id": string,"kind": string,"recipient_id": string,"source_key": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "channel": string,"community_id": string,"due_at": string,"event_id": string,"id"?: string,"kind": string,"recipient_id": string,"source_key": string
+                  }
+                  Update: {
+                    "channel"?: string,"community_id"?: string,"due_at"?: string,"event_id"?: string,"id"?: string,"kind"?: string,"recipient_id"?: string,"source_key"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "notification_reminders_community_id_fkey"
+      columns: ["community_id"]
+isOneToOne: false
+      referencedRelation: "communities"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "notification_reminders_event_id_fkey"
       columns: ["event_id"]
 isOneToOne: false
       referencedRelation: "community_events"
@@ -1025,6 +1057,9 @@ isOneToOne: true
 "cancel_help_exchange":
 { Args: { "p_exchange_id": string,"p_intent_id": string,"p_reason": string }; Returns: Json
                            },
+"check_notification_claim":
+{ Args: { "p_claim_token": string,"p_outbox_id": string }; Returns: boolean
+                           },
 "claim_notification":
 { Args: { "p_outbox_id"?: string }; Returns: Json
                            },
@@ -1091,6 +1126,9 @@ isOneToOne: true
                            },
 "help_post":
 { Args: { "p_post_id": string,"p_post_kind": string }; Returns: Json
+                           },
+"inspect_notification_deliveries":
+{ Args: { "p_before"?: string,"p_community_id": string }; Returns: Json
                            },
 "is_active_member":
 { Args: { "target_community": string }; Returns: boolean
@@ -1174,6 +1212,9 @@ isOneToOne: true
                            },
 "schedule_help_exchange":
 { Args: { "p_exchange_id": string,"p_fields": Json,"p_intent_id": string }; Returns: Json
+                           },
+"schedule_notification_reminder":
+{ Args: { "p_channel": string,"p_community_id": string,"p_due_at": string,"p_event_id": string,"p_kind": string,"p_recipient_id": string,"p_source_key": string }; Returns: string
                            },
 "send_message":
 { Args: { "p_body": string,"p_conversation_id": string,"p_intent_id": string }; Returns: Json
