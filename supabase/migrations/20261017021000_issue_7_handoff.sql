@@ -20,7 +20,7 @@ create table public.item_handoffs (
 );
 insert into public.item_handoffs(exchange_id, community_id)
   select r.exchange_id, e.community_id from public.item_reservations r join public.exchanges e on e.id = r.exchange_id;
-create function private.initialize_item_handoff() returns trigger language plpgsql set search_path = '' as $$
+create function private.initialize_item_handoff() returns trigger language plpgsql security definer set search_path = '' as $$
 begin
   insert into public.item_handoffs(exchange_id, community_id) select new.exchange_id, community_id from public.exchanges where id = new.exchange_id;
   return new;
@@ -71,7 +71,7 @@ returns boolean language sql immutable set search_path = '' as $$
   select case when p_before in ('approved', 'handoff_pending') and p_after in ('cancelled', 'expired', 'closed_without_completion')
     then false else p_unresolved or p_after in ('checked_out', 'return_pending') end;
 $$;
-create or replace function private.sync_item_reservation() returns trigger language plpgsql set search_path = '' as $$
+create or replace function private.sync_item_reservation() returns trigger language plpgsql security definer set search_path = '' as $$
 begin
   update public.item_reservations set custody_unresolved = private.item_custody_until_verified_return(old.state, new.state, custody_unresolved)
     where exchange_id = new.id;

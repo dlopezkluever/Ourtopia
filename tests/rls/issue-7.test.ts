@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { before, test } from 'node:test';
 import { randomUUID } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { actor, activeMember, admin, backendUrl, handoffFixture, advanceHandoff, handoffAction, handoffTerms, handoffSchedule, itemHandoff, listingImageBytes, publicClient, realtimeReady, receipt } from '../../scripts/verify/backend';
 import { evidenceSchema } from '../../src/features/handoff/model';
 
@@ -90,8 +92,6 @@ test('Realtime hides all Handoff/evidence bodies and private audit while recipie
   const channels = await Promise.all(members.map(async (member, index) => {
     const { data } = await member.client.auth.getSession(); if (data.session) await member.client.realtime.setAuth(data.session.access_token);
     const channel = member.client.channel(`handoff-${randomUUID()}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'item_handoffs' }, change => bodies[index].push(change.new))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'exchange_evidence' }, change => bodies[index].push(change.new))
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'community_events', filter: `community_id=eq.${f.community.id}` }, change => { if (String(change.new.kind).startsWith('item_')) bodies[index].push(change.new); })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notification_hints' }, change => { if ([f.alice.id, f.bob.id].includes(String(change.new.recipient_id)) && !prior.has(String(change.new.id))) hints[index].push(change.new); });
     await new Promise<void>((resolve, reject) => { const timer = setTimeout(() => reject(new Error('Realtime subscription timeout')), 15000); channel.subscribe(status => { if (status === 'SUBSCRIBED') { clearTimeout(timer); resolve(); } }); });
@@ -106,6 +106,10 @@ test('Realtime hides all Handoff/evidence bodies and private audit while recipie
     assert.equal(hints[0].length >= 1 && hints[1].length >= 1, true);
     assert.deepEqual(hints.slice(2).map(rows => rows.length), members.slice(2).map(() => 0));
     for (const hint of hints.flat()) assert.deepEqual(Object.keys(hint).sort(), ['id', 'recipient_id']);
-    receipt('issue-7-realtime', { bodies: bodies.map(rows => rows.length), hints: hints.map(rows => rows.length) });
+    const project = /^project_id\s*=\s*"([^"]+)"/m.exec(readFileSync('supabase/config.toml', 'utf8'))?.[1];
+    assert.match(project ?? '', /^ourtopia-issue-\d+$/);
+    const published = execFileSync('docker', ['exec', '-i', `supabase_db_${project}`, 'psql', '-U', 'postgres', '-d', 'postgres', '-At', '-c', "select tablename from pg_publication_tables where pubname = 'supabase_realtime' and tablename in ('item_handoffs', 'exchange_evidence', 'item_reservations', 'exchanges')"], { encoding: 'utf8' }).trim();
+    assert.equal(published, '', 'no Handoff, evidence, reservation or Exchange table is published to realtime');
+    receipt('issue-7-realtime', { bodies: bodies.map(rows => rows.length), hints: hints.map(rows => rows.length), publishedHandoffTables: [] });
   } finally { await Promise.all(members.map((member, index) => member.client.removeChannel(channels[index]))); members.forEach(member => member.client.realtime.disconnect()); }
 });
