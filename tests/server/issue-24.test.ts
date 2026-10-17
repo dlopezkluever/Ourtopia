@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { admin, membershipFixture, activeMember, drillDetails, helpListingFields, helpNeedFields, receipt, handoffFixture, advanceHandoff, listingImageBytes } from '../../scripts/verify/backend';
 import { resultSchema } from '../../src/features/drafts/model';
 import { recoverEvidence } from '../../src/features/evidence/recovery';
+import { clearProtectedClientStorage, clearRevokedProtectedStorage, protectedStorage } from '../../src/features/pwa/privacy';
 
 test('Draft saves serialize revisions, replay identical intents, and reject changed payloads without effects', async () => {
   const { owner, community } = await membershipFixture('draft-command');
@@ -96,4 +97,55 @@ test('Kind-independent evidence recovery completes a real interrupted object onc
   assert.deepEqual((await admin.from('exchanges').select('state').eq('id', f.exchangeId)).data, [{ state: 'handoff_pending' }]);
   assert.equal((await admin.from('exchange_events').select('id').eq('exchange_id', f.exchangeId).eq('kind', 'item_evidence_completed')).data?.length, 1);
   receipt('issue-24-evidence-recovery', { evidence: rows.data, objectCount: objects.data?.length, state: 'handoff_pending', adapter: 'shared Handoff/Return contract' });
+});
+
+class MemoryStorage {
+  private map = new Map<string, string>();
+  get length() { return this.map.size; }
+  key(index: number) { return [...this.map.keys()][index] ?? null; }
+  getItem(key: string) { return this.map.get(key) ?? null; }
+  setItem(key: string, value: string) { this.map.set(key, value); }
+  removeItem(key: string) { this.map.delete(key); }
+  keys() { return [...this.map.keys()].sort(); }
+}
+function protectedFixture() {
+  const user = randomUUID(); const other = randomUUID(); const kept = randomUUID(); const lost = randomUUID(); const exchange = randomUUID();
+  const session = new MemoryStorage(); const local = new MemoryStorage();
+  const keys = {
+    listingKept: `listing-draft-${user}-${kept}-new`, listingKeptIntent: `listing-draft-${user}-${kept}-new-intent`,
+    listingLost: `listing-draft-${user}-${lost}-new`, needKept: `item-need-draft-${user}-${kept}-new`, needLost: `item-need-draft-${user}-${lost}-new`,
+    otherAccount: `listing-draft-${other}-${kept}-new`, startKept: `message-start-${kept}-${other}`, startLost: `message-start-${lost}-${other}`,
+    message: `message-draft-${user}-${randomUUID()}`, handoff: `handoff-command-${user}-${exchange}-1-schedule-{}`,
+    upload: `handoff-upload-${user}-${exchange}-image/png-3-abc`, dispute: `dispute-command-${user}-{"text":"private"}`,
+    unrelated: `billing-intent-${user}-${kept}-checkout`,
+  };
+  for (const key of Object.values(keys)) session.setItem(key, 'private');
+  local.setItem(keys.needLost, 'private');
+  return { user, kept, lost, session, local, keys };
+}
+
+test('Protected storage: every Community-scoped draft and intent prefix is in the one shared list', () => {
+  assert.deepEqual(protectedStorage.map(entry => entry.prefix), ['listing-draft-', 'item-need-draft-', 'message-start-', 'message-draft-', 'handoff-command-', 'handoff-upload-', 'dispute-command-']);
+});
+
+test('Protected storage: sign-out and account change clear item-need drafts with every other protected prefix', () => {
+  const { session, local, keys } = protectedFixture();
+  clearProtectedClientStorage([session, local]);
+  assert.deepEqual(session.keys(), [keys.unrelated]);
+  assert.deepEqual(local.keys(), []);
+});
+
+test('Protected storage: a refresh that confirms current access keeps drafts and request ids', () => {
+  const { user, kept, lost, session, local, keys } = protectedFixture();
+  const before = session.keys().filter(key => key !== keys.otherAccount);
+  clearRevokedProtectedStorage(user, new Set([kept, lost]), false, [session, local]);
+  assert.deepEqual(session.keys(), before);
+  assert.deepEqual(local.keys(), [keys.needLost]);
+});
+
+test('Protected storage: a refresh that shows lost access clears only the revoked Community and other accounts', () => {
+  const { user, kept, session, local, keys } = protectedFixture();
+  clearRevokedProtectedStorage(user, new Set([kept]), true, [session, local]);
+  assert.deepEqual(session.keys(), [keys.dispute, keys.upload, keys.handoff, keys.listingKept, keys.listingKeptIntent, keys.needKept, keys.startKept, keys.unrelated].sort());
+  assert.deepEqual(local.keys(), []);
 });

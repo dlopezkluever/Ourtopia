@@ -131,6 +131,72 @@ test('lane 4 account and Community switches, sign-out and suspension cannot rest
   await expect(page.getByText('My private unfinished item', { exact: true })).toHaveCount(0); await capture(page, info, 4, { switched: true, signedOutStorage: 'cleared', suspendedRead: [] });
 });
 
+async function refocus(page: Page) {
+  // An app switch, tab change or camera trip: focus and visibility fire, and the access refresh must finish before checking.
+  const refreshed = page.waitForResponse(response => response.url().includes('/rest/v1/memberships') && response.request().method() === 'GET');
+  await page.evaluate(() => { document.dispatchEvent(new Event('visibilitychange')); window.dispatchEvent(new Event('focus')); });
+  expect((await refreshed).ok()).toBe(true);
+}
+const storedKeys = (page: Page) => page.evaluate(() => Object.keys(sessionStorage).sort());
+
+test('lane 3 listing and Need Post drafts with their request ids survive focus and visibility refreshes, then reload', async ({ page }, info) => {
+  const f = await membershipFixture('pwa-refocus'); await signIn(page, f.owner.email);
+  await page.goto(`/communities/${f.community.id}/listings`); await page.getByRole('button', { name: 'Share an item', exact: true }).click();
+  await page.getByLabel('Title', { exact: true }).fill('Refocused ladder'); await page.getByLabel('Description', { exact: true }).fill('Six foot step ladder.');
+  await page.getByLabel('Condition', { exact: true }).fill('Sturdy.'); await page.getByLabel('Estimated replacement value ($)').fill('80');
+  await page.getByLabel('Available from 1').fill('2027-02-01'); await page.getByLabel('Available through 1').fill('2027-02-20');
+  // The save commits but its response is lost, so the member must retry under the same stored intent.
+  await page.route('**/rest/v1/rpc/save_listing', async route => { await route.fetch(); await route.abort(); }, { times: 1 });
+  await page.getByRole('button', { name: 'Save Listing', exact: true }).click(); await expect(page.getByRole('alert').first()).toBeVisible();
+  const draftKey = `listing-draft-${f.owner.id}-${f.community.id}-new`;
+  const before = await page.evaluate(key => ({ draft: sessionStorage.getItem(key), intent: sessionStorage.getItem(`${key}-intent`) }), draftKey);
+  expect(before.draft).toContain('Refocused ladder'); expect(before.intent).toContain('"id"');
+  await refocus(page); await refocus(page);
+  expect(await page.evaluate(key => ({ draft: sessionStorage.getItem(key), intent: sessionStorage.getItem(`${key}-intent`) }), draftKey)).toEqual(before);
+  await page.reload(); await page.getByRole('button', { name: 'Share an item', exact: true }).click();
+  await expect(page.getByLabel('Title', { exact: true })).toHaveValue('Refocused ladder'); await expect(page.getByLabel('Condition', { exact: true })).toHaveValue('Sturdy.');
+  await page.getByRole('button', { name: 'Save Listing', exact: true }).click(); await expect(page).toHaveURL(/\/listings\/[0-9a-f-]{36}$/);
+  const listings = (await admin.from('listings').select('id,title').eq('community_id', f.community.id)).data;
+  expect(listings?.map(listing => listing.title)).toEqual(['Refocused ladder']);
+  await page.goto(`/communities/${f.community.id}/needs`); await page.getByRole('button', { name: 'Ask for an item', exact: true }).click();
+  await page.getByLabel('What do you need?').fill('A pressure washer for Saturday');
+  const needKey = `item-need-draft-${f.owner.id}-${f.community.id}-new`;
+  await expect.poll(() => page.evaluate(key => sessionStorage.getItem(key), needKey)).toContain('A pressure washer for Saturday');
+  await refocus(page); expect(await page.evaluate(key => sessionStorage.getItem(key), needKey)).toContain('A pressure washer for Saturday');
+  await page.reload(); await page.getByRole('button', { name: 'Ask for an item', exact: true }).click();
+  await expect(page.getByLabel('What do you need?')).toHaveValue('A pressure washer for Saturday');
+  await capture(page, info, 3, { refocusedIntentKept: before.intent, listings, needDraftKept: true });
+});
+
+test('lane 4 sign-out and a live suspension clear every protected draft prefix while a plain refresh keeps them', async ({ page }, info) => {
+  const f = await membershipFixture('pwa-prefixes'); const member = await activeMember(f.owner, f.community.id);
+  const created = await createCommunity(member.client, randomUUID(), 'Kept private Community'); expect(created.error).toBeNull(); const other = communitySchema.parse(created.data);
+  let subscribed = false;
+  page.on('websocket', socket => socket.on('framereceived', frame => {
+    const value = frame.payload.toString();
+    if (value.includes(`pwa-cache-access-${member.id}`) && value.includes('phx_reply') && value.includes('"status":"ok"')) subscribed = true;
+  }));
+  await signIn(page, member.email); await page.goto(`/communities/${f.community.id}/needs`);
+  await page.getByRole('button', { name: 'Ask for an item', exact: true }).click(); await page.getByLabel('What do you need?').fill('Private need text');
+  const exchange = randomUUID(); const peer = randomUUID();
+  const keys = {
+    need: `item-need-draft-${member.id}-${f.community.id}-new`, listing: `listing-draft-${member.id}-${f.community.id}-new`, listingIntent: `listing-draft-${member.id}-${f.community.id}-new-intent`,
+    start: `message-start-${f.community.id}-${peer}`, message: `message-draft-${member.id}-${randomUUID()}`,
+    keptListing: `listing-draft-${member.id}-${other.id}-new`, keptStart: `message-start-${other.id}-${peer}`,
+    handoff: `handoff-command-${member.id}-${exchange}-1-schedule-{}`, upload: `handoff-upload-${member.id}-${exchange}-image/png-3-abc`, dispute: `dispute-command-${member.id}-{"text":"private"}`,
+  };
+  const plant = () => page.evaluate(entries => { for (const key of entries) if (!sessionStorage.getItem(key)) sessionStorage.setItem(key, 'private-data'); }, Object.values(keys));
+  await expect.poll(() => page.evaluate(key => sessionStorage.getItem(key), keys.need)).toContain('Private need text'); await plant();
+  await expect.poll(() => subscribed).toBe(true);
+  await refocus(page); expect(await storedKeys(page)).toEqual(expect.arrayContaining(Object.values(keys)));
+  expect((await admin.from('memberships').update({ status: 'suspended' }).eq('community_id', f.community.id).eq('user_id', member.id)).error).toBeNull();
+  const kept = [keys.keptListing, keys.keptStart, keys.handoff, keys.upload, keys.dispute].sort();
+  await expect.poll(() => storedKeys(page), { timeout: 15000 }).toEqual(kept);
+  await plant(); await page.getByRole('button', { name: 'Sign out' }).click(); await expect(page.getByLabel('Email address')).toBeVisible();
+  expect(await storedKeys(page)).toEqual([]);
+  await capture(page, info, 4, { suspendedKept: kept, signedOutStorage: [] });
+});
+
 test('lane 5 interrupted Handoff camera upload reloads and retries once with the same record and object', async ({ page }, info) => {
   const f = await handoffFixture('pwa-camera'); await advanceHandoff(f, 'schedule'); await signIn(page, f.bob.email); await page.goto(`/handoffs/${f.exchangeId}`);
   await expect(page.getByLabel('Camera or photo')).toHaveAttribute('capture', 'environment');

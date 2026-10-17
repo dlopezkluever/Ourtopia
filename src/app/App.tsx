@@ -46,7 +46,6 @@ export function App() {
       if (event === 'PASSWORD_RECOVERY') setRecovery(true);
       if (event === 'SIGNED_OUT') {
         clearProtectedClientStorage();
-        for (const key of Object.keys(sessionStorage)) if (key.startsWith('message-draft-') || key.startsWith('message-start-') || key.startsWith('handoff-') || key.startsWith('dispute-command-')) sessionStorage.removeItem(key);
         setRecovery(false); history.replaceState({}, '', '/');
       }
     });
