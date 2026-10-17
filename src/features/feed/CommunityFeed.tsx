@@ -10,6 +10,6 @@ export function CommunityFeed({ userId, communityId }: { userId: string; communi
   });
   if (state.status !== 'ready') return null;
   return <section className="listings-layout community-feed" aria-label="Community activity feed"><span className="eyebrow">COMMUNITY FEED</span><h2>Community activity</h2>
-    {state.data.length ? <ul>{state.data.map(entry => <li key={`${entry.kind}-${entry.id}`}>{feedSentence(entry)} <time dateTime={entry.kind === 'item_loan_completed' ? entry.completed_at : entry.created_at}>{new Date(entry.kind === 'item_loan_completed' ? entry.completed_at : entry.created_at).toLocaleDateString()}</time></li>)}</ul> : <p>No completed loans or thank-yous yet.</p>}
+    {state.data.length ? <ul>{state.data.map(entry => <li key={`${entry.kind}-${entry.id}`}>{feedSentence(entry)} <time dateTime={entry.kind === 'exchange_thank_you' ? entry.created_at : entry.completed_at}>{new Date(entry.kind === 'exchange_thank_you' ? entry.created_at : entry.completed_at).toLocaleDateString()}</time></li>)}</ul> : <p>No completed loans, help, or thank-yous yet.</p>}
   </section>;
 }
