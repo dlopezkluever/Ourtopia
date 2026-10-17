@@ -6,12 +6,13 @@ declare const Deno: {
 Deno.serve(async request => {
   const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
   if (!key || request.method !== 'POST' || request.headers.get('Authorization') !== `Bearer ${key}`) return new Response('Forbidden', { status: 403 });
-  const expiry = await fetch(`${Deno.env.get('SUPABASE_URL')}/rest/v1/rpc/expire_due_item_approvals`, {
+  const rpc = (name: string) => fetch(`${Deno.env.get('SUPABASE_URL')}/rest/v1/rpc/${name}`, {
     method: 'POST', headers: { Authorization: `Bearer ${key}`, apikey: key, 'Content-Type': 'application/json' }, body: '{}',
-  });
+  }).then(response => response.ok, () => false);
+  const [expiry, returns] = await Promise.all([rpc('expire_due_item_approvals'), rpc('process_due_item_returns')]);
   const result = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/notifications`, {
     method: 'POST', headers: { Authorization: `Bearer ${key}` },
   });
   const delivery = await result.text();
-  return Response.json({ expiry: expiry.ok, delivery }, { status: expiry.ok && result.ok ? 200 : 503 });
+  return Response.json({ expiry, returns, delivery }, { status: expiry && returns && result.ok ? 200 : 503 });
 });

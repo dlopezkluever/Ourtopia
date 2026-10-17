@@ -10,6 +10,13 @@ const messages: Record<string, string> = {
   item_handoff_condition_recorded: 'Review and acknowledge the recorded Handoff condition.',
   item_handed_off: 'Your item Handoff was recorded.',
   item_handoff_cancelled: 'Your Handoff was cancelled and its dates released.',
+  item_return_upcoming: 'Your item Return is due soon. Open the Return to record it.',
+  item_return_overdue: 'An item Return is overdue. Record the Return once the item is back.',
+  item_return_recorded: 'A Return was recorded. Confirm or contest its condition.',
+  item_return_confirmation_due: 'A recorded Return is still waiting for your confirmation.',
+  item_returned: 'Both participants confirmed the Return.',
+  item_completed: 'Your loan is complete. Your standing and history are updated.',
+  item_return_review_queued: 'A stalled Return was sent to administrator review. It stays incomplete.',
 };
 export function HandoffNotices({ userId }: { userId: string }) {
   const [state] = useBorrowingRead(userId, 'handoff-notices', async () => {
