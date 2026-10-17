@@ -1442,6 +1442,9 @@ isOneToOne: true
 "read_community_feed":
 { Args: { "p_community_id": string }; Returns: Json
                            },
+"read_dispute_message_evidence":
+{ Args: { "p_dispute_id": string }; Returns: Json
+                           },
 "read_exchange_disputes":
 { Args: { "p_exchange_id": string }; Returns: Json
                            },
@@ -1507,6 +1510,9 @@ isOneToOne: true
                            },
 "submit_borrow_request":
 { Args: { "p_ends_on": string,"p_intent_id": string,"p_listing_id": string,"p_starts_on": string }; Returns: Json
+                           },
+"submit_dispute_messages":
+{ Args: { "p_dispute_id": string,"p_intent_id": string,"p_message_ids": string[] }; Returns: Json
                            },
 "submit_vouch":
 { Args: { "p_application_id": string,"p_intent_id": string,"p_statement": string }; Returns: Json
