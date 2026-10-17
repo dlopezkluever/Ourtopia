@@ -144,8 +144,8 @@ test('lane 7 offline privileged action is not queued and reconnect after cancell
   const f = await handoffFixture('pwa-offline-state'); await advanceHandoff(f, 'schedule'); await signIn(page, f.bob.email); await page.goto(`/handoffs/${f.exchangeId}`);
   await context.setOffline(true);
   await expect(page.getByRole('status').filter({ hasText: "You're offline." })).toBeVisible();
-  expect((await handoffAction(f.alice, f.exchangeId, 3, 'cancel', { reason: 'Item no longer available' })).error).toBeNull();
   await page.getByLabel('Item condition', { exact: true }).fill('Attempted offline'); await page.getByLabel('Included accessories', { exact: true }).fill('Battery'); await page.getByRole('button', { name: 'Record condition', exact: true }).click(); await expect(page.getByRole('alert')).toBeVisible();
+  expect((await handoffAction(f.alice, f.exchangeId, 3, 'cancel', { reason: 'Item no longer available' })).error).toBeNull();
   await context.setOffline(false);
   const stale = await handoffAction(f.bob, f.exchangeId, 3, 'record_condition', { condition: 'Attempted offline', accessories: 'Battery' }); expect(stale.error?.code).toBe('55000');
   await page.reload(); await expect(page.getByRole('status').filter({ hasText: 'Cancelled' })).toBeVisible();
