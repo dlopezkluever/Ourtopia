@@ -42,6 +42,10 @@ const subjects: Record<string, string> = {
   help_commitment_accepted: 'Your help offer was accepted',
   help_scheduled: 'Your help Exchange has a schedule',
   help_cancelled: 'A help Exchange was cancelled',
+  help_completion_confirmed: 'A participant confirmed completed help',
+  help_completion_due: 'Help completion is waiting for your confirmation',
+  help_completed: 'Your help Exchange is complete',
+  help_completion_review_queued: 'A stalled Help Exchange was sent to administrator review',
 };
 
 export async function deliverOne(backend: DeliveryBackend, sendEmail: EmailSender, outboxId?: string) {
