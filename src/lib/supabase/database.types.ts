@@ -463,6 +463,42 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"item_need_images": {
+                  Row: {
+                    "byte_size": number,"created_at": string,"id": string,"need_id": string,"mime_type": string,"object_path": string,"state": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "byte_size"?: number,"created_at"?: string,"id"?: string,"need_id"?: string,"mime_type"?: string,"object_path"?: string,"state"?: string
+                  }
+                  Update: {
+                    "byte_size"?: number,"created_at"?: string,"id"?: string,"need_id"?: string,"mime_type"?: string,"object_path"?: string,"state"?: string
+                  }
+                  Relationships: []
+                },"item_need_posts": {
+                  Row: {
+                    "author_id": string,"category": string,"community_id": string,"created_at": string,"description": string,"ends_on": string,"id": string,"starts_on": string,"status": string,"title": string,"updated_at": string,"urgency": string,"value_max": number | null,"value_min": number | null,"version": number
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "author_id"?: string,"category"?: string,"community_id"?: string,"created_at"?: string,"description"?: string,"ends_on"?: string,"id"?: string,"starts_on"?: string,"status"?: string,"title"?: string,"updated_at"?: string,"urgency"?: string,"value_max"?: number | null,"value_min"?: number | null,"version"?: number
+                  }
+                  Update: {
+                    "author_id"?: string,"category"?: string,"community_id"?: string,"created_at"?: string,"description"?: string,"ends_on"?: string,"id"?: string,"starts_on"?: string,"status"?: string,"title"?: string,"updated_at"?: string,"urgency"?: string,"value_max"?: number | null,"value_min"?: number | null,"version"?: number
+                  }
+                  Relationships: []
+                },"item_need_responses": {
+                  Row: {
+                    "community_id": string,"created_at": string,"id": string,"listing_id": string,"need_id": string,"note": string,"responder_id": string,"status": string,"withdrawn_at": string | null
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "community_id"?: string,"created_at"?: string,"id"?: string,"listing_id"?: string,"need_id"?: string,"note"?: string,"responder_id"?: string,"status"?: string,"withdrawn_at"?: string | null
+                  }
+                  Update: {
+                    "community_id"?: string,"created_at"?: string,"id"?: string,"listing_id"?: string,"need_id"?: string,"note"?: string,"responder_id"?: string,"status"?: string,"withdrawn_at"?: string | null
+                  }
+                  Relationships: []
                 },"listing_images": {
                   Row: {
                     "byte_size": number,"created_at": string,"id": string,"listing_id": string,"mime_type": string,"object_path": string,"state": string
@@ -1093,6 +1129,27 @@ isOneToOne: true
                            },
 "receive_stripe_receipt":
 { Args: { "p_customer_id": string,"p_event_id": string,"p_event_type": string,"p_fingerprint": string,"p_subscription_id": string }; Returns: Json
+                           },
+"complete_item_need_image":
+{ Args: { "p_image_id": string,"p_intent_id": string }; Returns: Json
+                           },
+"prepare_item_need_image":
+{ Args: { "p_byte_size": number,"p_image_id": string,"p_intent_id": string,"p_mime_type": string,"p_need_id": string }; Returns: Json
+                           },
+"remove_item_need_image":
+{ Args: { "p_image_id": string,"p_intent_id": string }; Returns: Json
+                           },
+"respond_to_item_need":
+{ Args: { "p_intent_id": string,"p_listing_id": string,"p_need_id": string,"p_note"?: string }; Returns: Json
+                           },
+"save_item_need":
+{ Args: { "p_community_id": string,"p_details"?: Json,"p_expected_version"?: number,"p_intent_id": string,"p_need_id"?: string }; Returns: Json
+                           },
+"withdraw_item_need":
+{ Args: { "p_expected_version": number,"p_intent_id": string,"p_need_id": string }; Returns: Json
+                           },
+"withdraw_item_need_response":
+{ Args: { "p_intent_id": string,"p_response_id": string }; Returns: Json
                            },
 "redeem_invite":
 { Args: { "p_intent_id": string,"p_invite_id": string }; Returns: Json
