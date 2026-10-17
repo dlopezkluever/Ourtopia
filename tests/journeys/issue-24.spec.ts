@@ -75,7 +75,9 @@ test('lane 2 install metadata, active service worker and offline shell reload ha
   const baseURL = process.env.TEST_APP_URL ?? `http://127.0.0.1:${process.env.APP_PORT ?? 5173}`;
   const { viewport, isMobile, hasTouch, userAgent, deviceScaleFactor } = info.project.use;
   const profile = resolve('.pilot-evidence', `pwa-${randomUUID().slice(0, 8)}`);
-  const context = await browser.browserType().launchPersistentContext(profile, { baseURL, viewport, isMobile, hasTouch, userAgent, deviceScaleFactor, headless: true, executablePath: process.env.CHROME_PATH ?? (process.platform === 'win32' ? 'C:/Program Files/Google/Chrome/Application/chrome.exe' : undefined) });
+  // The browser-level PWA CDP domain exists only in full Chrome/Chromium, not in Playwright's default headless shell (CI).
+  const executablePath = process.env.CHROME_PATH ?? (process.platform === 'win32' ? 'C:/Program Files/Google/Chrome/Application/chrome.exe' : undefined);
+  const context = await browser.browserType().launchPersistentContext(profile, { baseURL, viewport, isMobile, hasTouch, userAgent, deviceScaleFactor, headless: true, ...(executablePath ? { executablePath } : { channel: 'chromium' }) });
   let browserCdp: Awaited<ReturnType<typeof browser.newBrowserCDPSession>> | undefined;
   let installed = false;
   try {
