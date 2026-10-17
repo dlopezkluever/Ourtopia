@@ -1,13 +1,13 @@
-project_id = "ourtopia-issue-2"
+project_id = "ourtopia-issue-17"
 [api]
 enabled = true
-port = 55321
+port = 56171
 schemas = ["public", "graphql_public"]
 extra_search_path = ["public", "extensions"]
 max_rows = 1000
 [db]
-port = 55322
-shadow_port = 55320
+port = 56172
+shadow_port = 56170
 major_version = 17
 [db.migrations]
 enabled = true
@@ -17,17 +17,17 @@ enabled = false
 enabled = true
 [studio]
 enabled = true
-port = 55323
+port = 56173
 [local_smtp]
 enabled = true
-port = 55324
+port = 56174
 [storage]
 enabled = true
 file_size_limit = "50MiB"
 [auth]
 enabled = true
-site_url = "http://127.0.0.1:5173"
-additional_redirect_urls = ["http://127.0.0.1:5173/auth/callback"]
+site_url = "http://127.0.0.1:56175"
+additional_redirect_urls = ["http://127.0.0.1:56175/auth/callback"]
 jwt_expiry = 3600
 enable_signup = true
 minimum_password_length = 8

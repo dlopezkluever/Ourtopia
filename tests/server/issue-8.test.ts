@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { after, test } from 'node:test';
-import { admin, advanceHandoff, completedItemFixture, disputeFixture, disputeView, handoffFixture, reportingBoundaryFixture, listingImageBytes, receipt, reportIssue, settleFixtureNotices } from '../../scripts/verify/backend';
+import { admin, adminReturned, advanceHandoff, completedItemFixture, disputeFixture, disputeView, handoffFixture, reportingBoundaryFixture, listingImageBytes, receipt, reportIssue, settleFixtureNotices } from '../../scripts/verify/backend';
 import { evidenceSchema } from '../../src/features/handoff/model';
 import { deliverOne } from '../../supabase/functions/notifications/worker';
 import { localDelivery } from '../../supabase/functions/notifications/local';
@@ -80,7 +80,7 @@ test('Post-completion cases preserve fulfillment, completion time, Qualifying In
 
 test('Racing reports create one case and an open case blocks ordinary finalization in the database', async () => {
   const f = await handoffFixture('case-race'); await advanceHandoff(f);
-  for (const state of ['return_pending', 'returned']) assert.equal((await admin.from('exchanges').update({ state }).eq('id', f.exchangeId)).error, null);
+  assert.equal((await adminReturned(f)).error, null);
   const reports = await Promise.all([reportIssue(f.bob, f.exchangeId, 'Broken handle'), reportIssue(f.alice, f.exchangeId, 'Inspect the handle')]);
   for (const result of reports) assert.equal(result.error, null);
   const outcomes = await Promise.all([admin.from('exchanges').update({ state: 'completed' }).eq('id', f.exchangeId), reportIssue(f.bob, f.exchangeId, 'More detail')]);
@@ -88,7 +88,7 @@ test('Racing reports create one case and an open case blocks ordinary finalizati
   const view = await disputeView(f.bob, f.exchangeId); assert.equal(view.state, 'returned'); assert.equal(view.cases.length, 1); assert.equal(view.cases[0].responses.length, 3);
   assert.deepEqual((await admin.from('qualifying_interactions').select('id').eq('exchange_id', f.exchangeId)).data, []);
   const racing = await handoffFixture('case-racing-completion'); await advanceHandoff(racing);
-  for (const state of ['return_pending', 'returned']) assert.equal((await admin.from('exchanges').update({ state }).eq('id', racing.exchangeId)).error, null);
+  assert.equal((await adminReturned(racing)).error, null);
   const simultaneous = await Promise.all([reportIssue(racing.bob, racing.exchangeId), reportIssue(racing.alice, racing.exchangeId), admin.from('exchanges').update({ state: 'completed' }).eq('id', racing.exchangeId)]);
   assert.equal(simultaneous[0].error, null); assert.equal(simultaneous[1].error, null);
   assert.ok(simultaneous[2].error === null || simultaneous[2].error.code === '55000');
