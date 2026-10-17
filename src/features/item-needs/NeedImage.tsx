@@ -36,7 +36,7 @@ export function NeedImage({ needId, images, canEdit, onChanged }: { needId: stri
     setBusy(true); setError('');
     try {
       const digest = hex(await crypto.subtle.digest('SHA-256', await file.arrayBuffer()));
-      // The reserved identity survives a reload, so retrying the same file resumes instead of reserving a second image.
+
       const key = `item-need-upload-${needId}-${file.type}-${file.size}-${digest}`;
       let attempt: { imageId: string; prepare: string; complete: string } | null = null;
       try { attempt = JSON.parse(sessionStorage.getItem(key) ?? 'null'); } catch { attempt = null; }

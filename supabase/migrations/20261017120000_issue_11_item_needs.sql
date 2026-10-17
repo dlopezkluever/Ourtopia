@@ -1,5 +1,3 @@
--- Item Need Posts, their optional private image, and Listing responses (ADRs 0002, 0003, 0008).
--- A response only points to a Listing. The author still submits an ordinary Borrow Request; nothing here creates an Exchange.
 create table public.item_need_posts (
   id uuid primary key default gen_random_uuid(),
   community_id uuid not null references public.communities(id),
@@ -59,7 +57,6 @@ grant select on public.item_need_posts, public.item_need_images, public.item_nee
 create policy item_need_read on public.item_need_posts for select to authenticated using (public.is_active_member(community_id));
 create policy item_need_image_read on public.item_need_images for select to authenticated
   using (exists (select 1 from public.item_need_posts p where p.id = need_id));
--- Listing RLS applies inside this check, so a withdrawn or inaccessible Listing never surfaces through a response.
 create policy item_need_response_read on public.item_need_responses for select to authenticated using (
   public.is_active_member(community_id) and (responder_id = auth.uid()
     or (status = 'offered' and exists (select 1 from public.listings l where l.id = listing_id and l.status = 'published'))));
@@ -86,7 +83,6 @@ create trigger item_need_history before update or delete on public.item_need_pos
 create trigger item_need_response_history before update or delete on public.item_need_responses for each row execute function private.guard_item_need_response();
 revoke all on function private.guard_item_need_post(), private.guard_item_need_response() from public, anon, authenticated;
 
--- Parses and validates the editable fields; returns them typed as a row so insert and update share one rule set.
 create function private.item_need_fields(p_details jsonb)
 returns public.item_need_posts language plpgsql set search_path = '' as $$
 declare fields public.item_need_posts;
@@ -171,7 +167,6 @@ begin
 end;
 $$;
 
--- Missing, foreign-Community, and other members' Listings share one error so guessed IDs reveal nothing.
 create function public.respond_to_item_need(p_intent_id uuid, p_need_id uuid, p_listing_id uuid, p_note text default '')
 returns jsonb language plpgsql security definer set search_path = '' as $$
 declare
@@ -327,7 +322,6 @@ grant execute on function public.save_item_need(uuid, uuid, uuid, integer, jsonb
   public.respond_to_item_need(uuid, uuid, uuid, text), public.withdraw_item_need_response(uuid, uuid),
   public.prepare_item_need_image(uuid, uuid, uuid, text, integer), public.complete_item_need_image(uuid, uuid), public.remove_item_need_image(uuid, uuid) to authenticated;
 
--- Image RLS above re-checks current Community access, so these object policies inherit it.
 create policy item_need_object_read on storage.objects for select to authenticated using (
   bucket_id = 'item-need-images' and exists (select 1 from public.item_need_images i join public.item_need_posts p on p.id = i.need_id
     where i.object_path = name and i.state <> 'removed' and (i.state = 'ready' or p.author_id = auth.uid() or public.is_community_administrator(p.community_id))));
@@ -344,34 +338,6 @@ create policy item_need_outbox_privacy on public.notification_outbox as restrict
   using (kind <> 'item_need_responded' or (recipient_id = auth.uid() and public.is_active_member(community_id)));
 create policy item_need_reminder_privacy on public.notification_reminders as restrictive for select to authenticated
   using (kind <> 'item_need_responded');
-create or replace function public.inspect_notification_deliveries(p_community_id uuid, p_before uuid default null)
-returns jsonb language plpgsql security definer set search_path = '' as $$
-declare result jsonb;
-begin
-  perform public.require_current_membership(p_community_id, true);
-  select coalesce(jsonb_agg(diagnostic order by diagnostic.created_at desc, diagnostic.id desc), '[]'::jsonb) into result from (
-    select o.id, o.event_id, o.recipient_id, o.channel,
-      case when o.kind ~ '^[a-z][a-z0-9_]{0,79}$' then o.kind else 'notification' end as kind,
-      o.state, o.attempts, o.next_attempt_at, o.delivered_at, o.created_at,
-      (o.state in ('pending', 'failed') and o.next_attempt_at <= clock_timestamp())
-        or (o.state = 'processing' and o.lease_until <= clock_timestamp()) as due,
-      private.delivery_error(o.last_error) as last_error, o.reminder_due_at,
-      case when o.reminder_id is null then null else exists (
-        select 1 from public.notification_reminders r where r.id = o.reminder_id
-          and r.event_id = o.event_id and r.due_at = o.reminder_due_at
-      ) end as current_schedule,
-      coalesce((select jsonb_agg(jsonb_build_object('number', a.number, 'started_at', a.started_at,
-        'finished_at', a.finished_at, 'error', private.delivery_error(a.error)) order by a.number)
-        from public.notification_attempts a where a.outbox_id = o.id), '[]'::jsonb) as history
-    from public.notification_outbox o where o.community_id = p_community_id
-      and o.kind not in ('conversation_started', 'message_sent', 'item_need_responded')
-      and (p_before is null or (o.created_at, o.id) < (select cursor.created_at, cursor.id
-        from public.notification_outbox cursor where cursor.id = p_before and cursor.community_id = p_community_id))
-    order by o.created_at desc, o.id desc limit 50
-  ) diagnostic;
-  return result;
-end;
-$$;
 create or replace function public.retry_notification(p_intent_id uuid, p_outbox_id uuid)
 returns jsonb language plpgsql security definer set search_path = '' as $$
 declare
@@ -400,3 +366,6 @@ begin
 end;
 $$;
 notify pgrst, 'reload schema';
+
+create policy item_need_public_events on public.community_events for select to authenticated
+  using (public.is_active_member(community_id) and kind in ('item_need_published', 'item_need_edited', 'item_need_withdrawn'));
