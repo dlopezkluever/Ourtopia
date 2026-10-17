@@ -17,7 +17,8 @@ import { conversationSchema, messageSchema } from '../../src/features/messages/m
 import { helpExchangeSchema, helpPostSchema } from '../../src/features/help/model';
 
 const { values } = parseArgs({ options: { issue: { type: 'string' }, base: { type: 'string' }, head: { type: 'string' }, pairs: { type: 'string', default: '10' } } });
-if (values.issue === '14') await verifyIssue14(values);
+if (values.issue === '22') await (await import('../../supabase/functions/stripe-checkout/perf')).verifyBillingPerf(values);
+else if (values.issue === '14') await verifyIssue14(values);
 else if (values.issue === '12') await verifyIssue12(values);
 else if (values.issue === '15') await verifyIssue15(values);
 else if (values.issue === '3' || values.issue === '4' || values.issue === '5') await verifyIssue3(values);
