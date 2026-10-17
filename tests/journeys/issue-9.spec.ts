@@ -5,10 +5,21 @@ import {
   admin, approveBorrow, checkedOutFixture, decideBorrow, itemReturn, listingImageBytes, loanEffects, localScores, password, recordReturn, requestItem,
   returnAction, returnCondition, returnReminders, withReturnWindows,
 } from '../../scripts/verify/backend';
+import { deliverOne } from '../../supabase/functions/notifications/worker';
+import { localDelivery } from '../../supabase/functions/notifications/local';
 
 const base = 'ecbb87b9c8da936ba4ada0a2491838374982da61';
 type Fixture = Awaited<ReturnType<typeof checkedOutFixture>>;
 const wait = (ms: number) => new Promise(done => setTimeout(done, ms));
+// Claim these rows directly so a backlog of earlier suites' notices in the shared worker cannot starve the lane.
+async function drive(ids: string[], terminal: string) {
+  const { send } = localDelivery();
+  await expect.poll(async () => {
+    for (const id of ids) await deliverOne(admin, send, id);
+    const rows = await admin.from('notification_outbox').select('state').in('id', ids);
+    return rows.data?.filter(row => row.state === terminal).length;
+  }, { timeout: 20000 }).toBe(ids.length);
+}
 async function signIn(page: Page, email: string) {
   await page.goto('/'); await page.getByLabel('Email address').fill(email); await page.getByLabel('Password', { exact: true }).fill(password);
   await page.getByRole('button', { name: 'Sign in', exact: true }).last().click(); await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible();
@@ -132,8 +143,8 @@ test('lane 5 seven days of missing confirmation after reminders queues administr
   const f = await checkedOutFixture('return-silence');
   await withReturnWindows({ confirmation_reminder_after: '1 second', review_after: '4 seconds' }, async () => {
     await open(page, f); await record(page);
-    await expect.poll(async () => (await returnReminders(f.exchangeId, 'item_return_confirmation_due')).filter(row => row.current && row.state === 'delivered').length, { timeout: 20000 }).toBe(2);
-    await wait(3500);
+    await wait(1100); await drive((await returnReminders(f.exchangeId, 'item_return_confirmation_due')).filter(row => row.current).map(row => row.id), 'delivered');
+    await wait(3000);
     expect((await admin.rpc('process_due_item_returns')).error).toBeNull();
   });
   expect((await admin.from('exchange_review_items').select('reason').eq('exchange_id', f.exchangeId)).data).toEqual([{ reason: 'missing_return_confirmation' }]);
@@ -226,8 +237,8 @@ test('lane 9 failed reminder is obsoleted by a corrected Return; business state 
   });
   expect((await f.owner.client.rpc('retry_notification', { p_intent_id: crypto.randomUUID(), p_outbox_id: failedId })).error?.code).toBe('55000');
   expect((await admin.from('notification_outbox').update({ next_attempt_at: new Date().toISOString() }).eq('id', failedId)).error).toBeNull();
-  await expect.poll(async () => (await admin.from('notification_outbox').select('state').eq('id', failedId).single()).data?.state, { timeout: 20000 }).toBe('suppressed');
-  await expect.poll(async () => (await returnReminders(f.exchangeId, 'item_return_confirmation_due')).filter(row => row.current && row.state === 'delivered').length, { timeout: 20000 }).toBe(2);
+  await drive([failedId], 'suppressed');
+  await wait(1100); await drive((await returnReminders(f.exchangeId, 'item_return_confirmation_due')).filter(row => row.current).map(row => row.id), 'delivered');
   const current = (await returnReminders(f.exchangeId, 'item_return_confirmation_due')).find(row => row.current && row.channel === 'email')!;
   const mailbox = async (id: string) => ((await (await fetch(`${process.env.TEST_MAILBOX_URL}/api/v1/search?query=${encodeURIComponent(`message-id:${id}@ourtopia.test`)}`)).json()) as { messages: unknown[] }).messages.length;
   await expect.poll(() => mailbox(current.id)).toBe(1); expect(await mailbox(failedId)).toBe(0);
