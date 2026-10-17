@@ -122,7 +122,7 @@ create policy outbox_status_read on public.notification_outbox for select to aut
     else recipient_id = auth.uid() or public.is_community_administrator(community_id) end);
 drop policy notice_recipient on public.notifications;
 create policy notice_recipient on public.notifications for select to authenticated using (
-  recipient_id = auth.uid() and (kind not like 'item_dispute\_%' or exists(select 1 from public.notification_outbox o where o.id = outbox_id)));
+  recipient_id = auth.uid() and (kind not like 'item_dispute\_%' or exists(select 1 from public.notification_outbox o where o.id = notifications.outbox_id)));
 
 -- The delivery worker also drops pending case notices after the recipient loses case access.
 create or replace function private.reminder_current(p_notice public.notification_outbox)
