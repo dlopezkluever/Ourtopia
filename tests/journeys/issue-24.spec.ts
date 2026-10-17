@@ -34,6 +34,17 @@ async function artifacts(page: Page) {
   });
 }
 const photo = { name: 'camera.png', mimeType: 'image/png', buffer: listingImageBytes };
+// Playwright lifts setOffline on the service worker target asynchronously. Until it lands, the worker's
+// navigation fetch fails and it correctly serves the public offline shell, so retry the way a member presses
+// Retry connection. Returns how many offline-shell responses were seen before the network was reachable.
+async function retryUntilOnline(page: Page, retry: () => Promise<unknown>) {
+  let offlineShells = 0;
+  await expect(async () => {
+    await retry();
+    if (await page.getByRole('heading', { name: "You're offline." }).count()) { offlineShells += 1; throw new Error('service worker still offline'); }
+  }).toPass({ timeout: 15000, intervals: [250, 500, 1000] });
+  return offlineShells;
+}
 
 test('lane 1 trunk lacks install and recovery; head provides the public shell and durable private draft', async ({ page, browser }, info) => {
   test.setTimeout(150000);
@@ -82,7 +93,7 @@ test('lane 2 install metadata, active service worker and offline shell reload ha
     await context.setOffline(true); await app.goto('/communities/private-route');
     await expect(app.getByRole('heading', { name: "You're offline." })).toBeVisible(); await expect(app.getByRole('link', { name: 'Retry connection' })).toBeVisible();
     await capture(app, info, 2, { manifest, installability, launch, standalone: true, offline: 'Installed public shell only; no account or Community content' });
-    await context.setOffline(false); await app.getByRole('link', { name: 'Retry connection' }).click(); await expect(app.getByLabel('Email address')).toBeVisible();
+    await context.setOffline(false); await retryUntilOnline(app, async () => { const retry = app.getByRole('link', { name: 'Retry connection' }); if (await retry.count()) await retry.click(); }); await expect(app.getByLabel('Email address')).toBeVisible();
   } finally {
     if (installed) await browserCdp!.send('PWA.uninstall', { manifestId: `${baseURL}/` });
     await context.close();
@@ -142,15 +153,16 @@ test('lane 6 cached artifacts contain only fixed public shell files and no prote
 
 test('lane 7 offline privileged action is not queued and reconnect after cancellation rejects stale work', async ({ page, context }, info) => {
   const f = await handoffFixture('pwa-offline-state'); await advanceHandoff(f, 'schedule'); await signIn(page, f.bob.email); await page.goto(`/handoffs/${f.exchangeId}`);
+  await expect(page.getByLabel('Item condition', { exact: true })).toBeVisible();
   await context.setOffline(true);
   await expect(page.getByRole('status').filter({ hasText: "You're offline." })).toBeVisible();
   await page.getByLabel('Item condition', { exact: true }).fill('Attempted offline'); await page.getByLabel('Included accessories', { exact: true }).fill('Battery'); await page.getByRole('button', { name: 'Record condition', exact: true }).click(); await expect(page.getByRole('alert')).toBeVisible();
   expect((await handoffAction(f.alice, f.exchangeId, 3, 'cancel', { reason: 'Item no longer available' })).error).toBeNull();
   await context.setOffline(false);
   const stale = await handoffAction(f.bob, f.exchangeId, 3, 'record_condition', { condition: 'Attempted offline', accessories: 'Battery' }); expect(stale.error?.code).toBe('55000');
-  await page.reload(); await expect(page.getByRole('status').filter({ hasText: 'Cancelled' })).toBeVisible();
+  const offlineShellsAfterReconnect = await retryUntilOnline(page, () => page.reload()); await expect(page.getByRole('status').filter({ hasText: 'Cancelled' })).toBeVisible();
   expect((await itemHandoff(f.alice, f.exchangeId)).state).toBe('cancelled');
-  expect((await admin.from('item_handoffs').select('condition').eq('exchange_id', f.exchangeId)).data).toEqual([{ condition: null }]); await capture(page, info, 7, { state: 'cancelled', offlineQueue: 'none', condition: null });
+  expect((await admin.from('item_handoffs').select('condition').eq('exchange_id', f.exchangeId)).data).toEqual([{ condition: null }]); await capture(page, info, 7, { state: 'cancelled', offlineQueue: 'none', condition: null, staleCommand: stale.error?.code, offlineShellsAfterReconnect });
 });
 
 test('lane 8 shared Return recovery adapter contract survives a lost completion response with one evidence identity', async ({ page }, info) => {
