@@ -113,3 +113,28 @@ test('Realtime hides all Handoff/evidence bodies and private audit while recipie
     receipt('issue-7-realtime', { bodies: bodies.map(rows => rows.length), hints: hints.map(rows => rows.length), publishedHandoffTables: [] });
   } finally { await Promise.all(members.map((member, index) => member.client.removeChannel(channels[index]))); members.forEach(member => member.client.realtime.disconnect()); }
 });
+
+test('Nonparticipant administrators cannot derive Handoff timing from reminders, outbox status or the delivery console', async () => {
+  const f = await handoffFixture('handoff-admin-timing'); await advanceHandoff(f, 'terms');
+  const startsAt = new Date(Date.now() + 3 * 86400000).toISOString();
+  assert.equal((await handoffAction(f.alice, f.exchangeId, 1, 'propose_schedule', { starts_at: startsAt, location: 'Library side entrance' })).error, null);
+  assert.equal((await handoffAction(f.bob, f.exchangeId, 2, 'confirm_schedule')).error, null);
+  const dueAt = Date.parse(startsAt) - 86400000;
+  const derivable = (values: unknown[]) => values.some(value => typeof value === 'string' && Math.abs(Date.parse(value) - dueAt) < 1000);
+  const reminders = await f.owner.client.from('notification_reminders').select('source_key,due_at').eq('source_key', f.exchangeId);
+  const outbox = await f.owner.client.from('notification_outbox').select('kind,next_attempt_at,reminder_due_at,created_at').eq('community_id', f.community.id).like('kind', 'item\\_%');
+  const consoleRows = await f.owner.client.rpc('inspect_notification_deliveries', { p_community_id: f.community.id });
+  assert.equal(reminders.error, null); assert.equal(outbox.error, null); assert.equal(consoleRows.error, null);
+  const listed = consoleRows.data as { kind: string; next_attempt_at: string; reminder_due_at: string | null }[];
+  const surfaces = {
+    reminders: reminders.data!.length,
+    outbox: outbox.data!.length,
+    console: listed.filter(row => row.kind.startsWith('item_')).length,
+    derivableTiming: derivable([...reminders.data!.map(row => row.due_at), ...outbox.data!.flatMap(row => [row.next_attempt_at, row.reminder_due_at]), ...listed.flatMap(row => [row.next_attempt_at, row.reminder_due_at])]),
+  };
+  receipt('issue-7-admin-reminder-timing', { surfaces, consoleKinds: [...new Set(listed.map(row => row.kind))] });
+  assert.deepEqual(surfaces, { reminders: 0, outbox: 0, console: 0, derivableTiming: false });
+  assert.ok(listed.some(row => row.kind.startsWith('borrow_')), 'the console still lists non-logistics notices');
+  const own = await f.alice.client.from('notification_outbox').select('kind').eq('kind', 'item_handoff_upcoming').eq('recipient_id', f.alice.id);
+  assert.equal(own.data?.length, 2);
+});
