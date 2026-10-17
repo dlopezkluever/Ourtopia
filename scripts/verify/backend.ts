@@ -395,3 +395,34 @@ export async function helpFixture(label = 'help', helpers = 3) {
   for (let index = 0; index < helpers; index++) members.push(await activeMember(owner, community.id, `${label}-helper${index + 1}`));
   return { owner, community, author, members };
 }
+
+export async function reportIssue(member: Awaited<ReturnType<typeof actor>>, exchangeId: string, body = 'The drill case is damaged.', issueType = 'damage', intent = randomUUID()) {
+  return member.client.rpc('report_exchange_issue', { p_intent_id: intent, p_exchange_id: exchangeId, p_issue_type: issueType, p_body: body });
+}
+export async function disputeView(member: Awaited<ReturnType<typeof actor>>, exchangeId: string) {
+  const result = await member.client.rpc('read_exchange_disputes', { p_exchange_id: exchangeId });
+  if (result.error) throw result.error;
+  const { disputeViewSchema } = await import('../../src/features/disputes/model');
+  return disputeViewSchema.parse(result.data);
+}
+export async function disputeFixture(label = 'dispute') {
+  const f = await handoffFixture(label); await advanceHandoff(f);
+  const result = await reportIssue(f.bob, f.exchangeId);
+  if (result.error) throw result.error;
+  const view = await disputeView(f.bob, f.exchangeId);
+  return { ...f, disputeId: view.cases[0].id };
+}
+export async function completedItemFixture(label = 'dispute-completed', ageDays = 1) {
+  const f = await borrowingFixture(label);
+  const result = await admin.from('exchanges').insert({ community_id: f.community.id, kind: 'item', provider_id: f.alice.id, receiver_id: f.bob.id, source_kind: 'listing', source_id: f.listing.id, state: 'completed', completed_at: new Date(Date.now() - ageDays * 86400000).toISOString() }).select('id').single();
+  if (result.error) throw result.error;
+  const settled = await admin.rpc('settle_exchange_completions', { p_exchange_ids: [result.data.id] });
+  if (settled.error) throw settled.error;
+  return { ...f, exchangeId: result.data.id };
+}
+export function reportingBoundaryFixture() {
+  const query = "select private.dispute_reporting_window('completed', '2026-01-01T00:00:00Z', t) from unnest(array['2026-01-30T23:59:59.999999Z'::timestamptz,'2026-01-31T00:00:00Z'::timestamptz,'2026-01-31T00:00:00.000001Z'::timestamptz]) t";
+  const project = /^project_id\s*=\s*"([^"]+)"/m.exec(readFileSync('supabase/config.toml', 'utf8'))?.[1];
+  if (!/^ourtopia-issue-\d+$/.test(project ?? '')) throw new Error('Disposable lane required.');
+  return execFileSync('docker', ['exec', 'supabase_db_' + project, 'psql', '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-Atc', query], { encoding: 'utf8' }).trim();
+}
