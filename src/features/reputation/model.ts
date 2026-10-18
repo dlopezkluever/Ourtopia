@@ -21,6 +21,7 @@ const ruleLabels: Record<string, string> = {
   late_return: 'Late return',
   unresolved_damage: 'Unresolved damage',
   confirmed_theft: 'Confirmed theft',
+  exchange_thank_you: 'Received an Exchange thank-you',
 };
 export function ruleLabel(rule: string) { return ruleLabels[rule] ?? 'Verified standing change'; }
 

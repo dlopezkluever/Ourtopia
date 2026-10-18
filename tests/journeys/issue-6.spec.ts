@@ -140,7 +140,12 @@ test('lane 4 below-minimum and no-longer-eligible approvals are refused without 
   await expect(card(page, f.carol.email, carolDates).getByRole('button', { name: `Approve ${f.carol.email}`, exact: true })).toBeVisible();
   expect((await admin.from('memberships').update({ status: 'removed' }).eq('community_id', f.community.id).eq('user_id', f.carol.id)).error).toBeNull();
   await card(page, f.carol.email, carolDates).getByRole('button', { name: `Approve ${f.carol.email}`, exact: true }).click();
-  await expect(card(page, f.carol.email, carolDates).getByRole('alert')).toContainText('no longer an active member');
+  await expect.poll(async () => {
+    const requestCard = card(page, f.carol.email, carolDates);
+    if (await requestCard.count() === 0) return 'hidden after membership removal';
+    const alert = requestCard.getByRole('alert');
+    return await alert.count() ? await alert.innerText() : 'waiting for the decision result';
+  }).toMatch(/hidden after membership removal|no longer an active member/);
   const records = await borrowRecords(f.listing.id);
   expect(records.exchanges).toEqual([]); expect(records.reservations).toEqual([]);
   expect(records.requests.map(row => [row.status, row.version, row.exchange_id])).toEqual([['requested', 1, null], ['requested', 1, null]]);

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { helpExchangeStateSchema } from '../exchanges/model';
+import { standingSchema } from '../reputation/model';
 
 export const helpCategories = {
   moving: 'Moving', repairs: 'Repairs', yard_garden: 'Yard & garden', tech: 'Tech help', tutoring: 'Tutoring',
@@ -27,6 +28,8 @@ export type HelpPost = z.infer<typeof helpPostSchema>;
 export type HelpListing = Extract<HelpPost, { postKind: 'listing' }>;
 export type HelpNeedPost = Extract<HelpPost, { postKind: 'need_post' }>;
 
+export const helpCompletionSchema = z.object({ exchangeId: z.uuid(), state: helpExchangeStateSchema, communityId: z.uuid(), helperId: z.uuid(), requesterId: z.uuid(), revision: z.number().int(), firstConfirmedBy: z.uuid().nullable(), firstConfirmedAt: z.string().nullable(), helperConfirmedAt: z.string().nullable(), requesterConfirmedAt: z.string().nullable(), disputedBy: z.uuid().nullable(), disagreement: z.string().nullable(), reminderDueAt: z.string().nullable(), reviewDueAt: z.string().nullable(), completedAt: z.string().nullable(), openDispute: z.boolean(), standing: standingSchema, history: z.array(z.object({ participantId: z.uuid() })), awards: z.array(z.object({ recipientId: z.uuid(), rule: z.string(), points: z.number().int() })) });
+
 export const helpExchangeSchema = z.object({
   id: z.uuid(), communityId: z.uuid(), communityName: z.string(), state: helpExchangeStateSchema,
   sourceKind: z.enum(['listing', 'need_post']), sourceId: z.uuid(), sourceTitle: z.string(),
@@ -34,6 +37,7 @@ export const helpExchangeSchema = z.object({
   place: z.number().int().nullable(), placeStatus: z.enum(['active', 'closed']).nullable(),
   startsAt: z.string().nullable(), durationMinutes: z.number().int().nullable(), meetingPoint: z.string().nullable(),
   cancelReason: z.string().nullable(), cancelledBy: z.uuid().nullable(), cancelledAt: z.string().nullable(), createdAt: z.string(),
+  completion: helpCompletionSchema.nullable().optional(),
 });
 export type HelpExchange = z.infer<typeof helpExchangeSchema>;
 

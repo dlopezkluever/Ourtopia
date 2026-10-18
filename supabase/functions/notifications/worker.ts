@@ -14,6 +14,7 @@ export type DeliveryBackend = {
 export type EmailSender = (message: { to: string; subject: string; text: string; idempotencyKey: string }) => Promise<void>;
 
 const subjects: Record<string, string> = {
+  exchange_thank_you: 'Your Exchange partner thanked you',
   item_need_responded: 'Someone answered your item Need Post',
   item_handoff_upcoming: 'Your item Handoff is coming up',
   item_handoff_proposed: 'A Handoff schedule needs your confirmation',
@@ -46,6 +47,10 @@ const subjects: Record<string, string> = {
   help_commitment_accepted: 'Your help offer was accepted',
   help_scheduled: 'Your help Exchange has a schedule',
   help_cancelled: 'A help Exchange was cancelled',
+  help_completion_confirmed: 'A participant confirmed completed help',
+  help_completion_due: 'Help completion is waiting for your confirmation',
+  help_completed: 'Your help Exchange is complete',
+  help_completion_review_queued: 'A stalled Help Exchange was sent to administrator review',
 };
 
 export async function deliverOne(backend: DeliveryBackend, sendEmail: EmailSender, outboxId?: string) {
@@ -63,7 +68,7 @@ export async function deliverOne(backend: DeliveryBackend, sendEmail: EmailSende
     if (item.channel === 'email') await sendEmail({
       to: item.recipient_email,
       subject: subjects[item.kind] ?? 'You have an Ourtopia notification',
-      text: item.kind === 'item_need_responded' ? 'Sign in to Ourtopia and open Community requests to review the offered Listing and send a separate Borrow Request.' : item.kind.startsWith('item_dispute_') ? 'Sign in to Ourtopia and open Exchange issues to review the case.' : item.kind.startsWith('item_') ? 'Sign in to Ourtopia and open Handoffs to view the current schedule and status.' : item.kind.startsWith('help_') ? 'Sign in to Ourtopia to view the current status of your help Exchange.' : item.kind.startsWith('borrow_') ? 'Sign in to Ourtopia and open Borrow Requests to view the current status.' : 'Sign in to Ourtopia to view your notification and current status.',
+      text: item.kind === 'item_need_responded' ? 'Sign in to Ourtopia and open Community requests to review the offered Listing and send a separate Borrow Request.' : item.kind === 'exchange_thank_you' ? 'Sign in to Ourtopia and open your Community profile to read the thank-you.' : item.kind.startsWith('item_dispute_') ? 'Sign in to Ourtopia and open Exchange issues to review the case.' : item.kind.startsWith('item_') ? 'Sign in to Ourtopia and open Handoffs to view the current schedule and status.' : item.kind.startsWith('help_') ? 'Sign in to Ourtopia to view the current status of your help Exchange.' : item.kind.startsWith('borrow_') ? 'Sign in to Ourtopia and open Borrow Requests to view the current status.' : 'Sign in to Ourtopia to view your notification and current status.',
       idempotencyKey: item.id,
     });
   } catch {

@@ -4,8 +4,11 @@ import { ArrowLeft, CalendarClock, HandHeart, LockKeyhole, MapPin, Plus, Search,
 import { supabase } from '../../lib/supabase/client';
 import { Button } from '../../components/ui/button';
 import { helpExchangeStateLabels } from '../exchanges/model';
+import { ScoreCard } from '../reputation/Standing';
+import { localExplanation } from '../reputation/model';
+import { ThankExchange } from '../thank-yous/ThankExchange';
 import {
-  commitResultSchema, errorMessage, helpCategories, helpExchangeSchema, helpPostDetailSchema, helpPostSchema, helpRoute, intentFor,
+  commitResultSchema, errorMessage, helpCategories, helpCompletionSchema, helpExchangeSchema, helpPostDetailSchema, helpPostSchema, helpRoute, intentFor,
   listingFields, localInput, needPostFields, postKindLabels, postPath, scheduleFields, skillLevels, when,
   type HelpExchange, type HelpPost, type HelpPostDetail, type PostKind,
 } from './model';
@@ -321,24 +324,31 @@ function ExchangeCard({ exchange, userId, canSchedule, onChanged }: { exchange: 
   const open = exchange.state === 'committed' || exchange.state === 'scheduled';
   const id = (field: string) => `${exchange.id}-${field}`;
 
-  async function send(command: 'schedule' | 'cancel', event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); setError('');
-    const values = Object.fromEntries(new FormData(event.currentTarget));
+  async function send(command: 'schedule' | 'cancel' | 'confirm' | 'dispute', event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
+    setError('');
+    const values = event ? Object.fromEntries(new FormData(event.currentTarget)) : {};
     let call: () => PromiseLike<{ data: unknown; error: { message: string } | null }>;
     if (command === 'schedule') {
       const parsed = scheduleFields.safeParse(values);
       if (!parsed.success) { setError(parsed.error.issues.map(issue => issue.message).join(' ')); return; }
       call = () => supabase.rpc('schedule_help_exchange', { p_intent_id: intentFor(memory, { schedule: exchange.id, fields: parsed.data }), p_exchange_id: exchange.id, p_fields: parsed.data });
-    } else {
+    } else if (command === 'cancel') {
       const reason = String(values.reason ?? '').trim();
       if (!reason) { setError('Give a reason for cancelling.'); return; }
       call = () => supabase.rpc('cancel_help_exchange', { p_intent_id: intentFor(memory, { cancel: exchange.id, reason }), p_exchange_id: exchange.id, p_reason: reason });
+    } else {
+      const disagreement = command === 'dispute' ? String(values.disagreement ?? '').trim() : '';
+      if (command === 'dispute' && !disagreement) { setError('Describe what does not match.'); return; }
+      const action = command === 'dispute' ? 'dispute' : 'confirm';
+      call = () => supabase.rpc('command_help_completion', { p_intent_id: intentFor(memory, { completion: exchange.id, revision: exchange.completion?.revision ?? 0, action, disagreement }), p_exchange_id: exchange.id, p_expected_revision: exchange.completion?.revision ?? 0, p_action: action, p_disagreement: disagreement || undefined });
     }
     setBusy(true);
     try {
       const { data, error } = await call();
       if (error) throw error;
-      helpExchangeSchema.parse(data);
+      if (command === 'confirm' || command === 'dispute') helpCompletionSchema.parse(data);
+      else helpExchangeSchema.parse(data);
       memory.current = null; onChanged();
     } catch (cause) { setError(errorMessage(cause)); }
     finally { setBusy(false); }
@@ -367,5 +377,21 @@ function ExchangeCard({ exchange, userId, canSchedule, onChanged }: { exchange: 
       <label htmlFor={id('reason')}>Reason for cancelling</label><input id={id('reason')} name="reason" maxLength={500} disabled={busy}/>
       <Button className="secondary-button" type="submit" disabled={busy}>Cancel help</Button>
     </form>}
+    {(exchange.state === 'scheduled' || exchange.state === 'completion_pending') && !exchange.completion?.openDispute && <section className="help-completion" aria-label="Confirm help completion">
+      <h3>Did the help happen?</h3>
+      {exchange.completion?.firstConfirmedBy && <p>Waiting for the other participant to confirm. No scores change until both agree.</p>}
+      {!exchange.completion?.firstConfirmedBy || (exchange.completion.firstConfirmedBy !== userId && !(exchange.completion.helperConfirmedAt && exchange.completion.requesterConfirmedAt)) ? <Button className="primary-button" type="button" disabled={busy} onClick={() => void send('confirm')}>Confirm completed help</Button> : null}
+      {exchange.state === 'completion_pending' && exchange.completion?.firstConfirmedBy !== userId && <form onSubmit={event => void send('dispute', event)}><label htmlFor={id('disagreement')}>If the account differs, describe what happened</label><textarea id={id('disagreement')} name="disagreement" minLength={1} maxLength={4000} required disabled={busy}/><Button className="secondary-button" type="submit" disabled={busy}>Report disagreement</Button></form>}
+    </section>}
+    {exchange.state === 'completed' && exchange.completion && <section aria-label="Completed Help Exchange">
+      <p role="status">Help completed.</p>
+      <ScoreCard label="Community Solidarity Score" score={exchange.completion.standing.score} title={exchange.completion.standing.title}
+        completed={exchange.completion.standing.completedInteractions} explanation={localExplanation}/>
+      <p>{exchange.completion.awards.some(award => award.recipientId === userId)
+        ? 'You earned +3 for completing help. Both participants gained one Qualifying Interaction.'
+        : 'Receiving help does not change your score. Both participants gained one Qualifying Interaction.'}</p>
+      <ThankExchange userId={userId} communityId={exchange.communityId} exchangeId={exchange.id} onChanged={onChanged}/>
+      <a href="/standing">View your Reputation Event history</a>
+    </section>}
   </section>;
 }
