@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { randomUUID } from 'node:crypto';
-import { admin, approveBorrow, handoffReminders, borrowingFixture, handoffFixture, advanceHandoff, handoffAction, handoffTerms, handoffSchedule, handoffCondition, itemHandoff, requestItem, withAcknowledgmentWindow, listingImageBytes, receipt } from '../../scripts/verify/backend';
+import { admin, adminReturned, approveBorrow, handoffReminders, borrowingFixture, handoffFixture, advanceHandoff, handoffAction, handoffTerms, handoffSchedule, handoffCondition, itemHandoff, requestItem, withAcknowledgmentWindow, listingImageBytes, receipt } from '../../scripts/verify/backend';
 import { handoffSchema, evidenceSchema } from '../../src/features/handoff/model';
 import { deliverOne } from '../../supabase/functions/notifications/worker';
 import { localDelivery } from '../../supabase/functions/notifications/local';
@@ -47,7 +47,7 @@ test('Cancellation before checkout clears custody, releases identical dates and 
     const f = await handoffFixture(`handoff-terminal-${terminal}`);
     if (terminal === 'completed') {
       await advanceHandoff(f);
-      for (const state of ['return_pending', 'returned']) assert.equal((await admin.from('exchanges').update({ state }).eq('id', f.exchangeId)).error, null);
+      assert.equal((await adminReturned(f)).error, null);
     }
     if (terminal === 'expired') {
       const short = await borrowingFixture('handoff-terminal-expired-short');
