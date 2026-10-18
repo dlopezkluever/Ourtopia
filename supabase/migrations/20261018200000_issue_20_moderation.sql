@@ -28,10 +28,7 @@ create policy moderation_action_read on public.moderation_actions for select to 
 -- A removed row is terminal: only a fresh Invite (redeem_invite) may move it back into the application flow.
 create function private.guard_membership_transition() returns trigger language plpgsql set search_path = '' as $$
 begin
-  if new.status is distinct from old.status and not (
-    (old.status, new.status) in (('pending', 'active'), ('pending', 'rejected'), ('active', 'suspended'), ('suspended', 'active'),
-      ('active', 'removed'), ('suspended', 'removed'), ('rejected', 'pending'), ('removed', 'pending'))
-  ) then
+  if old.status = 'removed' and new.status not in ('removed', 'pending') then
     raise exception using errcode = '55000', message = 'This membership cannot change to that status.';
   end if;
   return new;

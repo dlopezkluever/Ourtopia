@@ -90,7 +90,7 @@ test('start and send require current active membership of both people in the sam
   assert.deepEqual(codes, { self: '22023', foreignParticipant: '42501', pendingParticipant: '42501', pendingStarter: '42501', outsiderStarter: '42501', crossCommunity: '42501', adminSend: '42501', outsiderSend: '42501', foreignSend: '42501', emptyBody: '22023', longBody: '22023', missingIntent: '22023' });
   const retryIntent = randomUUID();
   await sendMessage(f.first, f.conversation.id, 'Before suspension', retryIntent);
-  for (const status of ['suspended', 'removed', 'rejected']) {
+  for (const status of ['suspended', 'rejected']) {
     assert.equal((await admin.from('memberships').update({ status }).eq('community_id', f.community.id).eq('user_id', f.first.id)).error, null);
     assert.equal((await send(f.first)).error?.code, '42501', `${status} send`);
     assert.equal((await f.first.client.rpc('send_message', { p_intent_id: retryIntent, p_conversation_id: f.conversation.id, p_body: 'Before suspension' })).error?.code, '42501', `${status} prior-result retry`);
@@ -100,6 +100,13 @@ test('start and send require current active membership of both people in the sam
   assert.equal((await admin.from('memberships').update({ status: 'active' }).eq('community_id', f.community.id).eq('user_id', f.first.id)).error, null);
   assert.equal((await start(f.second, f.community.id, f.first.id)).data?.id, f.conversation.id);
   assert.equal((await admin.from('messages').select('id').eq('conversation_id', f.conversation.id)).data?.length, 1);
+  for (const status of ['removed']) {
+    assert.equal((await admin.from('memberships').update({ status }).eq('community_id', f.community.id).eq('user_id', f.first.id)).error, null);
+    assert.equal((await send(f.first)).error?.code, '42501', `${status} send`);
+    assert.equal((await f.first.client.rpc('send_message', { p_intent_id: retryIntent, p_conversation_id: f.conversation.id, p_body: 'Before suspension' })).error?.code, '42501', `${status} prior-result retry`);
+    assert.equal((await start(f.first, f.community.id, f.second.id)).error?.code, '42501', `${status} start`);
+    assert.deepEqual(await rows(f.first.client, f.conversation.id), [], `${status} read`);
+  }
   receipt('issue-15-guards', { codes, inactiveStates: ['suspended', 'removed', 'rejected'], writtenMessages: 1 });
 });
 
