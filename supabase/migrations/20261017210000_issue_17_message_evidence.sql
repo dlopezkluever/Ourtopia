@@ -129,7 +129,6 @@ begin
 end;
 $$;
 
--- One read for the case screen: every snapshot under case access, plus selectable source text for a current participant only.
 create function public.read_dispute_message_evidence(p_dispute_id uuid)
 returns jsonb language plpgsql stable security definer set search_path = '' as $$
 declare d public.disputes; selecting boolean;

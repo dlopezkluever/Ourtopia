@@ -561,7 +561,6 @@ export async function localScores(communityId: string, ...members: { id: string 
   return members.map(member => 50 + result.data.filter(row => row.recipient_id === member.id).reduce((sum, row) => sum + row.points, 0));
 }
 
-// Bob reported a Dispute about Alice's drill; their Community conversation was never linked to that Exchange.
 export const evidenceMessages = ['Can you bring the drill back by Friday?', 'The case was already cracked when I picked it up.', 'It was intact when I handed it over.', 'Unrelated: my new phone number is 555-0100.'];
 export async function messageEvidenceFixture(label = 'message-evidence') {
   const f = await disputeFixture(label);
