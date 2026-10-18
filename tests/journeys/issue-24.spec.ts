@@ -243,7 +243,7 @@ test('lane 8 Return recovery resumes a lost completion response with one evidenc
   const prior = (await f.bob.client.from('exchange_evidence').select('id,state,purpose').eq('exchange_id', f.exchangeId)).data!; expect(prior).toHaveLength(1); expect(prior[0]).toEqual({ id: prior[0].id, state: 'ready', purpose: 'return' });
   expect((await itemReturn(f.bob, f.exchangeId)).state).toBe('checked_out');
   await page.reload(); await page.getByLabel('Camera or photo').setInputFiles(photo); await page.getByRole('button', { name: 'Retry optional photo', exact: true }).click(); await expect(page.getByRole('status').filter({ hasText: 'Photo confirmed.' })).toBeVisible();
-  expect((await f.bob.client.from('exchange_evidence').select('id,state,purpose').eq('exchange_id', f.exchangeId)).data).toEqual(prior); expect((await admin.storage.from('exchange-evidence').list(f.exchangeId)).data).toHaveLength(1); expect((await admin.from('exchange_events').select('id').eq('exchange_id', f.exchangeId).eq('kind', 'item_evidence_completed')).data).toHaveLength(1);
+  expect((await f.bob.client.from('exchange_evidence').select('id,state,purpose').eq('exchange_id', f.exchangeId)).data).toEqual(prior); expect((await admin.storage.from('exchange-evidence').list(f.exchangeId)).data).toHaveLength(1); expect((await admin.from('exchange_events').select('id').eq('exchange_id', f.exchangeId).eq('kind', 'item_return_evidence_completed')).data).toHaveLength(1);
   expect((await itemReturn(f.bob, f.exchangeId)).state).toBe('checked_out');
   await capture(page, info, 8, { records: prior, purpose: 'return', sameIdentityAfterReload: true, stateUnchanged: 'checked_out', completionEvents: 1 });
 });
