@@ -131,6 +131,7 @@ test('A case outcome corrected to unresolved keeps a returned item from completi
   assert.equal((await caseAction(f.owner, disputeId, 'correct_outcome', { outcome: 'unresolved', reason: 'The submitted records cannot establish the condition.' })).error, null);
   const corrected = await decisionView(f.owner, f.exchangeId);
   assert.equal(corrected.cases[0].status, 'unresolved'); assert.equal(corrected.cases[0].outcome?.corrected, true);
+  assert.equal((await f.bob.client.rpc('read_exchange_disputes', { p_exchange_id: f.exchangeId })).data.cases[0].status, 'unresolved');
 
   assert.equal((await returnAction(f.alice, f.exchangeId, pending.revision, 'confirm_return', { condition_matches: true })).error, null);
   assert.equal((await admin.rpc('process_due_item_returns')).error, null);

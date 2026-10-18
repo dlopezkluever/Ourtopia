@@ -84,6 +84,28 @@ language sql stable security definer set search_path = '' as $$
     order by a.created_at desc, a.id desc limit 1;
 $$;
 
+-- Closed cases cannot change status, so the participant case page also reads the effective outcome.
+create or replace function public.read_exchange_disputes(p_exchange_id uuid) returns jsonb
+language plpgsql stable security definer set search_path = '' as $$
+declare e public.exchanges;
+begin
+  select * into e from public.exchanges where id = p_exchange_id;
+  if not found or not (public.can_read_exchange(e.id) or (public.is_community_administrator(e.community_id)
+    and exists(select 1 from public.disputes where exchange_id = e.id))) then
+    raise exception using errcode = '42501', message = 'Case unavailable.';
+  end if;
+  return jsonb_build_object('exchange_id', e.id, 'state', e.state, 'completed_at', e.completed_at,
+    'participant', auth.uid() in (e.provider_id, e.receiver_id),
+    'can_report', public.can_read_exchange(e.id) and private.dispute_reporting_window(e.state, e.completed_at, statement_timestamp()),
+    'cases', coalesce((select jsonb_agg(to_jsonb(d) || case when d.closed_at is null then '{}'::jsonb
+        else jsonb_build_object('status', coalesce(private.dispute_effective_outcome(d.id), d.status)) end || jsonb_build_object(
+      'responses', coalesce((select jsonb_agg(to_jsonb(r) order by r.created_at, r.id) from public.dispute_responses r where r.dispute_id = d.id), '[]'::jsonb),
+      'evidence', coalesce((select jsonb_agg(to_jsonb(v) order by v.created_at, v.id) from public.exchange_evidence v
+        where v.dispute_id = d.id and (v.state = 'ready' or v.uploader_id = auth.uid())), '[]'::jsonb)) order by d.created_at, d.id)
+      from public.disputes d where d.exchange_id = e.id), '[]'::jsonb));
+end;
+$$;
+
 create function private.dispute_case_view(p_dispute uuid)
 returns jsonb language plpgsql stable security definer set search_path = '' as $$
 declare d public.disputes; remedy public.dispute_actions; outcome public.dispute_actions;
