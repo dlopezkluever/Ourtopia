@@ -1075,8 +1075,7 @@ isOneToOne: false
 isOneToOne: false
       referencedRelation: "communities"
       referencedColumns: ["id"]
-    },
-                    {
+    },{
       foreignKeyName: "moderation_actions_event_id_fkey"
       columns: ["event_id"]
 isOneToOne: true
