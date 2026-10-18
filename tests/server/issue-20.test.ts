@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { test } from 'node:test';
-import { actor, admin, applyInvite, completedItemFixture, decideApplication, drillDetails, handoffFixture, issueInvite, receipt } from '../../scripts/verify/backend';
+import { actor, admin, advanceHandoff, applyInvite, borrowingFixture, completedItemFixture, decideApplication, decideBorrow, drillDetails, handoffFixture, issueInvite, messageEvidenceFixture, receipt, reportIssue, requestItem, seedReputationEvent } from '../../scripts/verify/backend';
 
 type Actor = Awaited<ReturnType<typeof actor>>;
 const moderate = (moderator: Actor, communityId: string, userId: string, action: string, reason: string, intent = randomUUID()) =>
@@ -84,4 +84,47 @@ test('Content moderation withdraws with a reason, keeps the stored owner, and re
   assert.equal((await admin.from('listings').select('status').eq('id', f.listing.id).single()).data?.status, 'withdrawn');
   const notices = await admin.from('notification_outbox').select('recipient_id').eq('kind', 'content_moderated');
   assert.ok(notices.data?.some(row => row.recipient_id === f.alice.id));
+});
+
+test('Approval re-checks the borrower membership and the Listing status; rejection stays open to the owner', async () => {
+  const f = await borrowingFixture('moderation-borrow');
+  const suspendedRequest = await requestItem(f.carol, f.listing.id, '2027-02-01', '2027-02-03');
+  assert.equal((await moderate(f.owner, f.community.id, f.carol.id, 'suspend', 'Under review.')).error, null);
+  assert.equal((await decideBorrow(f.alice, suspendedRequest)).error?.code, '55000');
+  assert.equal((await decideBorrow(f.alice, suspendedRequest, 'rejected')).error, null);
+  const withdrawnRequest = await requestItem(f.bob, f.listing.id, '2027-03-01', '2027-03-03');
+  assert.equal((await moderateContent(f.owner, f.community.id, 'listing', f.listing.id, 'Unsafe item.')).error, null);
+  assert.equal((await decideBorrow(f.alice, withdrawnRequest)).error?.code, '55000');
+  assert.deepEqual((await admin.from('item_reservations').select('exchange_id').eq('listing_id', f.listing.id)).data, []);
+});
+
+test('A removed participant can file a later Dispute only inside the original 30-day window', async () => {
+  const recent = await completedItemFixture('moderation-window-open', 1);
+  assert.equal((await moderate(recent.owner, recent.community.id, recent.bob.id, 'remove', 'Reviewed.')).error, null);
+  assert.equal((await reportIssue(recent.bob, recent.exchangeId)).error, null);
+  const aged = await completedItemFixture('moderation-window-closed', 31);
+  assert.equal((await moderate(aged.owner, aged.community.id, aged.bob.id, 'remove', 'Reviewed.')).error, null);
+  assert.equal((await reportIssue(aged.bob, aged.exchangeId)).error?.code, '42501');
+});
+
+test('Removal keeps Exchange custody, schedule records, and reputation events in place', async () => {
+  const f = await handoffFixture('moderation-custody');
+  await advanceHandoff(f);
+  await seedReputationEvent(f.community.id, f.bob.id, 2);
+  const snapshot = async () => ({
+    exchange: (await admin.from('exchanges').select('state,provider_id,receiver_id').eq('id', f.exchangeId).single()).data,
+    reservation: (await admin.from('item_reservations').select('exchange_id,custody_unresolved').eq('exchange_id', f.exchangeId).single()).data,
+    events: (await admin.from('exchange_events').select('id').eq('exchange_id', f.exchangeId)).data?.length,
+    reputation: (await admin.from('reputation_events').select('id').eq('recipient_id', f.bob.id)).data?.length,
+  });
+  const before = await snapshot();
+  assert.equal((await moderate(f.owner, f.community.id, f.bob.id, 'remove', 'Reviewed.')).error, null);
+  assert.deepEqual(await snapshot(), before);
+  assert.ok((before.reputation ?? 0) >= 1);
+});
+
+test('A nonparticipant administrator cannot read the conversation or its messages', async () => {
+  const f = await messageEvidenceFixture('moderation-admin-conversation');
+  assert.deepEqual((await f.owner.client.from('conversations').select('id').eq('id', f.conversation.id)).data, []);
+  assert.deepEqual((await f.owner.client.from('messages').select('id').eq('conversation_id', f.conversation.id)).data, []);
 });
