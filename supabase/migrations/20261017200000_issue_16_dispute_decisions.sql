@@ -138,7 +138,8 @@ begin
         from public.exchange_events v where v.exchange_id = e.id), '[]'::jsonb)),
     'evidence', coalesce((select jsonb_agg(jsonb_build_object('id', v.id, 'object_path', v.object_path, 'purpose', v.purpose,
       'dispute_id', v.dispute_id, 'mime_type', v.mime_type, 'created_at', v.created_at) order by v.created_at, v.id)
-      from public.exchange_evidence v where v.exchange_id = e.id and v.state = 'ready'), '[]'::jsonb),
+      from public.exchange_evidence v where v.exchange_id = e.id and v.state = 'ready'
+        and (v.purpose = 'return' or v.dispute_id is not null)), '[]'::jsonb),
     'cases', coalesce((select jsonb_agg(private.dispute_case_view(d.id) order by d.created_at, d.id)
       from public.disputes d where d.exchange_id = e.id), '[]'::jsonb));
 end;
@@ -155,7 +156,7 @@ returns boolean language sql stable security definer set search_path = '' as $$
         else e.state in ('handoff_pending', 'checked_out') end
     else ((case when v.dispute_id is null then public.can_read_exchange(e.id) else public.can_read_dispute(d.id) end)
       and (v.state = 'ready' or v.uploader_id = auth.uid()))
-      or (v.state = 'ready' and public.is_community_administrator(e.community_id)
+      or (v.state = 'ready' and v.purpose = 'return' and public.is_community_administrator(e.community_id)
         and exists(select 1 from public.disputes c where c.exchange_id = e.id)) end);
 $$;
 

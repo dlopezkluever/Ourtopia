@@ -272,6 +272,13 @@ test('Same-Community administrators read Return photos only while a case exists 
   assert.ok((await decisionView(f.owner, f.exchangeId)).evidence.some(photo => photo.object_path === path));
   assert.equal((await outsider.client.storage.from('exchange-evidence').download(path)).error === null, false);
 
+  const handoffPath = `${randomUUID()}/${randomUUID()}.png`;
+  assert.equal((await admin.storage.from('exchange-evidence').upload(handoffPath, listingImageBytes, { contentType: 'image/png' })).error, null);
+  assert.equal((await admin.from('exchange_evidence').insert({ id: randomUUID(), exchange_id: f.exchangeId, community_id: f.community.id, uploader_id: f.bob.id,
+    purpose: 'handoff', object_path: handoffPath, mime_type: 'image/png', byte_size: listingImageBytes.length, state: 'ready' })).error, null);
+  assert.equal((await f.owner.client.storage.from('exchange-evidence').download(handoffPath)).error === null, false);
+  assert.equal((await decisionView(f.owner, f.exchangeId)).evidence.some(photo => photo.object_path === handoffPath), false);
+
   const quiet = await checkedOutFixture('decision-photo-quiet');
   const quietPath = `${randomUUID()}/${randomUUID()}.png`;
   assert.equal((await admin.storage.from('exchange-evidence').upload(quietPath, listingImageBytes, { contentType: 'image/png' })).error, null);
