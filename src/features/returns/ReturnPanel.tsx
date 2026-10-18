@@ -6,6 +6,7 @@ import { issueTypes } from '../disputes/model';
 import { standingText, exchangeCount } from '../reputation/model';
 import { readReturn, returnCommand } from './api';
 import { returnStep, reviewReasons, stepText, type ReturnAction, type ReturnView } from './model';
+import { ThankExchange } from '../thank-yous/ThankExchange';
 
 function person(view: ReturnView, id: string | null, userId: string) {
   if (!id) return 'Nobody';
@@ -53,6 +54,7 @@ function ReturnCard({ view, userId, refresh }: { view: ReturnView; userId: strin
     {view.review.length > 0 && <section aria-label="Administrator review"><h2>Administrator review</h2>{view.review.map(item => <p key={item.reason}>{reviewReasons[item.reason]}. Queued <time dateTime={item.queued_at}>{localDeadline(item.queued_at)}</time>. The Exchange stays incomplete and earns no points.</p>)}</section>}
     {view.state === 'completed' && <section aria-label="Completed loan"><h2>Loan completed</h2><p>Both participants confirmed the Return{view.completed_at ? <> on <time dateTime={view.completed_at}>{localDeadline(view.completed_at)}</time></> : null}. One Qualifying Interaction was recorded for each participant.</p>
       <p>Your Community Solidarity Score is now {standingText(view.standing.score, view.standing.title)} with {exchangeCount(view.standing.completedInteractions)}.</p><p>{userId === view.owner_id ? 'You earned +2 for sharing this item.' : 'You earned +1 for returning this item.'} <a href="/standing">See your history</a></p></section>}
+    {view.state === 'completed' && <ThankExchange userId={userId} communityId={view.community_id} exchangeId={view.exchange_id} onChanged={refresh}/>}
     {error && <p role="alert" className="error">{error}</p>}<button disabled={busy} onClick={refresh}>Refresh Return</button>
   </article>;
 }
