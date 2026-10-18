@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { test } from 'node:test';
-import { actor, admin, createCommunity, publicClient, reviewedDispute } from '../../scripts/verify/backend';
+import { actor, admin, createCommunity, publicClient, unresolvedDecidedDispute } from '../../scripts/verify/backend';
 
 test('Misconduct commands and ledger writes stay within the current Community administrator boundary', async () => {
-  const f = await reviewedDispute('misconduct-rls');
+  const f = await unresolvedDecidedDispute('misconduct-rls');
   const foreign = await actor({ label: 'misconduct-foreign-admin' });
   assert.equal((await createCommunity(foreign.client)).error, null);
   const penalty = { p_intent_id: randomUUID(), p_dispute_id: f.disputeId, p_rule: 'unresolved_damage', p_recipient_id: f.bob.id, p_reason: 'Forged by foreign administrator.' };
@@ -36,7 +36,7 @@ test('Misconduct commands and ledger writes stay within the current Community ad
 });
 
 test('Foreign administrators cannot read another person\'s detailed or redacted trust, and members keep their own history', async () => {
-  const f = await reviewedDispute('misconduct-privacy');
+  const f = await unresolvedDecidedDispute('misconduct-privacy');
   const recorded = await f.owner.client.rpc('record_verified_misconduct', { p_intent_id: randomUUID(), p_dispute_id: f.disputeId, p_rule: 'confirmed_theft',
     p_recipient_id: f.bob.id, p_reason: 'Confirmed theft recorded for privacy checks.' });
   assert.equal(recorded.error, null);

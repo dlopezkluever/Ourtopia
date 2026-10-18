@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { test } from 'node:test';
 import { z } from 'zod';
-import { activeMember, admin, caseAction, completedExchanges, listingFixture, membershipFixture, receipt, reviewedDispute, seedIncident, seedReputationEvent } from '../../scripts/verify/backend';
+import { activeMember, admin, caseAction, completedExchanges, listingFixture, membershipFixture, receipt, reviewedDispute, seedIncident, seedReputationEvent, unresolvedDecidedDispute } from '../../scripts/verify/backend';
 
 const standing = z.object({
   global: z.object({ score: z.number(), completedInteractions: z.number() }),
@@ -29,7 +29,7 @@ function expectedGlobal(rows: { weight: number; score: number }[]) {
 }
 
 test('Verified misconduct applies each rule once and a correction appends a linked compensation', async () => {
-  const f = await reviewedDispute('misconduct-ledger');
+  const f = await unresolvedDecidedDispute('misconduct-ledger');
   const before = await admin.from('qualifying_interactions').select('id,participant_id').eq('exchange_id', f.exchangeId).order('participant_id');
   const expected = [['late_return', -2], ['unresolved_damage', -10], ['confirmed_theft', -30]] as const;
   const events: { id: string; rule: string; points: number }[] = [];
@@ -129,7 +129,7 @@ test('A low-volume serious incident stays visible in redacted cross-Community tr
 });
 
 test('Penalties stay in the ledger after the penalized member leaves the Community', async () => {
-  const f = await reviewedDispute('misconduct-removal');
+  const f = await unresolvedDecidedDispute('misconduct-removal');
   const recorded = await f.owner.client.rpc('record_verified_misconduct', { p_intent_id: randomUUID(), p_dispute_id: f.disputeId, p_rule: 'unresolved_damage',
     p_recipient_id: f.bob.id, p_reason: 'Verified before the membership ended.' });
   assert.equal(recorded.error, null);
@@ -157,7 +157,7 @@ test('A replayed misconduct intent returns its stored result after the case outc
 });
 
 test('Concurrent corrections of one event with distinct intents yield one linked correction', async () => {
-  const f = await reviewedDispute('misconduct-race');
+  const f = await unresolvedDecidedDispute('misconduct-race');
   const recorded = await f.owner.client.rpc('record_verified_misconduct', { p_intent_id: randomUUID(), p_dispute_id: f.disputeId, p_rule: 'unresolved_damage',
     p_recipient_id: f.bob.id, p_reason: 'Verified before the race.' });
   assert.equal(recorded.error, null);
@@ -172,7 +172,7 @@ test('Concurrent corrections of one event with distinct intents yield one linked
 });
 
 test('The database refuses a second linked correction for one event', async () => {
-  const f = await reviewedDispute('misconduct-index');
+  const f = await unresolvedDecidedDispute('misconduct-index');
   const recorded = await f.owner.client.rpc('record_verified_misconduct', { p_intent_id: randomUUID(), p_dispute_id: f.disputeId, p_rule: 'unresolved_damage',
     p_recipient_id: f.bob.id, p_reason: 'Verified before the direct insert.' });
   assert.equal(recorded.error, null);
