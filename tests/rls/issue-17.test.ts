@@ -88,8 +88,9 @@ test('Audit, delivery status, reminders, the delivery console and Storage never 
 });
 
 test('Realtime publishes neither snapshots nor grants and delivers only recipient ID hints', async () => {
-  const published = sql("select string_agg(tablename, ',' order by tablename) from pg_publication_tables where pubname = 'supabase_realtime' and tablename in ('dispute_message_evidence', 'message_selection_grants', 'messages', 'community_events', 'notification_outbox')");
+  const published = sql("select string_agg(tablename, ',' order by tablename) from pg_publication_tables where pubname = 'supabase_realtime' and tablename in ('dispute_message_evidence', 'message_selection_grants', 'messages', 'community_events', 'notification_outbox', 'notification_hints')");
   assert.equal(published.includes('dispute_message_evidence') || published.includes('message_selection_grants'), false, published);
+  assert.ok(published.split(',').includes('notification_hints'), published);
   const f = await messageEvidenceFixture('msg-rls-realtime');
   const foreign = await actor({ label: 'msg-rls-realtime-foreign' }); assert.equal((await createCommunity(foreign.client)).error, null);
   const members = [f.bob, f.alice, f.owner, f.carol, foreign];
@@ -105,7 +106,13 @@ test('Realtime publishes neither snapshots nor grants and delivers only recipien
     return channel;
   }));
   try {
-    assert.equal((await submitDisputeMessages(f.bob, f.disputeId, [f.messages[2].id])).error, null);
+    const submission = await submitDisputeMessages(f.bob, f.disputeId, [f.messages[2].id]);
+    assert.equal(submission.error, null);
+    assert.equal((submission.data as { added: number }).added, 1);
+    const directHints = await admin.from('notification_hints').select('id,recipient_id').in('recipient_id', members.slice(0, 3).map(member => member.id));
+    assert.equal(directHints.error, null);
+    const submittedHints = directHints.data!.filter(row => !prior.has(row.id));
+    assert.deepEqual(submittedHints.map(row => row.recipient_id).sort(), members.slice(0, 3).map(member => member.id).sort());
     const limit = Date.now() + 15000;
     while (hints.slice(0, 3).some(rows => rows.length === 0) && Date.now() < limit) await new Promise(resolve => setTimeout(resolve, 100));
     assert.deepEqual(bodies.map(rows => rows.length), [0, 0, 0, 0, 0]);
@@ -114,6 +121,6 @@ test('Realtime publishes neither snapshots nor grants and delivers only recipien
       for (const row of hints[index]) { assert.equal(row.recipient_id, members[index].id); assert.deepEqual(Object.keys(row).sort(), ['id', 'recipient_id']); }
     }
     assert.deepEqual(hints.slice(3).map(rows => rows.length), [0, 0]);
-    receipt('issue-17-realtime', { unpublished: ['dispute_message_evidence', 'message_selection_grants'], publishedChecked: published, bodyCounts: bodies.map(rows => rows.length), hints: hints.map(rows => rows.length) });
+    receipt('issue-17-realtime', { rpcAdded: (submission.data as { added: number }).added, directHints: submittedHints, unpublished: ['dispute_message_evidence', 'message_selection_grants'], published, bodyCounts: bodies.map(rows => rows.length), realtimeHints: hints.map(rows => rows.length) });
   } finally { await Promise.all(members.map((member, index) => member.client.removeChannel(channels[index]))); members.forEach(member => member.client.realtime.disconnect()); }
 });
