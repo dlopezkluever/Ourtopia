@@ -61,7 +61,7 @@ create policy event_read on public.community_events for select to authenticated 
   public.is_active_member(community_id) and kind not like 'item\_%' and kind not like 'issue\_%'
   and kind not in ('conversation_started', 'message_sent', 'help_commitment_offered', 'help_commitment_accepted',
     'help_scheduled', 'help_cancelled', 'help_completion_confirmed', 'help_completion_disputed', 'help_completion_due', 'help_completed',
-    'help_completion_review_queued', 'test_billing_requested', 'borrow_requested', 'borrow_approved', 'borrow_rejected', 'borrow_expired'));
+    'help_completion_review_queued', 'help_confirmation_due', 'test_billing_requested', 'borrow_requested', 'borrow_approved', 'borrow_rejected', 'borrow_expired'));
 
 create function private.help_completion_view(p_exchange uuid)
 returns jsonb language sql stable security definer set search_path = '' as $$
