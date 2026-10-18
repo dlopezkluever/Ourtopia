@@ -495,6 +495,13 @@ export async function reviewedDispute(label: string) {
   }
   return f;
 }
+// Closes the reviewed case as unresolved through the decide command, the state issue-18 verified misconduct requires.
+export async function unresolvedDecidedDispute(label: string) {
+  const f = await reviewedDispute(label);
+  const decided = await caseAction(f.owner, f.disputeId, 'decide', { outcome: 'unresolved', reason: 'The submitted evidence supports the reported damage.' });
+  if (decided.error) throw decided.error;
+  return f;
+}
 export async function helpDisputeFixture(label = 'help-dispute') {
   const f = await helpFixture(label, 1);
   const post = await createHelpPost(f.author, f.community.id, 'need_post', helpNeedFields(1));
