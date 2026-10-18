@@ -596,3 +596,21 @@ export async function localScores(communityId: string, ...members: { id: string 
   if (result.error) throw result.error;
   return members.map(member => 50 + result.data.filter(row => row.recipient_id === member.id).reduce((sum, row) => sum + row.points, 0));
 }
+
+export const evidenceMessages = ['Can you bring the drill back by Friday?', 'The case was already cracked when I picked it up.', 'It was intact when I handed it over.', 'Unrelated: my new phone number is 555-0100.'];
+export async function messageEvidenceFixture(label = 'message-evidence') {
+  const f = await disputeFixture(label);
+  const conversation = await startConversation(f.bob, f.community.id, f.alice.id);
+  const messages = [];
+  for (const [index, body] of evidenceMessages.entries()) messages.push(await sendMessage(index % 2 === 0 ? f.alice : f.bob, conversation.id, body));
+  return { ...f, conversation, messages };
+}
+export async function submitDisputeMessages(member: Awaited<ReturnType<typeof actor>>, disputeId: string, messageIds: string[], intent = randomUUID()) {
+  return member.client.rpc('submit_dispute_messages', { p_intent_id: intent, p_dispute_id: disputeId, p_message_ids: messageIds });
+}
+export async function messageEvidenceView(member: Awaited<ReturnType<typeof actor>>, disputeId: string) {
+  const result = await member.client.rpc('read_dispute_message_evidence', { p_dispute_id: disputeId });
+  if (result.error) throw result.error;
+  const { messageEvidenceViewSchema } = await import('../../src/features/message-evidence/model');
+  return messageEvidenceViewSchema.parse(result.data);
+}
