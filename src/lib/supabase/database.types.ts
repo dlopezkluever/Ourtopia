@@ -1476,7 +1476,7 @@ isOneToOne: true
                            },
 "read_dispute_decisions":
 { Args: { "p_exchange_id": string }; Returns: Json
-                            },
+                           },
 "prepare_return_evidence":
 { Args: { "p_byte_size": number,"p_evidence_id": string,"p_exchange_id": string,"p_intent_id": string,"p_mime_type": string }; Returns: Json
                            },
