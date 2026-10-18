@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { test } from 'node:test';
-import { acceptHelp, admin, adminReturned, approveBorrow, checkedOutFixture, commitHelp, completeReturn, createHelpPost, helpFixture, helpNeedFields, helpScheduleFields, recordReturn, requestItem, unresolvedDecidedDispute } from '../../scripts/verify/backend';
+import { acceptHelp, admin, adminReturned, approveBorrow, checkedOutFixture, commitHelp, completeReturn, createHelpPost, helpFixture, helpNeedFields, helpScheduleFields, itemReturn, recordReturn, requestItem, returnAction, unresolvedDecidedDispute } from '../../scripts/verify/backend';
 import { deliverOne } from '../../supabase/functions/notifications/worker';
 
 type Member = Awaited<ReturnType<typeof checkedOutFixture>>['owner'];
@@ -67,6 +67,8 @@ test('A stalled item needs the record, a participant confirmation and a cited de
   const awards = await totals(f.exchangeId);
   assert.deepEqual(awards.map(row => [row.recipient_id === f.alice.id ? 'owner' : row.recipient_id === f.bob.id ? 'borrower' : 'other', row.points]).sort(),
     [['borrower', 1], ['owner', 2]]);
+  const verifiers = await admin.from('reputation_events').select('verified_by_command').eq('exchange_id', f.exchangeId);
+  assert.deepEqual(verifiers.data?.map(row => row.verified_by_command).sort(), ['decide_stalled_review', 'decide_stalled_review']);
 
   const replay = await decide(f.owner, f.exchangeId, 'verified_completion', 'Return recorded by the borrower and the condition matches the Handoff.', verifiedEvidence, intent);
   assert.deepEqual(replay.data, verified.data);
@@ -210,6 +212,21 @@ test('A stalled unresolved issue does not block an ordinary completion in the sa
   assert.equal(await stateOf(normal.exchangeId), 'completed');
   assert.equal(await stateOf(stuck.exchangeId), 'returned');
   assert.equal((await totals(normal.exchangeId)).reduce((sum, row) => sum + row.points, 0), 3);
+});
+
+test('A stalled Return whose confirmations now match completes ordinarily and cannot be closed without completion', async () => {
+  const f = await stalledItem('stalled-item-matching');
+  const confirmed = await returnAction(f.alice, f.exchangeId, (await itemReturn(f.alice, f.exchangeId)).revision, 'confirm_return', { condition_matches: true });
+  assert.equal(confirmed.error, null);
+  assert.equal(await stateOf(f.exchangeId), 'returned');
+  const view = await f.owner.client.rpc('read_stalled_review', { p_exchange_id: f.exchangeId });
+  assert.equal(view.error, null);
+  assert.equal((view.data as { canDecide: boolean }).canDecide, false);
+  const closed = await decide(f.owner, f.exchangeId, 'closed_without_completion', 'The owner closes a Return that both participants already confirmed.');
+  assert.equal(closed.error?.code, '55000');
+  assert.match(closed.error?.message ?? '', /ordinary path/);
+  assert.equal(await stateOf(f.exchangeId), 'returned');
+  assert.deepEqual(await totals(f.exchangeId), []);
 });
 
 // A help Exchange whose only confirmation is the helper's, aged past its review window by the service role.

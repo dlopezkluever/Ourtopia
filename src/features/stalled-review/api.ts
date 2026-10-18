@@ -1,5 +1,11 @@
 import { supabase } from '../../lib/supabase/client';
-import { queueSchema, stalledReviewSchema, type DecisionOutcome, type EvidenceKey } from './model';
+import { administeredSchema, queueSchema, stalledReviewSchema, type DecisionOutcome, type EvidenceKey } from './model';
+
+export async function readAdministeredCommunities(userId: string) {
+  const result = await supabase.from('memberships').select('community_id').eq('user_id', userId).eq('status', 'active').eq('role', 'administrator');
+  if (result.error) throw result.error;
+  return administeredSchema.parse(result.data);
+}
 
 export async function readStalledReview(exchangeId: string) {
   const result = await supabase.rpc('read_stalled_review', { p_exchange_id: exchangeId });

@@ -77,9 +77,10 @@ test('lane 1 regression: administrator verifies a stalled item at head', async (
 test('lane 2 administrator verifies a stalled item from recorded evidence', async ({ page }, info) => {
   const f = await stalledItem('lane-2');
   await signIn(page, f.owner.email);
-  await page.goto(`/stalled/${f.community.id}`);
-  await expect(page.getByRole('link', { name: /Item loan/ })).toBeVisible();
-  await openCase(page, f.exchangeId);
+  await page.getByRole('link', { name: 'Stalled confirmations', exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/stalled/${f.community.id}$`));
+  await page.getByRole('link', { name: /Item loan/ }).click();
+  await expect(page.getByRole('heading', { name: 'Stalled confirmation', exact: true })).toBeVisible();
   await recordVerifiedItem(page, 'The borrower recorded the Return and the condition matches the Handoff.');
   await expect(page.getByText('Verified completion', { exact: false }).first()).toBeVisible();
   await shot(page, info, 2);
@@ -103,7 +104,7 @@ test('lane 3 administrator verifies a stalled help Exchange and awards only the 
   expect(awards.data).toEqual([{ recipient_id: f.members[0].id, points: 3 }]);
 });
 
-test('lane 4 incomplete evidence is rejected for an item and a help Exchange', async ({ page }, info) => {
+test('lane 4 incomplete evidence is rejected for an item and a help Exchange', async ({ page, browser, baseURL }, info) => {
   const item = await stalledItem('lane-4-item');
   await signIn(page, item.owner.email);
   await openCase(page, item.exchangeId);
@@ -115,14 +116,21 @@ test('lane 4 incomplete evidence is rejected for an item and a help Exchange', a
   expect((await admin.from('exchanges').select('state').eq('id', item.exchangeId).single()).data?.state).toBe('return_pending');
   await shot(page, info, 4);
 
+  // The second administrator signs in from a fresh context, since the first session stays on this page.
   const help = await stalledHelp('lane-4-help');
-  await signIn(page, help.owner.email);
-  await openCase(page, help.exchangeId);
-  await page.getByRole('radio', { name: 'Verified completion' }).check();
-  await page.getByLabel('Reason for this decision').fill('No work evidence has been cited for this Help Exchange.');
-  await page.getByRole('button', { name: 'Record decision', exact: true }).click();
-  await expect(page.getByRole('alert')).toContainText('Verified completion is missing');
-  expect(await decisionCount(help.exchangeId)).toEqual([]);
+  const helpContext = await browser.newContext({ baseURL, viewport: info.project.use.viewport ?? undefined });
+  try {
+    const helpPage = await helpContext.newPage();
+    await signIn(helpPage, help.owner.email);
+    await openCase(helpPage, help.exchangeId);
+    await helpPage.getByRole('radio', { name: 'Verified completion' }).check();
+    await helpPage.getByLabel('Reason for this decision').fill('No work evidence has been cited for this Help Exchange.');
+    await helpPage.getByRole('button', { name: 'Record decision', exact: true }).click();
+    await expect(helpPage.getByRole('alert')).toContainText('Verified completion is missing');
+    expect(await decisionCount(help.exchangeId)).toEqual([]);
+  } finally {
+    await helpContext.close();
+  }
 });
 
 test('lane 5 administrator closes a stalled item without completion', async ({ page }, info) => {

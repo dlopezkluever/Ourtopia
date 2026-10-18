@@ -37,6 +37,8 @@ export const stalledReviewSchema = z.object({
 });
 export type StalledReview = z.infer<typeof stalledReviewSchema>;
 
+export const administeredSchema = z.array(z.object({ community_id: z.uuid() }));
+
 export const queueSchema = z.array(z.object({
   exchangeId: z.uuid(), kind: z.enum(['item', 'help']), state: z.string(),
   reasons: z.array(z.string()), queuedAt: z.string(),

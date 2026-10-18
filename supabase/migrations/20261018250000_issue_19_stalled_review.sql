@@ -105,6 +105,16 @@ begin
 end;
 $$;
 
+-- Both Return confirmations match, no conflict remains, and the Exchange is returned: the ordinary path completes it.
+create function private.stalled_normal_path_ready(p_exchange uuid) returns boolean
+language sql stable security definer set search_path = '' as $$
+  select exists(select 1 from public.exchanges e join public.item_returns r on r.exchange_id = e.id
+      where e.id = p_exchange and e.kind = 'item' and e.state = 'returned' and r.owner_confirmed_at is not null
+        and r.borrower_confirmed_at is not null and r.contested_at is null)
+    and not exists(select 1 from public.disputes d where d.exchange_id = p_exchange
+      and (d.closed_at is null or private.dispute_effective_outcome(d.id) = 'unresolved'));
+$$;
+
 create function private.stalled_review_view(p_exchange uuid) returns jsonb language plpgsql stable security definer set search_path = '' as $$
 declare e public.exchanges; h public.item_handoffs; r public.item_returns; c public.help_completions; res public.item_reservations;
   decided public.stalled_review_decisions; recovered public.stalled_item_recoveries;
@@ -135,6 +145,7 @@ begin
       'decidedBy', recovered.decided_by, 'decidedAt', recovered.decided_at) end,
     'canDecide', decided.exchange_id is null and public.is_active_member(e.community_id) and public.is_community_administrator(e.community_id)
       and auth.uid() not in (e.provider_id, e.receiver_id) and exists(select 1 from public.exchange_review_items q where q.exchange_id = e.id)
+      and not private.stalled_normal_path_ready(e.id)
       and ((e.kind = 'item' and e.state in ('return_pending', 'checked_out', 'returned')) or (e.kind = 'help' and e.state = 'completion_pending')),
     'canRecover', e.kind = 'item' and e.state = 'closed_without_completion' and coalesce(res.custody_unresolved, false)
       and recovered.exchange_id is null and public.is_active_member(e.community_id) and public.is_community_administrator(e.community_id)
@@ -217,6 +228,8 @@ begin
     end if;
   elsif exists(select 1 from public.disputes d where d.exchange_id = e.id and d.closed_at is null) then
     raise exception using errcode = '55000', message = 'Decide the open Exchange issue before closing this review.';
+  elsif private.stalled_normal_path_ready(e.id) then
+    raise exception using errcode = '55000', message = 'Both confirmations match and no issue remains, so this Exchange completes through the ordinary path.';
   end if;
 
   insert into public.stalled_review_decisions(exchange_id, community_id, review_reason, outcome, reason, evidence, decided_by, intent_id)
@@ -224,9 +237,9 @@ begin
   if p_outcome = 'verified_completion' then
     if e.kind = 'item' then
       if e.state = 'return_pending' then update public.exchanges set state = 'returned' where id = e.id; end if;
-      perform private.complete_item_exchange(e.id, actor, p_intent_id);
+      perform private.complete_item_exchange(e.id, actor, p_intent_id, 'decide_stalled_review');
     else
-      perform private.complete_help_exchange(e.id, actor, p_intent_id);
+      perform private.complete_help_exchange(e.id, actor, p_intent_id, 'decide_stalled_review');
     end if;
   else
     update public.exchanges set state = 'closed_without_completion' where id = e.id;
@@ -288,14 +301,42 @@ begin
 end;
 $$;
 
+-- The verifier label stamps reputation awards. Ordinary completion keeps the issue 4 label, so its behavior is unchanged.
+drop function private.settle_exchange_completion(uuid);
+create function private.settle_exchange_completion(p_exchange_id uuid, p_verifier text default 'settle_exchange_completion')
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare exchange public.exchanges;
+begin
+  select * into exchange from public.exchanges where id = p_exchange_id for update;
+  if not found then raise exception using errcode = '22023', message = 'Exchange unavailable.'; end if;
+  if exchange.state <> 'completed' then raise exception using errcode = '55000', message = 'Only a completed Exchange can be settled.'; end if;
+  insert into public.qualifying_interactions(exchange_id, community_id, participant_id)
+    values (exchange.id, exchange.community_id, exchange.provider_id), (exchange.id, exchange.community_id, exchange.receiver_id)
+    on conflict (exchange_id, participant_id) do nothing;
+  insert into public.reputation_events(community_id, recipient_id, rule, points, source_kind, source_id, exchange_id, verified_by_command)
+    select exchange.community_id, case r.recipient_role when 'provider' then exchange.provider_id else exchange.receiver_id end,
+      r.rule, r.points, 'exchange', exchange.id, exchange.id, p_verifier
+    from public.reputation_rules r where r.exchange_kind = exchange.kind
+    on conflict (rule, source_kind, source_id, recipient_id) do nothing;
+  insert into public.exchange_events(exchange_id, community_id, kind) values (exchange.id, exchange.community_id, 'completion_settled')
+    on conflict (exchange_id) where kind = 'completion_settled' do nothing;
+  return jsonb_build_object(
+    'exchangeId', exchange.id,
+    'interactions', (select jsonb_agg(q.participant_id order by q.participant_id) from public.qualifying_interactions q where q.exchange_id = exchange.id),
+    'events', (select jsonb_agg(jsonb_build_object('id', r.id, 'rule', r.rule, 'recipientId', r.recipient_id, 'points', r.points) order by r.rule)
+      from public.reputation_events r where r.source_kind = 'exchange' and r.source_id = exchange.id)
+  );
+end;
+$$;
+
 -- Completion effects shared by ordinary confirmation (issues 9, 13) and verified completion. Callers own the state checks.
-create function private.complete_item_exchange(p_exchange uuid, p_actor uuid, p_intent uuid) returns void
+create function private.complete_item_exchange(p_exchange uuid, p_actor uuid, p_intent uuid, p_verifier text default 'settle_exchange_completion') returns void
 language plpgsql security definer set search_path = '' as $$
 declare e public.exchanges; event uuid;
 begin
   select * into e from public.exchanges where id = p_exchange for update;
   update public.exchanges set state = 'completed' where id = e.id;
-  perform private.settle_exchange_completion(e.id);
+  perform private.settle_exchange_completion(e.id, p_verifier);
   insert into public.exchange_events(exchange_id, community_id, kind, actor_id) values(e.id, e.community_id, 'item_completed', null);
   insert into public.community_events(community_id, actor_id, kind, intent_id) values(e.community_id, p_actor, 'item_completed', p_intent) returning id into event;
   insert into public.notification_outbox(event_id, community_id, recipient_id, channel, kind)
@@ -307,13 +348,13 @@ begin
 end;
 $$;
 
-create function private.complete_help_exchange(p_exchange uuid, p_actor uuid, p_intent uuid) returns void
+create function private.complete_help_exchange(p_exchange uuid, p_actor uuid, p_intent uuid, p_verifier text default 'settle_exchange_completion') returns void
 language plpgsql security definer set search_path = '' as $$
 declare e public.exchanges; event uuid;
 begin
   select * into e from public.exchanges where id = p_exchange for update;
   update public.exchanges set state = 'completed' where id = e.id;
-  perform private.settle_exchange_completion(e.id);
+  perform private.settle_exchange_completion(e.id, p_verifier);
   insert into public.exchange_events(exchange_id, community_id, kind, actor_id) values(e.id, e.community_id, 'help_completed', null);
   insert into public.community_events(community_id, actor_id, kind, intent_id)
     values(e.community_id, p_actor, 'help_completed', p_intent) returning id into event;
@@ -476,7 +517,8 @@ end;
 $$;
 
 revoke all on function private.stalled_review_gaps(uuid, jsonb), private.stalled_review_view(uuid), private.guard_stalled_review_decision(),
-  private.guard_stalled_item_recovery(), private.complete_item_exchange(uuid, uuid, uuid), private.complete_help_exchange(uuid, uuid, uuid)
+  private.guard_stalled_item_recovery(), private.complete_item_exchange(uuid, uuid, uuid, text), private.complete_help_exchange(uuid, uuid, uuid, text),
+  private.settle_exchange_completion(uuid, text), private.stalled_normal_path_ready(uuid)
   from public, anon, authenticated;
 revoke all on function public.read_stalled_review(uuid), public.read_stalled_review_queue(uuid),
   public.decide_stalled_review(uuid, uuid, text, text, jsonb), public.record_stalled_item_recovery(uuid, uuid, text) from public, anon;

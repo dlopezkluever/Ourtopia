@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { decideStalledReview, readStalledQueue, readStalledReview, recordStalledRecovery } from './api';
+import { decideStalledReview, readAdministeredCommunities, readStalledQueue, readStalledReview, recordStalledRecovery } from './api';
 import { gapLabels, missingForVerified, stalledReviewReasons, type DecisionOutcome, type EvidenceKey, type QueueRow, type StalledReview } from './model';
 
 const emptyEvidence: Record<EvidenceKey, boolean> = { return_record: false, condition: false, work_record: false };
@@ -7,6 +7,15 @@ const emptyEvidence: Record<EvidenceKey, boolean> = { return_record: false, cond
 // Supabase RPC failures are plain objects with a message, not Error instances.
 function failureMessage(failure: unknown, fallback: string) {
   return typeof failure === 'object' && failure !== null && 'message' in failure && typeof failure.message === 'string' ? failure.message : fallback;
+}
+
+// Header entry for an administrator: opens the first Community they administer.
+export function StalledLink({ userId }: { userId: string }) {
+  const [communityId, setCommunityId] = useState<string | null>(null);
+  useEffect(() => {
+    readAdministeredCommunities(userId).then(rows => setCommunityId(rows[0]?.community_id ?? null), () => setCommunityId(null));
+  }, [userId]);
+  return communityId ? <a className="text-button" href={`/stalled/${communityId}`}>Stalled confirmations</a> : null;
 }
 
 export function StalledReviewQueue({ communityId }: { communityId: string }) {
