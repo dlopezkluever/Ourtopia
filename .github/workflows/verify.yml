@@ -42,6 +42,7 @@ jobs:
       - run: npm run test:server -- tests/server/issue-9.test.ts
       - run: npm run test:server -- tests/server/issue-17.test.ts
       - run: npm run test:server -- tests/server/issue-18.test.ts
+      - run: npm run test:server -- tests/server/issue-19.test.ts
       - run: npm run test:rls -- tests/rls/issue-2.test.ts
       - run: npm run test:rls -- tests/rls/issue-23.test.ts
       - run: npm run test:rls -- tests/rls/issue-3.test.ts
@@ -60,6 +61,7 @@ jobs:
       - run: npm run test:rls -- tests/rls/issue-9.test.ts
       - run: npm run test:rls -- tests/rls/issue-17.test.ts
       - run: npm run test:rls -- tests/rls/issue-18.test.ts
+      - run: npm run test:rls -- tests/rls/issue-19.test.ts
       - run: npm run test:journey -- tests/journeys/issue-2.spec.ts
       - run: npm run test:journey -- tests/journeys/issue-23.spec.ts
         env:
@@ -79,6 +81,7 @@ jobs:
       - run: npm run test:journey -- tests/journeys/issue-9.spec.ts
       - run: npm run test:journey -- tests/journeys/issue-17.spec.ts
       - run: npm run test:journey -- tests/journeys/issue-18.spec.ts
+      - run: npm run test:journey -- tests/journeys/issue-19.spec.ts
       - run: npm run verify:perf -- --issue 2 --base 2af28e7a06db971e8e5fbbf01b0b8bda07f81c76 --head $(git rev-parse HEAD) --pairs 10
       - run: npm run verify:perf -- --issue 3 --base a0eff460f5707d128141857d275f21c1a111ac1c --head $(git rev-parse HEAD) --pairs 10
       - run: npm run verify:perf -- --issue 4 --base 3f5f3fd0293421cc2688576acfc8d742e676dc4c --head $(git rev-parse HEAD) --pairs 10

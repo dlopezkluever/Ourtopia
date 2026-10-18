@@ -1273,6 +1273,32 @@ isOneToOne: false
                   Relationships: [
 
                   ]
+                },"stalled_review_decisions": {
+                  Row: {
+                    "community_id": string,"decided_at": string,"decided_by": string,"evidence": Json,"exchange_id": string,"intent_id": string,"outcome": string,"reason": string,"review_reason": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "community_id": string,"decided_at"?: string,"decided_by": string,"evidence"?: Json,"exchange_id": string,"intent_id": string,"outcome": string,"reason": string,"review_reason": string
+                  }
+                  Update: {
+                    "community_id"?: string,"decided_at"?: string,"decided_by"?: string,"evidence"?: Json,"exchange_id"?: string,"intent_id"?: string,"outcome"?: string,"reason"?: string,"review_reason"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "stalled_review_decisions_community_id_fkey"
+      columns: ["community_id"]
+isOneToOne: false
+      referencedRelation: "communities"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "stalled_review_decisions_exchange_id_fkey"
+      columns: ["exchange_id"]
+isOneToOne: true
+      referencedRelation: "exchanges"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"stripe_receipts": {
                   Row: {
                     "attempts": number,"customer_id": string | null,"event_id": string,"event_type": string,"fingerprint": string,"last_error": string | null,"processed_at": string | null,"received_at": string,"result": Json | null,"state": string,"subscription_id": string | null
@@ -1522,6 +1548,9 @@ isOneToOne: true
 "decide_membership":
 { Args: { "p_application_id": string,"p_decision": string,"p_intent_id": string,"p_reason"?: string }; Returns: Json
                            },
+"decide_stalled_review":
+{ Args: { "p_evidence"?: Json,"p_exchange_id": string,"p_intent_id": string,"p_outcome": string,"p_reason": string }; Returns: Json
+                           },
 "edit_help_post":
 { Args: { "p_fields": Json,"p_intent_id": string,"p_post_id": string,"p_post_kind": string }; Returns: Json
                            },
@@ -1625,6 +1654,12 @@ isOneToOne: true
                            },
 "read_item_return":
 { Args: { "p_exchange_id": string }; Returns: Json
+                           },
+"read_stalled_review":
+{ Args: { "p_exchange_id": string }; Returns: Json
+                           },
+"read_stalled_review_queue":
+{ Args: { "p_community_id": string }; Returns: Json
                            },
 "receive_stripe_receipt":
 { Args: { "p_customer_id": string,"p_event_id": string,"p_event_type": string,"p_fingerprint": string,"p_subscription_id": string }; Returns: Json

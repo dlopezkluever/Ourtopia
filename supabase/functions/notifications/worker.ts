@@ -51,6 +51,7 @@ const subjects: Record<string, string> = {
   help_completion_due: 'Help completion is waiting for your confirmation',
   help_completed: 'Your help Exchange is complete',
   help_completion_review_queued: 'A stalled Help Exchange was sent to administrator review',
+  stalled_review_decided: 'An administrator recorded the outcome of a stalled review',
 };
 
 export async function deliverOne(backend: DeliveryBackend, sendEmail: EmailSender, outboxId?: string) {
