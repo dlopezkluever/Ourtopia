@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { after, before, test } from 'node:test';
-import { actor, activeMember, admin, agreedRemedy, backendUrl, caseAction, createCommunity, decisionView, disputeFixture, disputeView, listingImageBytes, publicClient, realtimeReady, receipt, reviewedDispute, sendMessage, settleFixtureNotices, startConversation } from '../../scripts/verify/backend';
+import { actor, activeMember, admin, agreedRemedyWithBothSidesAgreed, backendUrl, caseAction, createCommunity, decisionView, disputeFixture, disputeView, listingImageBytes, publicClient, realtimeReady, receipt, reviewedDispute, sendMessage, settleFixtureNotices, startConversation } from '../../scripts/verify/backend';
 import { evidenceSchema } from '../../src/features/handoff/model';
 
 const suiteStarted = new Date().toISOString();
@@ -13,7 +13,7 @@ after(() => settleFixtureNotices(['decision-matrix', 'decision-removed', 'decisi
 const actions = [['propose_remedy', { kind: 'repair', terms: 'forged' }], ['agree_remedy', { remedy_id: randomUUID() }], ['confirm_settlement', { remedy_id: randomUUID() }], ['request_review', { reason: 'forged' }], ['open_review', { note: 'forged' }], ['decide', { outcome: 'resolved', reason: 'forged' }], ['correct_outcome', { outcome: 'resolved', reason: 'forged' }], ['record_recovery', { reason: 'forged' }]] as const;
 
 test('Only participants settle, only a non-participant same-Community administrator adjudicates, and outsiders read nothing', async () => {
-  const f = await disputeFixture('decision-matrix'); await agreedRemedy(f);
+  const f = await disputeFixture('decision-matrix'); await agreedRemedyWithBothSidesAgreed(f);
   const outsider = await actor({ label: 'decision-outsider' }); const foreign = await actor({ label: 'decision-foreign-admin' });
   assert.equal((await createCommunity(foreign.client)).error, null);
   for (const member of [f.carol, outsider, foreign]) {

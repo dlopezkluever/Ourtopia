@@ -24,6 +24,7 @@ export const decisionViewSchema = z.object({
   records: z.object({
     handoff: z.object({ condition: z.string().nullable(), accessories: z.string().nullable(), handed_off_at: z.string().nullable() }).nullable(),
     reservation: z.object({ starts_on: z.string(), ends_on: z.string(), condition: z.string(), replacement_value: z.number(), custody_unresolved: z.boolean(), blocking: z.boolean() }).nullable(),
+    return: z.object({ returned_at: z.string(), condition: z.string(), accessories: z.string(), recorded_by: z.uuid(), owner_confirmed_at: z.string().nullable(), borrower_confirmed_at: z.string().nullable(), contested_by: z.uuid().nullable(), contested_at: z.string().nullable(), contested_condition: z.string().nullable() }).nullable(),
     events: z.array(z.object({ kind: z.string(), actor_id: z.uuid().nullable(), created_at: z.string() })),
   }),
   cases: z.array(decisionCaseSchema),

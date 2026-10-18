@@ -64,7 +64,7 @@ function DecisionCard({ view, dispute, userId, refresh }: { view: DecisionView; 
 }
 
 function ExchangeRecords({ view }: { view: DecisionView }) {
-  const { handoff, reservation, events } = view.records;
+  const { handoff, reservation, return: returnRecord, events } = view.records;
   return <section className="dispute-card" aria-label="Relevant Exchange records"><h3>Relevant Exchange records</h3>
     <p>{view.kind === 'help' ? 'Help Exchange' : 'Item Exchange'}. Fulfillment {view.state.replaceAll('_', ' ')}{view.completed_at && <>, completed {when(view.completed_at)}</>}.</p>
     {view.kind === 'help' && <p>Help Exchanges have no item condition, custody or Return records.</p>}
@@ -72,6 +72,9 @@ function ExchangeRecords({ view }: { view: DecisionView }) {
     {reservation?.custody_unresolved && <p className="dispute-block"><strong>Item custody unresolved.</strong> The item stays unavailable until an administrator records recovery. Closing the case does not release it.</p>}
     {reservation && !reservation.custody_unresolved && !reservation.blocking && <p>Item custody is resolved. The reservation no longer blocks the Listing.</p>}
     {handoff?.handed_off_at && <p>Handoff recorded {when(handoff.handed_off_at)}. Condition: {handoff.condition}. Accessories: {handoff.accessories || 'none'}.</p>}
+    {returnRecord && <><p>Return recorded by {returnRecord.recorded_by === view.provider_id ? 'the owner' : 'the borrower'} {when(returnRecord.returned_at)}. Condition: {returnRecord.condition}. Accessories: {returnRecord.accessories || 'none'}.</p>
+      <p>Owner confirmation: {returnRecord.owner_confirmed_at ? when(returnRecord.owner_confirmed_at) : 'awaiting'}. Borrower confirmation: {returnRecord.borrower_confirmed_at ? when(returnRecord.borrower_confirmed_at) : 'awaiting'}.</p>
+      {returnRecord.contested_at && <p className="dispute-block">Return contested by {returnRecord.contested_by === view.provider_id ? 'the owner' : 'the borrower'} {when(returnRecord.contested_at)}. Contested condition: {returnRecord.contested_condition}</p>}</>}
     <details><summary>Exchange event history ({events.length})</summary><ol className="dispute-history">{events.map((event, index) => <li key={index}>{event.kind.replaceAll('_', ' ')}{when(event.created_at)}</li>)}</ol></details>
   </section>;
 }

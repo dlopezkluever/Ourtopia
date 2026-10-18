@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { after, test } from 'node:test';
-import { activeMember, admin, advanceHandoff, agreedRemedy, approveBorrow, caseAction, completedItemFixture, decideBorrow, decisionView, disputeFixture, handoffFixture, helpDisputeFixture, itemReturn, receipt, recordReturn, reportIssue, requestItem, returnAction, reviewedDispute, settleFixtureNotices } from '../../scripts/verify/backend';
+import { activeMember, admin, advanceHandoff, agreedRemedyWithBothSidesAgreed, approveBorrow, caseAction, completedItemFixture, decideBorrow, decisionView, disputeFixture, handoffFixture, helpDisputeFixture, itemReturn, receipt, recordReturn, reportIssue, requestItem, returnAction, reviewedDispute, settleFixtureNotices } from '../../scripts/verify/backend';
 
 const suiteStarted = new Date().toISOString();
-after(() => settleFixtureNotices(['decision-primary', 'decision-one-sided', 'decision-contested', 'decision-stalled', 'decision-stalled-repair', 'decision-race', 'decision-completed', 'decision-unblock', 'decision-custody', 'decision-help', 'decision-atomic'], suiteStarted));
+after(() => settleFixtureNotices(['decision-primary', 'decision-one-sided', 'decision-contested', 'decision-stalled', 'decision-stalled-repair', 'decision-race', 'decision-completed', 'decision-unblock', 'decision-custody', 'decision-help', 'decision-atomic', 'decision-admin-return', 'decision-unresolved-return'], suiteStarted));
 
 const outbox = async (disputeId: string, kind: string) => (await admin.from('notification_outbox').select('recipient_id,channel').eq('dispute_id', disputeId).eq('kind', kind)).data!.map(row => `${row.recipient_id}:${row.channel}`).sort();
 const both = (...ids: string[]) => ids.flatMap(id => [`${id}:email`, `${id}:in_app`]).sort();
@@ -38,7 +38,7 @@ test('Mutual repair and two settlement confirmations resolve one case with remed
 test('One-sided settlement, own-remedy agreement and superseded remedies never close the case', async () => {
   const f = await disputeFixture('decision-one-sided');
   assert.equal((await caseAction(f.bob, f.disputeId, 'confirm_settlement', { remedy_id: randomUUID() })).error?.code, '55000');
-  const first = await agreedRemedy(f);
+  const first = await agreedRemedyWithBothSidesAgreed(f);
   assert.equal((await caseAction(f.bob, f.disputeId, 'confirm_settlement', { remedy_id: first })).error, null);
   assert.equal((await caseAction(f.bob, f.disputeId, 'confirm_settlement', { remedy_id: first })).error?.code, '55000');
   let view = await decisionView(f.bob, f.exchangeId);
@@ -81,9 +81,42 @@ test('Contested escalation reaches a reasoned unresolved outcome and a linked co
   receipt('issue-16-contested', view.cases[0]);
 });
 
+test('A same-Community administrator sees the recorded Return while reviewing its case', async () => {
+  const f = await handoffFixture('decision-admin-return'); await advanceHandoff(f);
+  const recorded = await recordReturn(f);
+  const reported = await reportIssue(f.bob, f.exchangeId, 'The return condition needs review.'); assert.equal(reported.error, null);
+  const view = await decisionView(f.owner, f.exchangeId);
+  assert.ok(view.records.return);
+  assert.equal(view.records.return.condition, recorded.record?.condition);
+  assert.equal(view.records.return.accessories, recorded.record?.accessories);
+  assert.equal(view.records.return.recorded_by, recorded.record?.recorded_by);
+  assert.equal(view.records.return.owner_confirmed_at, recorded.record?.owner_confirmed_at);
+  assert.equal(view.records.return.borrower_confirmed_at, recorded.record?.borrower_confirmed_at);
+  receipt('issue-16-admin-return', { status: view.cases[0].status, return: view.records.return });
+});
+
+test('An unresolved administrator outcome keeps a returned item from completing', async () => {
+  const f = await handoffFixture('decision-unresolved-return'); await advanceHandoff(f);
+  const pending = await recordReturn(f);
+  const reported = await reportIssue(f.bob, f.exchangeId, 'The Return condition remains disputed.'); assert.equal(reported.error, null);
+  const disputeId = (reported.data as { id: string }).id;
+  assert.equal((await caseAction(f.bob, disputeId, 'request_review', { reason: 'We disagree about the returned condition.' })).error, null);
+  assert.equal((await caseAction(f.owner, disputeId, 'open_review', {})).error, null);
+  assert.equal((await caseAction(f.owner, disputeId, 'decide', { outcome: 'unresolved', reason: 'The submitted records cannot establish the condition.' })).error, null);
+  assert.equal((await decisionView(f.owner, f.exchangeId)).cases[0].status, 'unresolved');
+
+  const confirmed = await returnAction(f.alice, f.exchangeId, pending.revision, 'confirm_return', { condition_matches: true });
+  assert.equal(confirmed.error, null);
+  const view = await decisionView(f.alice, f.exchangeId);
+  assert.equal(view.state, 'returned'); assert.equal(view.cases[0].status, 'unresolved');
+  assert.deepEqual((await admin.from('qualifying_interactions').select('id').eq('exchange_id', f.exchangeId)).data, []);
+  assert.deepEqual((await admin.from('exchange_events').select('kind').eq('exchange_id', f.exchangeId).eq('kind', 'item_completed')).data, []);
+  receipt('issue-16-unresolved-return', { state: view.state, case: view.cases[0].status, completionEffects: 0 });
+});
+
 test('A stalled replacement agreement enters review only with a reason and only valid guards close it', async () => {
   const f = await disputeFixture('decision-stalled');
-  const remedy = await agreedRemedy(f, 'replacement', 'Bob replaces the drill within a week.');
+  const remedy = await agreedRemedyWithBothSidesAgreed(f, 'replacement', 'Bob replaces the drill within a week.');
   assert.equal((await decisionView(f.bob, f.exchangeId)).cases[0].status, 'replacement_agreed');
   assert.equal((await caseAction(f.bob, f.disputeId, 'request_review', { reason: 'Contest' })).error?.code, '55000');
   assert.equal((await caseAction(f.owner, f.disputeId, 'open_review', {})).error?.code, '22023');
@@ -93,7 +126,7 @@ test('A stalled replacement agreement enters review only with a reason and only 
   assert.equal((await caseAction(f.owner, f.disputeId, 'decide', { outcome: 'resolved', reason: 'Bob delivered the replacement during review.' })).error, null);
   const view = await decisionView(f.bob, f.exchangeId);
   assert.deepEqual(view.cases[0].history.map(row => `${row.action}:${row.from_status}>${row.to_status}`), ['remedy_proposed:issue_reported>issue_reported', 'remedy_agreed:issue_reported>replacement_agreed', 'review_opened:replacement_agreed>admin_review', 'outcome_recorded:admin_review>resolved']);
-  const repairing = await disputeFixture('decision-stalled-repair'); await agreedRemedy(repairing);
+  const repairing = await disputeFixture('decision-stalled-repair'); await agreedRemedyWithBothSidesAgreed(repairing);
   assert.equal((await caseAction(repairing.owner, repairing.disputeId, 'open_review', { note: 'Not stalled replacement' })).error?.code, '55000');
   receipt('issue-16-stalled', view.cases[0].history);
 });
@@ -138,7 +171,7 @@ test('Settlement unblocks only otherwise-eligible completion and manufactures no
   assert.equal(confirmations.data?.owner_confirmed_at, null);
   assert.ok(confirmations.data?.borrower_confirmed_at);
   assert.equal((await admin.from('exchanges').update({ state: 'returned' }).eq('id', f.exchangeId)).error?.code, '55000');
-  const remedy = await agreedRemedy({ ...f, disputeId }, 'no_compensation', 'Normal wear. No payment needed.');
+  const remedy = await agreedRemedyWithBothSidesAgreed({ ...f, disputeId }, 'no_compensation', 'Normal wear. No payment needed.');
   assert.equal((await decisionView(f.bob, f.exchangeId)).cases[0].status, 'issue_reported');
   for (const member of [f.bob, f.alice]) assert.equal((await caseAction(member, disputeId, 'confirm_settlement', { remedy_id: remedy })).error, null);
   const view = await decisionView(f.bob, f.exchangeId);

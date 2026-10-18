@@ -1174,7 +1174,7 @@ async function verifyIssue8(values: PerfArguments) {
 }
 
 async function verifyIssue16(values: PerfArguments) {
-  const { agreedRemedy, caseAction, decisionView, disputeFixture } = await import('./backend');
+  const { agreedRemedyWithBothSidesAgreed, caseAction, decisionView, disputeFixture } = await import('./backend');
   const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
   assert.equal(values.head, head); assert.ok(values.base);
   const base = values.base; const pairs = Number(values.pairs); assert.ok(Number.isInteger(pairs) && pairs >= 10);
@@ -1208,7 +1208,7 @@ async function verifyIssue16(values: PerfArguments) {
     await serve('trunk', trunkRoot, port); await serve('head', '.', port + 1);
     for (let index = 0; index < pairs; index++) {
       const f = await disputeFixture(`perf16-${index}`);
-      const remedyId = await agreedRemedy(f); assert.equal((await caseAction(f.alice, f.disputeId, 'confirm_settlement', { remedy_id: remedyId })).error, null);
+      const remedyId = await agreedRemedyWithBothSidesAgreed(f); assert.equal((await caseAction(f.alice, f.disputeId, 'confirm_settlement', { remedy_id: remedyId })).error, null);
       for (const [side, at] of [['trunk', port], ['head', port + 1]] satisfies [string, number][]) {
         const context = await browser.newContext({ baseURL: `http://127.0.0.1:${at}`, viewport: { width: 1440, height: 1000 } });
         try {

@@ -479,8 +479,7 @@ export async function decisionView(member: Awaited<ReturnType<typeof actor>>, ex
   const { decisionViewSchema } = await import('../../src/features/dispute-decisions/model');
   return decisionViewSchema.parse(result.data);
 }
-// Bob proposes and Alice agrees; both confirmations remain for the caller.
-export async function agreedRemedy(f: Awaited<ReturnType<typeof disputeFixture>>, kind = 'repair', terms = 'Bob pays for a new case hinge by Friday.') {
+export async function agreedRemedyWithBothSidesAgreed(f: Awaited<ReturnType<typeof disputeFixture>>, kind = 'repair', terms = 'Bob pays for a new case hinge by Friday.') {
   const proposed = await caseAction(f.bob, f.disputeId, 'propose_remedy', { kind, terms });
   if (proposed.error) throw proposed.error;
   const remedyId = (proposed.data as { remedy: { id: string } }).remedy.id;
@@ -488,7 +487,6 @@ export async function agreedRemedy(f: Awaited<ReturnType<typeof disputeFixture>>
   if (agreed.error) throw agreed.error;
   return remedyId;
 }
-// Bob contests and the same-Community administrator opens review.
 export async function reviewedDispute(label: string) {
   const f = await disputeFixture(label);
   for (const [member, action, details] of [[f.bob, 'request_review', { reason: 'Alice says the crack was there before Handoff.' }], [f.owner, 'open_review', {}]] as const) {
@@ -497,7 +495,6 @@ export async function reviewedDispute(label: string) {
   }
   return f;
 }
-// A help-shaped Exchange (requester and helper, no item records) with an open case reported by the requester.
 export async function helpDisputeFixture(label = 'help-dispute') {
   const f = await helpFixture(label, 1);
   const post = await createHelpPost(f.author, f.community.id, 'need_post', helpNeedFields(1));

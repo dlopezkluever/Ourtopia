@@ -105,7 +105,7 @@ $$;
 
 create function public.read_dispute_decisions(p_exchange_id uuid) returns jsonb
 language plpgsql stable security definer set search_path = '' as $$
-declare e public.exchanges; h public.item_handoffs; r public.item_reservations;
+  declare e public.exchanges; h public.item_handoffs; r public.item_reservations; ret public.item_returns;
 begin
   select * into e from public.exchanges where id = p_exchange_id;
   if not found or not (public.can_read_exchange(e.id) or (public.is_community_administrator(e.community_id)
@@ -114,6 +114,7 @@ begin
   end if;
   select * into h from public.item_handoffs where exchange_id = e.id;
   select * into r from public.item_reservations where exchange_id = e.id;
+  select * into ret from public.item_returns where exchange_id = e.id;
   return jsonb_build_object('exchange_id', e.id, 'kind', e.kind, 'state', e.state, 'completed_at', e.completed_at,
     'provider_id', e.provider_id, 'receiver_id', e.receiver_id, 'participant', auth.uid() in (e.provider_id, e.receiver_id),
     'records', jsonb_build_object(
@@ -121,6 +122,10 @@ begin
         'handed_off_at', h.handed_off_at) end,
       'reservation', case when r.exchange_id is null then null else jsonb_build_object('starts_on', r.starts_on, 'ends_on', r.ends_on,
         'condition', r.condition, 'replacement_value', r.replacement_value, 'custody_unresolved', r.custody_unresolved, 'blocking', r.blocking) end,
+      'return', case when ret.exchange_id is null then null else jsonb_build_object('returned_at', ret.returned_at, 'condition', ret.condition,
+        'accessories', ret.accessories, 'recorded_by', ret.recorded_by, 'owner_confirmed_at', ret.owner_confirmed_at,
+        'borrower_confirmed_at', ret.borrower_confirmed_at, 'contested_by', ret.contested_by, 'contested_at', ret.contested_at,
+        'contested_condition', ret.contested_condition) end,
       'events', coalesce((select jsonb_agg(jsonb_build_object('kind', v.kind, 'actor_id', v.actor_id, 'created_at', v.created_at) order by v.created_at, v.id)
         from public.exchange_events v where v.exchange_id = e.id), '[]'::jsonb)),
     'cases', coalesce((select jsonb_agg(private.dispute_case_view(d.id) order by d.created_at, d.id)
@@ -258,6 +263,32 @@ begin
   outcome := private.dispute_case_view(d.id);
   insert into public.command_intents(actor_id, intent_id, command, payload, result) values(actor, p_intent_id, 'act_on_dispute', payload, outcome);
   return outcome;
+end;
+$$;
+
+create or replace function private.finalize_item_exchange(p_exchange uuid, p_actor uuid, p_intent uuid) returns boolean
+language plpgsql security definer set search_path = '' as $$
+declare e public.exchanges; r public.item_returns; h public.item_handoffs; event uuid;
+begin
+  select * into e from public.exchanges where id = p_exchange and kind = 'item' for update;
+  select * into r from public.item_returns where exchange_id = e.id;
+  select * into h from public.item_handoffs where exchange_id = e.id;
+  if e.state is distinct from 'returned' or h.handed_off_at is null or r.exchange_id is null or r.owner_confirmed_at is null
+    or r.borrower_confirmed_at is null or r.contested_at is not null
+    or exists(select 1 from public.disputes d where d.exchange_id = e.id and (d.closed_at is null or d.status = 'unresolved')) then
+    return false;
+  end if;
+  update public.exchanges set state = 'completed' where id = e.id;
+  perform private.settle_exchange_completion(e.id);
+  insert into public.exchange_events(exchange_id, community_id, kind, actor_id) values(e.id, e.community_id, 'item_completed', null);
+  insert into public.community_events(community_id, actor_id, kind, intent_id) values(e.community_id, p_actor, 'item_completed', p_intent) returning id into event;
+  insert into public.notification_outbox(event_id, community_id, recipient_id, channel, kind)
+    select event, e.community_id, recipient, channel, 'item_completed'
+    from unnest(array[e.provider_id, e.receiver_id]) recipient cross join unnest(array['in_app', 'email']) channel;
+  insert into public.community_feed(community_id, kind, exchange_id, listing_id, owner_id, borrower_id)
+    values(e.community_id, 'item_loan_completed', e.id, e.source_id, e.provider_id, e.receiver_id) on conflict (exchange_id) do nothing;
+  insert into public.notification_hints(recipient_id) values(e.provider_id), (e.receiver_id);
+  return true;
 end;
 $$;
 

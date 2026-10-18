@@ -3,7 +3,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { copyFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { dirname } from 'node:path';
-import { activeMember, actor, admin, agreedRemedy, caseAction, completedItemFixture, createCommunity, decideBorrow, decisionView, disputeFixture, helpDisputeFixture, password, reportIssue, requestItem, reviewedDispute, sendMessage, startConversation } from '../../scripts/verify/backend';
+import { activeMember, actor, admin, advanceHandoff, agreedRemedyWithBothSidesAgreed, caseAction, completedItemFixture, createCommunity, decideBorrow, decisionView, disputeFixture, handoffFixture, helpDisputeFixture, password, recordReturn, reportIssue, requestItem, reviewedDispute, sendMessage, startConversation } from '../../scripts/verify/backend';
 
 test.describe.configure({ timeout: 150000 });
 const base = 'ecbb87b9c8da936ba4ada0a2491838374982da61';
@@ -109,7 +109,7 @@ test('lane 3 a contested report enters administrator review and closes with a re
 });
 
 test('lane 4 stalled replacement review and one-sided settlement cannot close the case outside valid guards', async ({ page, browser }, info) => {
-  const f = await disputeFixture('decision-browser-stalled'); const remedy = await agreedRemedy(f, 'replacement', 'Bob buys the same drill model this week.');
+  const f = await disputeFixture('decision-browser-stalled'); const remedy = await agreedRemedyWithBothSidesAgreed(f, 'replacement', 'Bob buys the same drill model this week.');
   const bob = await open(page, f.bob.email, f.exchangeId);
   await expect(bob).toContainText('Status Replacement agreed'); await bob.getByRole('button', { name: 'Confirm settlement' }).click();
   await expect(bob).toContainText('Settlement confirmations 1 of 2, including yours'); await expect(bob).toContainText('Status Replacement agreed');
@@ -222,5 +222,25 @@ test('lane 10 remedy and administrator decision screens work by keyboard and fit
     await expect(decision.getByRole('list', { name: 'Decision history' })).toContainText('Recorded the outcome');
     expect(await owner.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await save(owner, info, 10, { keyboard: 'administrator outcome', reasonsVisible: true, noHorizontalOverflow: true });
+  } finally { await context.close(); }
+});
+
+test('same-Community administrator can inspect the Return record for an item case', async ({ browser }, info) => {
+  const f = await handoffFixture('decision-admin-return-browser'); await advanceHandoff(f); await recordReturn(f);
+  const reported = await reportIssue(f.bob, f.exchangeId, 'The recorded Return condition needs review.'); expect(reported.error).toBeNull();
+  const disputeId = (reported.data as { id: string }).id;
+  expect((await caseAction(f.bob, disputeId, 'request_review', { reason: 'Please compare the Return with the original Handoff record.' })).error).toBeNull();
+  expect((await caseAction(f.owner, disputeId, 'open_review', {})).error).toBeNull();
+  const { context, page } = await second(browser, info);
+  try {
+    const decision = await open(page, f.owner.email, f.exchangeId);
+    const records = page.getByRole('region', { name: 'Relevant Exchange records' });
+    await expect(records).toContainText('Return recorded');
+    await expect(records).toContainText('Condition: Good. Light marks on the case.');
+    await expect(records).toContainText('Two batteries and charger');
+    await expect(records).toContainText('Owner confirmation: awaiting');
+    await expect(records).toContainText('Borrower confirmation:');
+    await expect(decision).toContainText('Administrator review');
+    await save(page, info, 11, { adminCanInspectReturn: true, returnConditionVisible: true, confirmationStateVisible: true });
   } finally { await context.close(); }
 });
