@@ -16,7 +16,7 @@ export function useProtectedCacheInvalidation(userId: string | undefined) {
       const result = await supabase.from('memberships').select('community_id').eq('user_id', userId!).eq('status', 'active');
       if (!active || request !== generation || result.error) return;
       const current = new Set(result.data.map(row => row.community_id));
-      const lostAccess = known !== null && [...known].some(id => !current.has(id));
+      const lostAccess = known === null ? current.size === 0 : [...known].some(id => !current.has(id));
       known = current;
       clearRevokedProtectedStorage(userId!, current, lostAccess);
     }
