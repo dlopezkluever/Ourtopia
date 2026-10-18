@@ -183,26 +183,6 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
-},"contribution_drafts": {
-                  Row: {
-                    "community_id": string,"fields": NonNullable<Json>,"kind": string,"owner_id": string,"revision": number,"status": string,"updated_at": string
-                  }
-                  ComputedFields: never
-                  Insert: {
-                    "community_id": string,"fields"?: NonNullable<Json>,"kind": string,"owner_id": string,"revision": number,"status": string,"updated_at"?: string
-                  }
-                  Update: {
-                    "community_id"?: string,"fields"?: NonNullable<Json>,"kind"?: string,"owner_id"?: string,"revision"?: number,"status"?: string,"updated_at"?: string
-                  }
-                  Relationships: [
-                    {
-      foreignKeyName: "contribution_drafts_community_id_fkey"
-      columns: ["community_id"]
-isOneToOne: false
-      referencedRelation: "communities"
-      referencedColumns: ["id"]
-    }
-                  ]
                 },"community_feed": {
                   Row: {
                     "borrower_id": string,"community_id": string,"created_at": string,"exchange_id": string,"id": string,"kind": string,"listing_id": string,"owner_id": string
@@ -235,6 +215,26 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"contribution_drafts": {
+                  Row: {
+                    "community_id": string,"fields": NonNullable<Json>,"kind": string,"owner_id": string,"revision": number,"status": string,"updated_at": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "community_id": string,"fields"?: NonNullable<Json>,"kind": string,"owner_id": string,"revision": number,"status": string,"updated_at"?: string
+                  }
+                  Update: {
+                    "community_id"?: string,"fields"?: NonNullable<Json>,"kind"?: string,"owner_id"?: string,"revision"?: number,"status"?: string,"updated_at"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "contribution_drafts_community_id_fkey"
+      columns: ["community_id"]
+isOneToOne: false
+      referencedRelation: "communities"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"conversations": {
                   Row: {
                     "community_id": string,"created_at": string,"id": string,"participant_high": string,"participant_low": string,"started_by": string
@@ -252,6 +252,44 @@ isOneToOne: false
       columns: ["community_id"]
 isOneToOne: false
       referencedRelation: "communities"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"dispute_actions": {
+                  Row: {
+                    "action": string,"actor_id": string,"body": string | null,"community_id": string,"corrects_id": string | null,"created_at": string,"dispute_id": string,"from_status": string,"id": string,"outcome": string | null,"remedy_id": string | null,"remedy_kind": string | null,"to_status": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "action": string,"actor_id": string,"body"?: string | null,"community_id": string,"corrects_id"?: string | null,"created_at"?: string,"dispute_id": string,"from_status": string,"id"?: string,"outcome"?: string | null,"remedy_id"?: string | null,"remedy_kind"?: string | null,"to_status": string
+                  }
+                  Update: {
+                    "action"?: string,"actor_id"?: string,"body"?: string | null,"community_id"?: string,"corrects_id"?: string | null,"created_at"?: string,"dispute_id"?: string,"from_status"?: string,"id"?: string,"outcome"?: string | null,"remedy_id"?: string | null,"remedy_kind"?: string | null,"to_status"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "dispute_actions_community_id_fkey"
+      columns: ["community_id"]
+isOneToOne: false
+      referencedRelation: "communities"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "dispute_actions_corrects_id_fkey"
+      columns: ["corrects_id"]
+isOneToOne: false
+      referencedRelation: "dispute_actions"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "dispute_actions_dispute_id_fkey"
+      columns: ["dispute_id"]
+isOneToOne: false
+      referencedRelation: "disputes"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "dispute_actions_remedy_id_fkey"
+      columns: ["remedy_id"]
+isOneToOne: false
+      referencedRelation: "dispute_actions"
       referencedColumns: ["id"]
     }
                   ]
@@ -1332,6 +1370,9 @@ isOneToOne: true
             "accept_help_commitment":
 { Args: { "p_commitment_id": string,"p_intent_id": string }; Returns: Json
                            },
+"act_on_dispute":
+{ Args: { "p_action": string,"p_details"?: Json,"p_dispute_id": string,"p_intent_id": string }; Returns: Json
+                           },
 "can_access_exchange_evidence":
 { Args: { "p_path": string,"p_upload"?: boolean }; Returns: boolean
                            },
@@ -1366,7 +1407,7 @@ isOneToOne: true
 { Args: { "p_job_id": string }; Returns: Json
                            },
 "command_contribution_draft":
-{ Args: { "p_action": string,"p_community_id": string,"p_expected_revision": number,"p_fields": Json,"p_intent_id": string,"p_kind": string,"p_owner_id": string }; Returns: Json
+{ Args: { "p_action": string,"p_community_id": string,"p_expected_revision": number,"p_fields"?: Json,"p_intent_id": string,"p_kind": string,"p_owner_id": string }; Returns: Json
                            },
 "command_item_handoff":
 { Args: { "p_action": string,"p_details"?: Json,"p_exchange_id": string,"p_expected_revision": number,"p_intent_id": string }; Returns: Json
@@ -1496,6 +1537,9 @@ isOneToOne: true
                            },
 "read_community_feed":
 { Args: { "p_community_id": string }; Returns: Json
+                           },
+"read_dispute_decisions":
+{ Args: { "p_exchange_id": string }; Returns: Json
                            },
 "read_dispute_message_evidence":
 { Args: { "p_dispute_id": string }; Returns: Json
