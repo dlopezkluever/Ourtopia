@@ -125,7 +125,7 @@ function protectedFixture() {
 }
 
 test('Protected storage: every Community-scoped draft and intent prefix is in the one shared list', () => {
-  assert.deepEqual(protectedStorage.map(entry => entry.prefix), ['listing-draft-', 'item-need-draft-', 'message-start-', 'message-draft-', 'handoff-command-', 'handoff-upload-', 'dispute-command-']);
+  assert.deepEqual(protectedStorage.map(entry => entry.prefix), ['listing-draft-', 'item-need-draft-', 'message-start-', 'message-draft-', 'handoff-command-', 'handoff-upload-', 'dispute-command-', 'membership-intent-']);
 });
 
 test('Protected storage: sign-out and account change clear item-need drafts with every other protected prefix', () => {
