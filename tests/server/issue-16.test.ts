@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { after, test } from 'node:test';
-import { activeMember, admin, advanceHandoff, agreedRemedy, approveBorrow, caseAction, completeReturn, completedItemFixture, decideBorrow, decisionView, disputeFixture, handoffFixture, helpDisputeFixture, receipt, reportIssue, requestItem, reviewedDispute, settleFixtureNotices } from '../../scripts/verify/backend';
+import { activeMember, admin, advanceHandoff, agreedRemedy, approveBorrow, caseAction, completedItemFixture, decideBorrow, decisionView, disputeFixture, handoffFixture, helpDisputeFixture, itemReturn, receipt, recordReturn, reportIssue, requestItem, returnAction, reviewedDispute, settleFixtureNotices } from '../../scripts/verify/backend';
 
 const suiteStarted = new Date().toISOString();
 after(() => settleFixtureNotices(['decision-primary', 'decision-one-sided', 'decision-contested', 'decision-stalled', 'decision-stalled-repair', 'decision-race', 'decision-completed', 'decision-unblock', 'decision-custody', 'decision-help', 'decision-atomic'], suiteStarted));
@@ -129,25 +129,30 @@ test('A post-completion case resolves without changing completion, Qualifying In
 test('Settlement unblocks only otherwise-eligible completion and manufactures no confirmations', async () => {
   const f = await handoffFixture('decision-unblock');
   await advanceHandoff(f);
-  await completeReturn(f);
+  const pending = await recordReturn(f);
   const reported = await reportIssue(f.bob, f.exchangeId);
   assert.equal(reported.error, null);
   const disputeId = (reported.data as { id: string }).id;
   const confirmations = await admin.from('item_returns').select('owner_confirmed_at,borrower_confirmed_at').eq('exchange_id', f.exchangeId).single();
   assert.equal(confirmations.error, null);
-  assert.ok(confirmations.data?.owner_confirmed_at);
+  assert.equal(confirmations.data?.owner_confirmed_at, null);
   assert.ok(confirmations.data?.borrower_confirmed_at);
-  assert.equal((await admin.from('exchanges').update({ state: 'completed' }).eq('id', f.exchangeId)).error?.code, '55000');
+  assert.equal((await admin.from('exchanges').update({ state: 'returned' }).eq('id', f.exchangeId)).error?.code, '55000');
   const remedy = await agreedRemedy({ ...f, disputeId }, 'no_compensation', 'Normal wear. No payment needed.');
   assert.equal((await decisionView(f.bob, f.exchangeId)).cases[0].status, 'issue_reported');
   for (const member of [f.bob, f.alice]) assert.equal((await caseAction(member, disputeId, 'confirm_settlement', { remedy_id: remedy })).error, null);
   const view = await decisionView(f.bob, f.exchangeId);
-  assert.equal(view.cases[0].status, 'resolved'); assert.equal(view.state, 'returned');
+  assert.equal(view.cases[0].status, 'resolved'); assert.equal(view.state, 'return_pending');
   assert.deepEqual((await admin.from('item_returns').select('owner_confirmed_at,borrower_confirmed_at').eq('exchange_id', f.exchangeId).single()).data, confirmations.data);
   assert.deepEqual((await admin.from('qualifying_interactions').select('id').eq('exchange_id', f.exchangeId)).data, []);
   assert.deepEqual((await admin.from('exchange_events').select('kind').eq('exchange_id', f.exchangeId).eq('kind', 'completion_settled')).data, []);
-  assert.equal((await admin.from('exchanges').update({ state: 'completed' }).eq('id', f.exchangeId)).error, null);
-  receipt('issue-16-unblock', { stateAfterSettlement: 'returned', interactionsAfterSettlement: 0, ordinaryCompletionAfter: 'allowed' });
+  assert.equal((await returnAction(f.alice, f.exchangeId, pending.revision, 'confirm_return', { condition_matches: true })).error, null);
+  const completedReturn = await itemReturn(f.alice, f.exchangeId);
+  assert.ok(completedReturn.record?.owner_confirmed_at);
+  assert.ok(completedReturn.record?.borrower_confirmed_at);
+  assert.equal(completedReturn.state, 'completed');
+  assert.equal((await admin.from('exchanges').select('state').eq('id', f.exchangeId).single()).data?.state, 'completed');
+  receipt('issue-16-unblock', { stateAfterSettlement: 'return_pending', stateAfterOrdinaryConfirmation: 'completed', interactionsBeforeOrdinaryConfirmation: 0 });
 });
 
 test('Closing a case leaves custody blocking allocation until a separate reasoned administrator recovery', async () => {
