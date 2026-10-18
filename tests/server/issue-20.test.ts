@@ -92,7 +92,7 @@ test('Approval re-checks the borrower membership and the Listing status; rejecti
   assert.equal((await moderate(f.owner, f.community.id, f.carol.id, 'suspend', 'Under review.')).error, null);
   assert.equal((await decideBorrow(f.alice, suspendedRequest)).error?.code, '55000');
   assert.equal((await decideBorrow(f.alice, suspendedRequest, 'rejected')).error, null);
-  const withdrawnRequest = await requestItem(f.bob, f.listing.id, '2027-03-01', '2027-03-03');
+  const withdrawnRequest = await requestItem(f.bob, f.listing.id, '2027-01-12', '2027-01-14');
   assert.equal((await moderateContent(f.owner, f.community.id, 'listing', f.listing.id, 'Unsafe item.')).error, null);
   assert.equal((await decideBorrow(f.alice, withdrawnRequest)).error?.code, '55000');
   assert.deepEqual((await admin.from('item_reservations').select('exchange_id').eq('listing_id', f.listing.id)).data, []);
