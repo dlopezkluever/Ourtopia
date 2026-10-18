@@ -1301,14 +1301,14 @@ isOneToOne: true
                   ]
                 },"stalled_review_decisions": {
                   Row: {
-                    "community_id": string,"decided_at": string,"decided_by": string,"evidence": Json,"exchange_id": string,"intent_id": string,"outcome": string,"reason": string,"review_reason": string
+                    "community_id": string,"decided_at": string,"decided_by": string,"evidence": NonNullable<Json>,"exchange_id": string,"intent_id": string,"outcome": string,"reason": string,"review_reason": string
                   }
                   ComputedFields: never
                   Insert: {
-                    "community_id": string,"decided_at"?: string,"decided_by": string,"evidence"?: Json,"exchange_id": string,"intent_id": string,"outcome": string,"reason": string,"review_reason": string
+                    "community_id": string,"decided_at"?: string,"decided_by": string,"evidence"?: NonNullable<Json>,"exchange_id": string,"intent_id": string,"outcome": string,"reason": string,"review_reason": string
                   }
                   Update: {
-                    "community_id"?: string,"decided_at"?: string,"decided_by"?: string,"evidence"?: Json,"exchange_id"?: string,"intent_id"?: string,"outcome"?: string,"reason"?: string,"review_reason"?: string
+                    "community_id"?: string,"decided_at"?: string,"decided_by"?: string,"evidence"?: NonNullable<Json>,"exchange_id"?: string,"intent_id"?: string,"outcome"?: string,"reason"?: string,"review_reason"?: string
                   }
                   Relationships: [
                     {
