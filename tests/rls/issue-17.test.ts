@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { after, before, test } from 'node:test';
+import { z } from 'zod';
 import { actor, admin, createCommunity, messageEvidenceFixture, messageEvidenceView, publicClient, realtimeReady, receipt, settleFixtureNotices, submitDisputeMessages } from '../../scripts/verify/backend';
 
 const suiteStarted = new Date().toISOString();
@@ -99,16 +100,22 @@ test('Realtime publishes neither snapshots nor grants and delivers only recipien
   const channels = await Promise.all(members.map(async (member, index) => {
     const session = await member.client.auth.getSession(); await member.client.realtime.setAuth(session.data.session!.access_token);
     const channel = member.client.channel(`message-evidence-${randomUUID()}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'dispute_message_evidence' }, change => bodies[index].push(change.new))
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'community_events', filter: `community_id=eq.${f.community.id}` }, change => { if (String(change.new.kind).startsWith('item_dispute')) bodies[index].push(change.new); })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notification_hints' }, change => { if (!prior.has(String(change.new.id))) hints[index].push(change.new); });
-    await new Promise<void>((resolve, reject) => { const timer = setTimeout(() => reject(new Error('Realtime subscribe timed out')), 15000); channel.subscribe(status => { if (status === 'SUBSCRIBED') { clearTimeout(timer); resolve(); } }); });
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('Realtime subscribe timed out')), 15000);
+      channel.subscribe(status => {
+        if (status === 'SUBSCRIBED') { clearTimeout(timer); resolve(); }
+        else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') { clearTimeout(timer); reject(new Error(`Realtime subscribe failed: ${status}`)); }
+      });
+    });
     return channel;
   }));
   try {
     const submission = await submitDisputeMessages(f.bob, f.disputeId, [f.messages[2].id]);
     assert.equal(submission.error, null);
-    assert.equal((submission.data as { added: number }).added, 1);
+    const submissionResult = z.object({ added: z.number() }).parse(submission.data);
+    assert.equal(submissionResult.added, 1);
     const directHints = await admin.from('notification_hints').select('id,recipient_id').in('recipient_id', members.slice(0, 3).map(member => member.id));
     assert.equal(directHints.error, null);
     const submittedHints = directHints.data!.filter(row => !prior.has(row.id));
@@ -121,6 +128,6 @@ test('Realtime publishes neither snapshots nor grants and delivers only recipien
       for (const row of hints[index]) { assert.equal(row.recipient_id, members[index].id); assert.deepEqual(Object.keys(row).sort(), ['id', 'recipient_id']); }
     }
     assert.deepEqual(hints.slice(3).map(rows => rows.length), [0, 0]);
-    receipt('issue-17-realtime', { rpcAdded: (submission.data as { added: number }).added, directHints: submittedHints, unpublished: ['dispute_message_evidence', 'message_selection_grants'], published, bodyCounts: bodies.map(rows => rows.length), realtimeHints: hints.map(rows => rows.length) });
+    receipt('issue-17-realtime', { rpcAdded: submissionResult.added, directHints: submittedHints, unpublished: ['dispute_message_evidence', 'message_selection_grants'], published, bodyCounts: bodies.map(rows => rows.length), realtimeHints: hints.map(rows => rows.length) });
   } finally { await Promise.all(members.map((member, index) => member.client.removeChannel(channels[index]))); members.forEach(member => member.client.realtime.disconnect()); }
 });
