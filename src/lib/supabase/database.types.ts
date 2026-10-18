@@ -1506,9 +1506,6 @@ isOneToOne: true
 "prepare_listing_image":
 { Args: { "p_byte_size": number,"p_image_id": string,"p_intent_id": string,"p_listing_id": string,"p_mime_type": string }; Returns: Json
                            },
-"read_dispute_decisions":
-{ Args: { "p_exchange_id": string }; Returns: Json
-                           },
 "prepare_return_evidence":
 { Args: { "p_byte_size": number,"p_evidence_id": string,"p_exchange_id": string,"p_intent_id": string,"p_mime_type": string }; Returns: Json
                            },
@@ -1517,6 +1514,9 @@ isOneToOne: true
                            },
 "read_community_feed":
 { Args: { "p_community_id": string }; Returns: Json
+                           },
+"read_dispute_decisions":
+{ Args: { "p_exchange_id": string }; Returns: Json
                            },
 "read_dispute_message_evidence":
 { Args: { "p_dispute_id": string }; Returns: Json
@@ -1589,7 +1589,7 @@ isOneToOne: true
                            },
 "submit_dispute_messages":
 { Args: { "p_dispute_id": string,"p_intent_id": string,"p_message_ids": (string)[] }; Returns: Json
-                            },
+                           },
 "submit_vouch":
 { Args: { "p_application_id": string,"p_intent_id": string,"p_statement": string }; Returns: Json
                            },
