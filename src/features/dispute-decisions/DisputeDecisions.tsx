@@ -1,5 +1,7 @@
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { supabase } from '../../lib/supabase/client';
+import { correctReputationEvent, readMisconductEvents, recordVerifiedMisconduct, type MisconductRule } from '../misconduct/api';
+import { signedPoints } from '../reputation/model';
 import { useBorrowingRead } from '../borrowing/useBorrowingRead';
 import { Photo } from '../evidence/HandoffPhotos';
 import { actOnDispute, readDecisions } from './api';
@@ -55,6 +57,7 @@ function DecisionCard({ view, dispute, userId, refresh }: { view: DecisionView; 
     {can('open_review') && <TextAction busy={busy} required={dispute.status === 'replacement_agreed'} label={dispute.status === 'replacement_agreed' ? 'How has the agreed replacement stalled?' : 'Review note (optional)'} button="Open administrator review" onSubmit={note => run('open_review', note.trim() ? { note } : {})}/>}
     {can('decide') && <OutcomeAction busy={busy} legend="Case outcome" reasonLabel="Reason for this outcome" button="Record outcome" onSubmit={(outcome, reason) => run('decide', { outcome, reason })}/>}
     {can('correct_outcome') && <OutcomeAction busy={busy} legend="Corrected outcome" reasonLabel="Reason for the correction" button="Append correction" onSubmit={(outcome, reason) => run('correct_outcome', { outcome, reason })}/>}
+    {can('correct_outcome') && <MisconductAction dispute={dispute} view={view} userId={userId} refresh={refresh}/>}
     {can('record_recovery') && <TextAction busy={busy} label="How did the owner recover the item?" button="Record item recovery" onSubmit={reason => run('record_recovery', { reason })}/>}
     {error && <p role="alert">{error}</p>}
     <h4>Decision history</h4>
@@ -62,6 +65,86 @@ function DecisionCard({ view, dispute, userId, refresh }: { view: DecisionView; 
       <strong>{roleLabel(view, dispute, userId, entry.actor_id)}</strong> {historyLabels[entry.action] ?? entry.action}{entry.remedy_kind ? `: ${remedyKinds[entry.remedy_kind]}` : ''}{entry.outcome ? `: ${statusLabels[entry.outcome]}` : ''}
       {entry.from_status !== entry.to_status && <> ({statusLabels[entry.from_status] ?? entry.from_status} to {statusLabels[entry.to_status] ?? entry.to_status})</>}{when(entry.created_at)}{entry.body && <p>{entry.body}</p>}</li>)}</ol>}
   </article>;
+}
+
+const misconductRuleLabels: Record<string, string> = { late_return: 'Late return', unresolved_damage: 'Unresolved damage', confirmed_theft: 'Confirmed theft' };
+const misconductLabel = (rule: string) => misconductRuleLabels[rule] ?? 'Verified standing change';
+const partyLabel = (view: DecisionView, id: string) => (id === view.provider_id ? (view.kind === 'item' ? 'Owner' : 'Helper') : (view.kind === 'item' ? 'Borrower' : 'Requester'));
+const messageOf = (failure: unknown, fallback: string) => failure && typeof failure === 'object' && 'message' in failure ? String(failure.message) : fallback;
+
+// A retry of the same payload reuses its intent; a changed payload gets a fresh one so the server never sees one intent with two payloads.
+function intentFor(attempt: { current: { key: string; intent: string } | null }, key: string) {
+  if (attempt.current?.key !== key) attempt.current = { key, intent: crypto.randomUUID() };
+  return attempt.current.intent;
+}
+
+function MisconductAction({ dispute, view, userId, refresh }: { dispute: DecisionCase; view: DecisionView; userId: string; refresh: () => void }) {
+  const eligible = dispute.closed_at !== null && dispute.outcome?.outcome === 'unresolved';
+  const [ledger, reloadLedger] = useBorrowingRead(userId, `misconduct-${dispute.id}`, () => readMisconductEvents(view.exchange_id));
+  const events = ledger.status === 'ready' ? ledger.data : [];
+  const corrected = new Set(events.flatMap(entry => entry.corrects_event_id ? [entry.corrects_event_id] : []));
+  const originals = events.filter(entry => entry.corrects_event_id === null && !corrected.has(entry.id));
+  const [rule, setRule] = useState<MisconductRule>('unresolved_damage');
+  const [chosen, setChosen] = useState(dispute.respondent_id);
+  const recipient = rule === 'late_return' ? view.receiver_id : chosen;
+  const [reason, setReason] = useState('');
+  const [status, setStatus] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const attempt = useRef<{ key: string; intent: string } | null>(null);
+  const changed = () => { reloadLedger(); refresh(); };
+  async function verify(event: FormEvent) {
+    event.preventDefault(); setBusy(true); setError(''); setStatus('');
+    try {
+      const key = JSON.stringify([dispute.id, rule, recipient, reason]);
+      const result = await recordVerifiedMisconduct(intentFor(attempt, key), dispute.id, rule, recipient, reason);
+      attempt.current = null; setReason('');
+      setStatus(`Recorded ${signedPoints(result.points)} for ${misconductLabel(rule)}.`);
+      changed();
+    } catch (failure) { setError(messageOf(failure, 'Penalty was not recorded. Retry safely.')); }
+    finally { setBusy(false); }
+  }
+  return <section className="dispute-misconduct" aria-label="Verified misconduct">
+    <h4>Verified misconduct</h4>
+    <p>Record a reasoned penalty after an unresolved case decision. A correction appends beside the original event, which stays in history.</p>
+    {events.length > 0 && <ol className="misconduct-ledger" aria-label="Verified penalties and corrections">{events.map(entry => <li key={entry.id}>
+      <span className="history-points">{signedPoints(entry.points)}</span>
+      <span>{entry.corrects_event_id ? 'Linked correction' : misconductLabel(entry.rule)} · {partyLabel(view, entry.recipient_id)}{entry.reason && ` · ${entry.reason}`}</span>
+    </li>)}</ol>}
+    {originals.map(entry => <CorrectionAction key={entry.id} eventId={entry.id} onDone={changed}/>)}
+    {eligible ? <form onSubmit={event => void verify(event)}>
+      <label>Rule<select value={rule} onChange={event => setRule(event.target.value as MisconductRule)}>
+        <option value="late_return">Late return (−2)</option><option value="unresolved_damage">Unresolved damage (−10)</option><option value="confirmed_theft">Confirmed theft (−30)</option>
+      </select></label>
+      <label>Responsible member<select value={recipient} disabled={rule === 'late_return'} onChange={event => setChosen(event.target.value)}>
+        <option value={view.provider_id}>{partyLabel(view, view.provider_id)}</option><option value={view.receiver_id}>{partyLabel(view, view.receiver_id)}</option>
+      </select></label>
+      <label>Reason for verified decision<textarea required maxLength={1000} value={reason} onChange={event => setReason(event.target.value)}/></label>
+      <button className="primary-button" disabled={busy}>Record verified penalty</button>
+    </form> : <p>Available after the administrator closes the case as unresolved.</p>}
+    {status && <p role="status">{status}</p>}
+    {error && <p role="alert">{error}</p>}
+  </section>;
+}
+
+function CorrectionAction({ eventId, onDone }: { eventId: string; onDone: () => void }) {
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const attempt = useRef<{ key: string; intent: string } | null>(null);
+  async function correct(event: FormEvent) {
+    event.preventDefault(); setBusy(true); setError('');
+    try {
+      await correctReputationEvent(intentFor(attempt, JSON.stringify([eventId, reason])), eventId, reason);
+      attempt.current = null; setReason(''); onDone();
+    } catch (failure) { setError(messageOf(failure, 'Correction was not recorded. Retry safely.')); }
+    finally { setBusy(false); }
+  }
+  return <form className="misconduct-correction" onSubmit={event => void correct(event)}>
+    <label>Correction reason<textarea required maxLength={1000} value={reason} onChange={event => setReason(event.target.value)}/></label>
+    <button className="secondary-button" disabled={busy}>Append linked correction</button>
+    {error && <p role="alert">{error}</p>}
+  </form>;
 }
 
 function ExchangeRecords({ view }: { view: DecisionView }) {

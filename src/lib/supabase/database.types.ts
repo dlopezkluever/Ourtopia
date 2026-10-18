@@ -1507,6 +1507,9 @@ isOneToOne: true
               "can_send": boolean,"community_id": string,"community_name": string,"counterpart_email": string,"counterpart_id": string,"created_at": string,"id": string,"last_message_at": string
             }[]
                            },
+"correct_reputation_event":
+{ Args: { "p_event_id": string,"p_intent_id": string,"p_reason": string }; Returns: Json
+                           },
 "create_community":
 { Args: { "p_description"?: string,"p_intent_id": string,"p_name": string }; Returns: Json
                            },
@@ -1625,6 +1628,9 @@ isOneToOne: true
                            },
 "receive_stripe_receipt":
 { Args: { "p_customer_id": string,"p_event_id": string,"p_event_type": string,"p_fingerprint": string,"p_subscription_id": string }; Returns: Json
+                           },
+"record_verified_misconduct":
+{ Args: { "p_dispute_id": string,"p_intent_id": string,"p_reason": string,"p_recipient_id": string,"p_rule": string }; Returns: Json
                            },
 "redeem_invite":
 { Args: { "p_intent_id": string,"p_invite_id": string }; Returns: Json

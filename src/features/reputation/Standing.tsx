@@ -16,7 +16,8 @@ export function TrustIndicators({ trust }: { trust: Trust }) {
   return <section className="trust-indicators" aria-label="Trust indicators">
     <h3>Trust indicators</h3>
     {trust.incidents.length === 0 ? <p>No unresolved Disputes or serious violations</p>
-      : <ul>{trust.incidents.map((incident, index) => <li key={index}>{incidentLabels[incident.type]} · {incident.status}</li>)}</ul>}
+      : <><p className="trust-note">Shown apart from Solidarity Scores.</p>
+        <ul>{trust.incidents.map((incident, index) => <li key={index} className={`incident-${incident.type}`}><strong>{incidentLabels[incident.type]}</strong> · {incident.status}</li>)}</ul></>}
   </section>;
 }
 
@@ -26,7 +27,7 @@ export function HistoryList({ events, heading }: { events: HistoryEvent[]; headi
     {events.length === 0 ? <p className="empty-history">{emptyExchangeHistory}</p>
       : <ol>{events.map(event => <li key={event.id}>
         <span className="history-points">{signedPoints(event.points)}</span>
-        <span>{ruleLabel(event.rule)}{event.exchangeKind && ` · ${exchangeKindLabels[event.exchangeKind]}`}{event.reason && ` · ${event.reason}`}</span>
+        <span>{event.correctsEventId ? 'Linked correction' : ruleLabel(event.rule)}{event.exchangeKind && ` · ${exchangeKindLabels[event.exchangeKind]}`}{event.reason && ` · ${event.reason}`}</span>
         <time dateTime={event.createdAt}>{new Date(event.createdAt).toLocaleDateString()}</time>
       </li>)}</ol>}
   </section>;
