@@ -107,11 +107,13 @@ test('ineligible, foreign, removed, suspended and terminal applicants cannot rec
   assert.equal((await submitVouch(f.sponsor, f.application.id, ' ')).error?.code, '22023');
   const other = await vouchFixture('foreign-applicant');
   assert.equal((await submitVouch(f.sponsor, other.application.id)).error?.code, '42501');
-  for (const status of ['removed', 'suspended']) {
-    await admin.from('memberships').update({ status }).eq('community_id', f.community.id).eq('user_id', f.sponsor.id).throwOnError();
-    assert.equal((await submitVouch(f.sponsor, f.application.id)).error?.code, '42501');
-  }
+  await admin.from('memberships').update({ status: 'suspended' }).eq('community_id', f.community.id).eq('user_id', f.sponsor.id).throwOnError();
+  assert.equal((await submitVouch(f.sponsor, f.application.id)).error?.code, '42501');
   await admin.from('memberships').update({ status: 'active' }).eq('community_id', f.community.id).eq('user_id', f.sponsor.id).throwOnError();
+  const gone = await vouchFixture('removed-sponsor');
+  await configureVouch(gone.owner, gone.community.id, gone.sponsor.id);
+  await admin.from('memberships').update({ status: 'removed' }).eq('community_id', gone.community.id).eq('user_id', gone.sponsor.id).throwOnError();
+  assert.equal((await submitVouch(gone.sponsor, gone.application.id)).error?.code, '42501');
   assert.equal((await decideApplication(f.owner, f.application.id, 'rejected', 'Not this time.')).error, null);
   assert.equal((await submitVouch(f.sponsor, f.application.id)).error?.code, '55000');
   assert.equal((await f.applicant.client.rpc('request_vouch', { p_intent_id: randomUUID(), p_application_id: f.application.id, p_sponsor_email: f.sponsor.email })).error?.code, '55000');
