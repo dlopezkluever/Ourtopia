@@ -235,6 +235,38 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"dispute_message_evidence": {
+                  Row: {
+                    "body": string,"community_id": string,"dispute_id": string,"id": string,"source_author_id": string,"source_created_at": string,"source_message_id": string,"submitted_at": string,"submitter_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "body": string,"community_id": string,"dispute_id": string,"id"?: string,"source_author_id": string,"source_created_at": string,"source_message_id": string,"submitted_at"?: string,"submitter_id": string
+                  }
+                  Update: {
+                    "body"?: string,"community_id"?: string,"dispute_id"?: string,"id"?: string,"source_author_id"?: string,"source_created_at"?: string,"source_message_id"?: string,"submitted_at"?: string,"submitter_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "dispute_message_evidence_community_id_fkey"
+      columns: ["community_id"]
+isOneToOne: false
+      referencedRelation: "communities"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "dispute_message_evidence_dispute_id_fkey"
+      columns: ["dispute_id"]
+isOneToOne: false
+      referencedRelation: "disputes"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "dispute_message_evidence_source_message_id_fkey"
+      columns: ["source_message_id"]
+isOneToOne: false
+      referencedRelation: "messages"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"dispute_responses": {
                   Row: {
                     "author_id": string,"body": string,"created_at": string,"dispute_id": string,"id": string
@@ -1442,6 +1474,9 @@ isOneToOne: true
 "read_community_feed":
 { Args: { "p_community_id": string }; Returns: Json
                            },
+"read_dispute_message_evidence":
+{ Args: { "p_dispute_id": string }; Returns: Json
+                           },
 "read_exchange_disputes":
 { Args: { "p_exchange_id": string }; Returns: Json
                            },
@@ -1507,6 +1542,9 @@ isOneToOne: true
                            },
 "submit_borrow_request":
 { Args: { "p_ends_on": string,"p_intent_id": string,"p_listing_id": string,"p_starts_on": string }; Returns: Json
+                           },
+"submit_dispute_messages":
+{ Args: { "p_dispute_id": string,"p_intent_id": string,"p_message_ids": (string)[] }; Returns: Json
                            },
 "submit_vouch":
 { Args: { "p_application_id": string,"p_intent_id": string,"p_statement": string }; Returns: Json
