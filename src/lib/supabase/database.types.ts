@@ -1334,7 +1334,7 @@ isOneToOne: true
 { Args: { "p_job_id": string }; Returns: Json
                            },
 "command_contribution_draft":
-{ Args: { "p_action": string,"p_community_id": string,"p_expected_revision": number,"p_fields"?: Json,"p_intent_id": string,"p_kind": string,"p_owner_id": string }; Returns: Json
+{ Args: { "p_action": string,"p_community_id": string,"p_expected_revision": number,"p_fields": Json,"p_intent_id": string,"p_kind": string,"p_owner_id": string }; Returns: Json
                            },
 "command_item_handoff":
 { Args: { "p_action": string,"p_details"?: Json,"p_exchange_id": string,"p_expected_revision": number,"p_intent_id": string }; Returns: Json
