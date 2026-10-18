@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { test } from 'node:test';
 import { z } from 'zod';
-import { activeMember, admin, completedExchanges, listingFixture, membershipFixture, receipt, reviewedDispute, seedIncident, seedReputationEvent } from '../../scripts/verify/backend';
+import { activeMember, admin, caseAction, completedExchanges, listingFixture, membershipFixture, receipt, reviewedDispute, seedIncident, seedReputationEvent } from '../../scripts/verify/backend';
 
 const standing = z.object({
   global: z.object({ score: z.number(), completedInteractions: z.number() }),
@@ -139,4 +139,51 @@ test('Penalties stay in the ledger after the penalized member leaves the Communi
   const community = mine.communities.find(row => row.communityId === f.community.id);
   assert.equal(community?.local.score, 40);
   assert.ok(community?.history.some(entry => entry.points === -10));
+});
+
+test('A replayed misconduct intent returns its stored result after the case outcome changes', async () => {
+  const f = await reviewedDispute('misconduct-replay');
+  assert.equal((await caseAction(f.owner, f.disputeId, 'decide', { outcome: 'unresolved', reason: 'The submitted evidence supports the reported damage.' })).error, null);
+  const intent = randomUUID();
+  const args = { p_intent_id: intent, p_dispute_id: f.disputeId, p_rule: 'unresolved_damage', p_recipient_id: f.bob.id, p_reason: 'Verified before the outcome changed.' };
+  const first = await f.owner.client.rpc('record_verified_misconduct', args);
+  assert.equal(first.error, null);
+  assert.equal((await caseAction(f.owner, f.disputeId, 'correct_outcome', { outcome: 'resolved', reason: 'A dated receipt shows the repair was completed.' })).error, null);
+  const replay = await f.owner.client.rpc('record_verified_misconduct', args);
+  assert.equal(replay.error, null);
+  assert.deepEqual(replay.data, first.data);
+  const fresh = await f.owner.client.rpc('record_verified_misconduct', { ...args, p_intent_id: randomUUID() });
+  assert.equal(fresh.error?.code, '55000');
+});
+
+test('Concurrent corrections of one event with distinct intents yield one linked correction', async () => {
+  const f = await reviewedDispute('misconduct-race');
+  const recorded = await f.owner.client.rpc('record_verified_misconduct', { p_intent_id: randomUUID(), p_dispute_id: f.disputeId, p_rule: 'unresolved_damage',
+    p_recipient_id: f.bob.id, p_reason: 'Verified before the race.' });
+  assert.equal(recorded.error, null);
+  const eventId = (recorded.data as { eventId: string }).eventId;
+  const attempts = await Promise.allSettled([randomUUID(), randomUUID()].map(intent => f.owner.client.rpc('correct_reputation_event', { p_intent_id: intent, p_event_id: eventId, p_reason: 'A dated receipt was verified.' })));
+  const fulfilled = attempts.filter(attempt => attempt.status === 'fulfilled' && !attempt.value.error);
+  const refused = attempts.filter(attempt => attempt.status === 'fulfilled' && attempt.value.error?.code === '55000');
+  assert.equal(fulfilled.length, 1);
+  assert.equal(refused.length, 1);
+  const corrections = await admin.from('reputation_events').select('id').eq('corrects_event_id', eventId);
+  assert.equal(corrections.data?.length, 1);
+});
+
+test('The database refuses a second linked correction for one event', async () => {
+  const f = await reviewedDispute('misconduct-index');
+  const recorded = await f.owner.client.rpc('record_verified_misconduct', { p_intent_id: randomUUID(), p_dispute_id: f.disputeId, p_rule: 'unresolved_damage',
+    p_recipient_id: f.bob.id, p_reason: 'Verified before the direct insert.' });
+  assert.equal(recorded.error, null);
+  const original = await admin.from('reputation_events').select('community_id,recipient_id,exchange_id,points').eq('id', (recorded.data as { eventId: string }).eventId).single();
+  assert.equal(original.error, null);
+  const correction = await admin.from('reputation_events').insert({ community_id: original.data!.community_id, recipient_id: original.data!.recipient_id, exchange_id: original.data!.exchange_id,
+    rule: 'correction:direct', points: 10, source_kind: 'reputation_correction', source_id: randomUUID(), verified_by_command: 'correct_reputation_event', verified_by: f.owner.id,
+    corrects_event_id: (recorded.data as { eventId: string }).eventId, reason: 'Direct insert.' });
+  assert.equal(correction.error, null);
+  const second = await admin.from('reputation_events').insert({ community_id: original.data!.community_id, recipient_id: original.data!.recipient_id, exchange_id: original.data!.exchange_id,
+    rule: 'correction:second', points: 10, source_kind: 'reputation_correction', source_id: randomUUID(), verified_by_command: 'correct_reputation_event', verified_by: f.owner.id,
+    corrects_event_id: (recorded.data as { eventId: string }).eventId, reason: 'Second direct insert.' });
+  assert.equal(second.error?.code, '23505');
 });

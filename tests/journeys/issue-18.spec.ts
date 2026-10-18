@@ -213,9 +213,14 @@ test('lane 10 penalty, correction, and serious-incident status are reachable by 
   await misconduct.getByRole('button', { name: 'Append linked correction' }).focus();
   await page.keyboard.press('Enter');
   await expect(misconduct.getByRole('list', { name: 'Verified penalties and corrections' })).toContainText('Linked correction');
+  const penalty = await admin.from('reputation_events').select('id').eq('exchange_id', f.exchangeId).eq('rule', 'confirmed_theft').single();
+  expect((await admin.from('trust_incidents').select('status').eq('source_kind', 'reputation_event').eq('source_id', penalty.data?.id ?? '').single()).data).toEqual({ status: 'overturned' });
+  const other = await membershipFixture(`misconduct-lane-10-other-${info.project.name}`);
+  await seedIncident(other.community.id, f.bob.id, 'serious_violation', 'confirmed');
   const profile = await page.goto(`/communities/${f.community.id}/members/${f.bob.id}`);
   expect(profile?.ok()).toBeTruthy();
   await expect(page.getByRole('region', { name: 'Trust indicators' })).toContainText('Serious violation');
+  await expect(page.getByRole('region', { name: 'Trust indicators' })).toContainText('confirmed');
   await save(page, info, 10, { keyboard: true });
 });
 

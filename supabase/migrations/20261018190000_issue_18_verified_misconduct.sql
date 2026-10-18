@@ -1,3 +1,5 @@
+create unique index reputation_events_correction_once on public.reputation_events(corrects_event_id) where corrects_event_id is not null;
+
 create function public.record_verified_misconduct(
   p_intent_id uuid, p_dispute_id uuid, p_rule text, p_recipient_id uuid, p_reason text
 ) returns jsonb
@@ -15,6 +17,8 @@ begin
   if actor in (e.provider_id, e.receiver_id) then
     raise exception using errcode = '42501', message = 'Exchange participants cannot verify misconduct in their own case.';
   end if;
+  prior := private.borrow_intent(actor, p_intent_id, 'record_verified_misconduct', payload);
+  if prior is not null then return prior; end if;
   if p_rule is null or p_rule not in ('late_return', 'unresolved_damage', 'confirmed_theft') or p_recipient_id is null or p_recipient_id not in (e.provider_id, e.receiver_id)
     or p_reason is null or length(btrim(p_reason)) not between 1 and 1000 then
     raise exception using errcode = '22023', message = 'Choose a case participant, a verified rule, and a reason of 1 to 1000 characters.';
@@ -25,8 +29,6 @@ begin
   if d.closed_at is null or private.dispute_effective_outcome(d.id) is distinct from 'unresolved' then
     raise exception using errcode = '55000', message = 'Misconduct can be verified only from a closed unresolved decision.';
   end if;
-  prior := private.borrow_intent(actor, p_intent_id, 'record_verified_misconduct', payload);
-  if prior is not null then return prior; end if;
   if exists (select 1 from public.reputation_events where source_kind = 'dispute' and source_id = d.id and rule = p_rule and recipient_id = p_recipient_id) then
     raise exception using errcode = '23505', message = 'This verified rule already applies to this member for this decision.';
   end if;
@@ -57,15 +59,15 @@ declare
   actor uuid := auth.uid(); original public.reputation_events; correction_id uuid; community_event uuid; result jsonb;
   payload jsonb := jsonb_build_object('event', p_event_id, 'reason', p_reason);
 begin
-  select * into original from public.reputation_events where id = p_event_id;
+  select * into original from public.reputation_events where id = p_event_id for update;
   if not found or actor is null or not public.is_community_administrator(original.community_id) then
     raise exception using errcode = '42501', message = 'A current same-Community administrator is required.';
   end if;
+  result := private.borrow_intent(actor, p_intent_id, 'correct_reputation_event', payload);
+  if result is not null then return result; end if;
   if original.source_kind <> 'dispute' or p_reason is null or length(btrim(p_reason)) not between 1 and 1000 then
     raise exception using errcode = '22023', message = 'Choose a misconduct event and provide a correction reason of 1 to 1000 characters.';
   end if;
-  result := private.borrow_intent(actor, p_intent_id, 'correct_reputation_event', payload);
-  if result is not null then return result; end if;
   if exists (select 1 from public.reputation_events where corrects_event_id = original.id) then
     raise exception using errcode = '55000', message = 'This verified event already has a linked correction.';
   end if;
