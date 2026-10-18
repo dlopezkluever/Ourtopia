@@ -1,8 +1,13 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { decideStalledReview, readStalledQueue, readStalledReview } from './api';
+import { decideStalledReview, readStalledQueue, readStalledReview, recordStalledRecovery } from './api';
 import { gapLabels, missingForVerified, stalledReviewReasons, type DecisionOutcome, type EvidenceKey, type QueueRow, type StalledReview } from './model';
 
 const emptyEvidence: Record<EvidenceKey, boolean> = { return_record: false, condition: false, work_record: false };
+
+// Supabase RPC failures are plain objects with a message, not Error instances.
+function failureMessage(failure: unknown, fallback: string) {
+  return typeof failure === 'object' && failure !== null && 'message' in failure && typeof failure.message === 'string' ? failure.message : fallback;
+}
 
 export function StalledReviewQueue({ communityId }: { communityId: string }) {
   const [rows, setRows] = useState<QueueRow[] | null>(null);
@@ -37,8 +42,11 @@ export function StalledReviewCase({ exchangeId, userId }: { exchangeId: string; 
       <dt>Return confirmations</dt><dd>{[view.record.ownerConfirmedAt, view.record.borrowerConfirmedAt].filter(Boolean).length} of 2</dd>
       <dt>Helper or requester confirmations</dt><dd>{[view.record.helperConfirmedAt, view.record.requesterConfirmedAt].filter(Boolean).length} of 2</dd>
       <dt>Open issue</dt><dd>{view.record.openDispute ? 'Open' : view.record.unresolvedDispute ? 'Decided as unresolved' : 'None'}</dd>
+      {view.kind === 'item' && <><dt>Item custody</dt><dd>{view.custodyUnresolved ? 'Unrecovered. The item stays blocked from new loans until recovery is recorded.' : 'Clear'}</dd></>}
     </dl>
     {view.decision ? <DecisionSummary view={view} /> : view.canDecide ? <DecisionForm view={view} onDecided={setView} /> : <p>{view.participant ? 'You can answer this case in its Exchange. Only an administrator who is not a participant records the decision.' : 'Waiting for an administrator decision.'}</p>}
+    {view.recovery && <p>Recovery recorded: {view.recovery.reason}</p>}
+    {view.canRecover && <RecoveryForm view={view} onRecovered={setView} />}
     <p><a href={`/stalled/${view.communityId}`}>Back to stalled confirmations</a></p>
   </section>;
 }
@@ -48,6 +56,29 @@ function DecisionSummary({ view }: { view: StalledReview }) {
   return <section aria-labelledby="stalled-decision-title"><h2 id="stalled-decision-title">Recorded decision</h2>
     <p><strong>{decision.outcome === 'verified_completion' ? 'Verified completion' : 'Closed without completion'}</strong>. {decision.reason}</p>
     <p className="muted">Recorded {new Date(decision.decidedAt).toLocaleString()}</p></section>;
+}
+
+function RecoveryForm({ view, onRecovered }: { view: StalledReview; onRecovered: (next: StalledReview) => void }) {
+  const [reason, setReason] = useState('');
+  const [message, setMessage] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const intent = useRef(crypto.randomUUID());
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true); setMessage(null);
+    try {
+      onRecovered(await recordStalledRecovery(intent.current, view.exchangeId, reason));
+    } catch (failure) {
+      setMessage(failureMessage(failure, 'The recovery was not recorded. Refresh and try again.'));
+    } finally { setBusy(false); }
+  }
+  return <form className="stalled-decision" onSubmit={submit} aria-labelledby="stalled-recover-title">
+    <h2 id="stalled-recover-title">Record recovery</h2>
+    <p>Until a recovery is recorded, the item stays blocked from new loans.</p>
+    <label>How the owner recovered the item<textarea name="recovery" value={reason} onChange={event => setReason(event.target.value)} minLength={10} maxLength={4000} required rows={3} /></label>
+    {message && <p role="alert">{message}</p>}
+    <button type="submit" disabled={busy}>{busy ? 'Recording...' : 'Record recovery'}</button>
+  </form>;
 }
 
 function DecisionForm({ view, onDecided }: { view: StalledReview; onDecided: (next: StalledReview) => void }) {
@@ -65,7 +96,7 @@ function DecisionForm({ view, onDecided }: { view: StalledReview; onDecided: (ne
     try {
       onDecided(await decideStalledReview(intent.current, view.exchangeId, outcome, reason, evidence));
     } catch (failure) {
-      setMessage(failure instanceof Error ? failure.message : 'The decision was not recorded. Refresh and try again.');
+      setMessage(failureMessage(failure, 'The decision was not recorded. Refresh and try again.'));
     } finally { setBusy(false); }
   }
   return <form className="stalled-decision" onSubmit={submit} aria-labelledby="stalled-decide-title">

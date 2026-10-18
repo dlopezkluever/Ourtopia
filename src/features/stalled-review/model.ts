@@ -30,7 +30,10 @@ export const stalledReviewSchema = z.object({
   }),
   recordGaps: z.array(z.string()),
   decision: decisionSchema,
+  custodyUnresolved: z.boolean(),
+  recovery: z.object({ reason: z.string(), decidedBy: z.uuid(), decidedAt: z.string() }).nullable(),
   canDecide: z.boolean(),
+  canRecover: z.boolean(),
 });
 export type StalledReview = z.infer<typeof stalledReviewSchema>;
 

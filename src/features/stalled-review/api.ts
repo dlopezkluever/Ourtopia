@@ -21,3 +21,9 @@ export async function decideStalledReview(intentId: string, exchangeId: string, 
   if (result.error) throw result.error;
   return stalledReviewSchema.parse(result.data);
 }
+
+export async function recordStalledRecovery(intentId: string, exchangeId: string, reason: string) {
+  const result = await supabase.rpc('record_stalled_item_recovery', { p_intent_id: intentId, p_exchange_id: exchangeId, p_reason: reason });
+  if (result.error) throw result.error;
+  return stalledReviewSchema.parse(result.data);
+}

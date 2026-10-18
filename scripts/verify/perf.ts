@@ -27,6 +27,7 @@ const { values } = parseArgs({ options: { issue: { type: 'string' }, base: { typ
 if (values.issue === '16') await verifyIssue16(values);
 else if (values.issue === '17') await verifyIssue17(values);
 else if (values.issue === '18') await verifyIssue18(values);
+else if (values.issue === '19') await verifyIssue19(values);
 else if (values.issue === '8') await verifyIssue8(values);
 else if (values.issue === '9') await verifyIssue9(values);
 else if (values.issue === '11') await verifyIssue11(values);
@@ -1602,5 +1603,102 @@ async function verifyIssue17(values: PerfArguments) {
   finally {
     await browser.close(); await Promise.all(servers.map(server => new Promise<void>(done => { if (server.exitCode !== null) done(); else { server.once('exit', () => done()); server.kill(); } })));
     assert.equal(trunkRoot, resolve('.pilot-evidence', 'perf-trunk-17')); if (existsSync(trunkRoot)) rmSync(trunkRoot, { recursive: true });
+  }
+}
+
+// P19: trunk lacks the stalled review route, so both sides time the shared authorized Return read and the shared app
+// readiness. Head additionally times the guarded verified decision from the administrator's page and its durable end state.
+async function verifyIssue19(values: PerfArguments) {
+  const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+  assert.equal(values.head, head); assert.ok(values.base);
+  const base = values.base; const pairs = Number(values.pairs); assert.ok(Number.isInteger(pairs) && pairs >= 10);
+  const tree = execFileSync('git', ['ls-tree', '-r', '--name-only', base], { encoding: 'utf8' }).split('\n');
+  assert.ok(!tree.some(p => p.startsWith('src/features/stalled-review/')), 'Trunk must lack the stalled review route.');
+  assert.equal(execFileSync('git', ['diff', base, head, '--', 'package-lock.json'], { encoding: 'utf8' }), '');
+  const { checkedOutFixture, recordReturn, admin: service, password: testPassword } = await import('./backend');
+  const directory = `${process.env.EVIDENCE_DIR ?? '.pilot-evidence'}/perf`; mkdirSync(directory, { recursive: true });
+  const trunkRoot = resolve('.pilot-evidence', 'perf-trunk-19'); assert.ok(!existsSync(trunkRoot));
+  const samples: { index: number; side: string; readinessMs: number; queryMs: number; exchangeId: string }[] = [];
+  const actions: { index: number; commandMs: number; visibleMs: number; queryMs: number; exchangeId: string; awards: number }[] = [];
+  const servers: ReturnType<typeof spawn>[] = []; const startup: Record<string, number> = {};
+  const port = Number(process.env.APP_PORT ?? 5173) + 1;
+  const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH ?? (process.platform === 'win32' ? 'C:/Program Files/Google/Chrome/Application/chrome.exe' : undefined) });
+  const persist = (result: unknown) => writeFileSync(`${directory}/samples.json`, JSON.stringify({ head, base, pairs, samples, actions, startup, host: { cores: cpus().length, totalMemory: totalmem(), freeMemory: freemem(), loadAverage: loadavg() }, result }, null, 2));
+  async function serve(side: string, root: string, at: number) {
+    const started = performance.now();
+    const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', root, '--host', '127.0.0.1', '--port', String(at), '--strictPort'], { stdio: 'ignore', windowsHide: true }); servers.push(server);
+    const deadline = Date.now() + 60000;
+    while (Date.now() < deadline) {
+      if (server.exitCode !== null) throw new Error(`${side} exited ${server.exitCode}`);
+      if (await fetch(`http://127.0.0.1:${at}`).then(r => r.ok, () => false)) { startup[side] = performance.now() - started; return; }
+      await new Promise(done => setTimeout(done, 100));
+    }
+    throw new Error(`${side} exceeded 60-second startup budget`);
+  }
+  async function signIn(page: Page, email: string) {
+    await page.goto('/'); await page.getByLabel('Email address').fill(email); await page.getByLabel('Password', { exact: true }).fill(testPassword);
+    await page.getByRole('button', { name: 'Sign in', exact: true }).last().click();
+  }
+  try {
+    for (const file of tree.filter(p => /^(src\/|vite.config.ts$|index.html$|package.json$)/.test(p))) {
+      const target = join(trunkRoot, file); mkdirSync(resolve(target, '..'), { recursive: true }); writeFileSync(target, execFileSync('git', ['show', `${base}:${file}`]));
+    }
+    copyFileSync('.env.local', join(trunkRoot, '.env.local'));
+    await serve('trunk', trunkRoot, port); await serve('head', '.', port + 1);
+    for (let index = 0; index < pairs; index++) {
+      const f = await checkedOutFixture(`perf19-${index}`);
+      await recordReturn(f);
+      const aged = await service.from('item_returns').update({ review_due_at: new Date(Date.now() - 60000).toISOString() }).eq('exchange_id', f.exchangeId);
+      assert.equal(aged.error, null);
+      assert.equal((await service.rpc('process_due_item_returns')).error, null);
+      for (const [side, at] of [['trunk', port], ['head', port + 1]] satisfies [string, number][]) {
+        const context = await browser.newContext({ baseURL: `http://127.0.0.1:${at}`, viewport: { width: 1440, height: 1000 } });
+        try {
+          const page = await context.newPage(); await signIn(page, f.alice.email);
+          const home = page.getByRole('heading', { name: `Welcome to ${f.community.name}.` }); await expect(home).toBeVisible();
+          const readyAt = performance.now(); await page.reload(); await expect(home).toBeVisible(); const readinessMs = performance.now() - readyAt;
+          const readAt = performance.now(); const read = await f.alice.client.rpc('read_item_return', { p_exchange_id: f.exchangeId }); const queryMs = performance.now() - readAt;
+          assert.equal(read.error, null); assert.equal((read.data as { exchange_id: string }).exchange_id, f.exchangeId);
+          samples.push({ index, side, readinessMs, queryMs, exchangeId: f.exchangeId }); persist({ failures: 0, phase: 'paired readiness and authorized Return read' });
+        } finally { await context.close(); }
+        if (side === 'head') {
+          const adminContext = await browser.newContext({ baseURL: `http://127.0.0.1:${port + 1}`, viewport: { width: 1440, height: 1000 } });
+          try {
+            const adminPage = await adminContext.newPage(); await signIn(adminPage, f.owner.email);
+            await expect(adminPage.getByRole('button', { name: 'Sign out' })).toBeVisible();
+            await adminPage.goto(`/stalled/case/${f.exchangeId}`);
+            await expect(adminPage.getByRole('heading', { name: 'Stalled confirmation', exact: true })).toBeVisible();
+            await adminPage.getByRole('radio', { name: 'Verified completion' }).check();
+            await adminPage.getByRole('checkbox', { name: 'I checked the recorded Return' }).check();
+            await adminPage.getByRole('checkbox', { name: 'I checked the recorded condition and it is resolved' }).check();
+            await adminPage.getByLabel('Reason for this decision').fill('The borrower recorded the Return and the condition matches the Handoff.');
+            let commandAt = 0; adminPage.on('request', request => { if (request.url().includes('/rpc/decide_stalled_review')) commandAt = performance.now(); });
+            const response = adminPage.waitForResponse(r => r.url().includes('/rpc/decide_stalled_review')).then(async r => { await r.finished(); assert.equal(r.status(), 200); return performance.now() - commandAt; });
+            const actionAt = performance.now(); await adminPage.getByRole('button', { name: 'Record decision', exact: true }).click();
+            await expect(adminPage.getByRole('heading', { name: 'Recorded decision' })).toBeVisible(); const visibleMs = performance.now() - actionAt;
+            const commandMs = await response;
+            const queryAt = performance.now(); const durable = await service.from('stalled_review_decisions').select('outcome').eq('exchange_id', f.exchangeId); const queryMs = performance.now() - queryAt;
+            assert.deepEqual(durable.data, [{ outcome: 'verified_completion' }]);
+            const awards = await service.from('reputation_events').select('points').eq('exchange_id', f.exchangeId);
+            const total = (awards.data ?? []).reduce((sum, row) => sum + row.points, 0);
+            assert.equal(total, 3);
+            actions.push({ index, commandMs, visibleMs, queryMs, exchangeId: f.exchangeId, awards: total }); persist({ failures: 0, phase: 'verified decision persisted and read back' });
+          } finally { await adminContext.close(); }
+        }
+      }
+    }
+    const median = (a: number[]) => { const sorted = [...a].sort((a, b) => a - b); const mid = Math.floor(sorted.length / 2); return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2; };
+    const summary = (side: string) => ({ readinessMedianMs: median(samples.filter(s => s.side === side).map(s => s.readinessMs)), queryMedianMs: median(samples.filter(s => s.side === side).map(s => s.queryMs)) });
+    const baseline = summary('trunk'); const current = summary('head'); const added = { commandMedianMs: median(actions.map(a => a.commandMs)), visibleMedianMs: median(actions.map(a => a.visibleMs)) };
+    const queries = [...samples.filter(s => s.side === 'head').map(s => s.queryMs), ...actions.map(a => a.queryMs)].sort((a, b) => a - b); const queryP95Ms = queries[Math.ceil(queries.length * .95) - 1];
+    const checks = { readiness: current.readinessMedianMs <= Math.max(1.2 * baseline.readinessMedianMs, baseline.readinessMedianMs + 100), read: current.queryMedianMs <= Math.max(1.2 * baseline.queryMedianMs, baseline.queryMedianMs + 100), command: added.commandMedianMs <= 1000, visible: added.visibleMedianMs <= 2000, query: queryP95Ms <= 3000, startup: Object.values(startup).every(v => v <= 60000) };
+    const ranges = { commandMs: [Math.min(...actions.map(a => a.commandMs)), Math.max(...actions.map(a => a.commandMs))], visibleMs: [Math.min(...actions.map(a => a.visibleMs)), Math.max(...actions.map(a => a.visibleMs))] };
+    persist({ failures: 0, baseline, head: current, added, queryP95Ms, checks, ranges });
+    writeFileSync(`${directory}/report.md`, `P19 at ${head}.\n\n${pairs} interleaved trunk/head pairs against ${base}. Both sides reload the authenticated home and read the identical Return as a participant. Trunk lacks the stalled review route, so its action is recorded as absent. Head samples measure the guarded decide_stalled_review command, the visible Recorded decision state, and a fresh read of the persisted verified outcome and its three points.\n\nTrunk ${JSON.stringify(baseline)}. Head ${JSON.stringify(current)}. Added ${JSON.stringify(added)}. Query p95 ${queryP95Ms} ms. Ranges ${JSON.stringify(ranges)}. Checks ${JSON.stringify(checks)}. Zero failures.\n\nLocal serial Chrome and Vite development timing includes HTTP, Postgres and rendering. No external provider wait is timed. Raw samples are in samples.json.\n`);
+    assert.ok(Object.values(checks).every(Boolean), JSON.stringify(checks)); process.stdout.write(`${JSON.stringify({ baseline, head: current, added, queryP95Ms, checks })}\n`);
+  } catch (error) { persist({ error: error instanceof Error ? error.message : String(error) }); throw error; }
+  finally {
+    await browser.close(); await Promise.all(servers.map(server => new Promise<void>(done => { if (server.exitCode !== null) done(); else { server.once('exit', () => done()); server.kill(); } })));
+    assert.equal(trunkRoot, resolve('.pilot-evidence', 'perf-trunk-19')); if (existsSync(trunkRoot)) rmSync(trunkRoot, { recursive: true });
   }
 }

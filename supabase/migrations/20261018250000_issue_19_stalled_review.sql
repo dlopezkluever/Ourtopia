@@ -1,4 +1,5 @@
--- Stalled review decisions (issue 19): an administrator verifies completion from recorded evidence or closes without completion.
+-- Stalled review decisions (issue 19): an administrator verifies completion from recorded evidence or closes without
+-- completion, and records recovery for an item closed while custody is unresolved. Every decision is one guarded command.
 
 alter table public.exchange_review_items drop constraint exchange_review_items_reason_check;
 alter table public.exchange_review_items add constraint exchange_review_items_reason_check
@@ -17,6 +18,7 @@ create table public.stalled_review_decisions (
 );
 create trigger stalled_review_decisions_append_only before update or delete on public.stalled_review_decisions
   for each row execute function private.reject_history_rewrite();
+
 create function private.guard_stalled_review_decision() returns trigger language plpgsql set search_path = '' as $$
 begin
   if not exists(select 1 from public.exchanges e where e.id = new.exchange_id and e.community_id = new.community_id
@@ -34,7 +36,46 @@ grant select on public.stalled_review_decisions to authenticated;
 create policy stalled_review_decision_read on public.stalled_review_decisions for select to authenticated
   using (public.is_community_administrator(community_id) or public.can_read_exchange(exchange_id));
 
--- The record requirements for verified completion. An empty array means the evidence establishes completion.
+-- Recovery of an item closed while custody was unresolved (no confirmed Return). Separate from the closure decision.
+create table public.stalled_item_recoveries (
+  exchange_id uuid primary key references public.exchanges(id),
+  community_id uuid not null references public.communities(id),
+  reason text not null check (length(btrim(reason)) between 10 and 4000),
+  decided_by uuid not null references auth.users(id),
+  decided_at timestamptz not null default clock_timestamp(),
+  intent_id uuid not null
+);
+create trigger stalled_item_recoveries_append_only before update or delete on public.stalled_item_recoveries
+  for each row execute function private.reject_history_rewrite();
+
+create function private.guard_stalled_item_recovery() returns trigger language plpgsql set search_path = '' as $$
+begin
+  if not exists(select 1 from public.exchanges e where e.id = new.exchange_id and e.community_id = new.community_id
+    and e.kind = 'item' and e.state = 'closed_without_completion' and new.decided_by not in (e.provider_id, e.receiver_id)) then
+    raise exception using errcode = '23514', message = 'Stalled recoveries must match a closed item Exchange and exclude its participants.';
+  end if;
+  return new;
+end;
+$$;
+create trigger stalled_item_recovery_integrity before insert on public.stalled_item_recoveries
+  for each row execute function private.guard_stalled_item_recovery();
+alter table public.stalled_item_recoveries enable row level security;
+revoke all on public.stalled_item_recoveries from anon, authenticated;
+grant select on public.stalled_item_recoveries to authenticated;
+create policy stalled_item_recovery_read on public.stalled_item_recoveries for select to authenticated
+  using (public.is_community_administrator(community_id) or public.can_read_exchange(exchange_id));
+
+-- Community events for these kinds carry item_ or help_ prefixes, so the community-wide feed never shows them.
+-- Help decisions are added to the explicit exclusion list that issue 13 keeps for help events.
+drop policy event_read on public.community_events;
+create policy event_read on public.community_events for select to authenticated using (
+  public.is_active_member(community_id) and kind not like 'item\_%' and kind not like 'issue\_%'
+  and kind not like 'help\_stalled\_review\_%'
+  and kind not in ('conversation_started', 'message_sent', 'help_commitment_offered', 'help_commitment_accepted',
+    'help_scheduled', 'help_cancelled', 'help_completion_confirmed', 'help_completion_disputed', 'help_completion_due', 'help_completed',
+    'help_completion_review_queued', 'help_confirmation_due', 'test_billing_requested', 'borrow_requested', 'borrow_approved', 'borrow_rejected', 'borrow_expired'));
+
+-- The record requirements for verified completion. An empty array means the recorded evidence establishes completion.
 -- Unresolved conflict = an open Exchange issue, or a closed issue whose recorded outcome is unresolved.
 create function private.stalled_review_gaps(p_exchange uuid, p_evidence jsonb) returns text[]
 language plpgsql stable security definer set search_path = '' as $$
@@ -48,7 +89,7 @@ begin
     select * into h from public.item_handoffs where exchange_id = e.id;
     select * into r from public.item_returns where exchange_id = e.id;
     if h.exchange_id is null or h.handed_off_at is null then gaps := gaps || 'handoff'; end if;
-    if r.exchange_id is null then gaps := gaps || 'return';
+    if r.exchange_id is null or e.state = 'checked_out' then gaps := gaps || 'return';
     elsif r.owner_confirmed_at is null and r.borrower_confirmed_at is null then gaps := gaps || 'confirmation';
     end if;
     if (r.exchange_id is not null and r.contested_at is not null) or conflict then gaps := gaps || 'conflict'; end if;
@@ -65,14 +106,17 @@ end;
 $$;
 
 create function private.stalled_review_view(p_exchange uuid) returns jsonb language plpgsql stable security definer set search_path = '' as $$
-declare e public.exchanges; h public.item_handoffs; r public.item_returns; c public.help_completions; decided public.stalled_review_decisions;
+declare e public.exchanges; h public.item_handoffs; r public.item_returns; c public.help_completions; res public.item_reservations;
+  decided public.stalled_review_decisions; recovered public.stalled_item_recoveries;
   record_evidence constant jsonb := '{"return_record":"true","condition":"true","work_record":"true"}';
 begin
   select * into e from public.exchanges where id = p_exchange;
   select * into h from public.item_handoffs where exchange_id = e.id;
   select * into r from public.item_returns where exchange_id = e.id;
   select * into c from public.help_completions where exchange_id = e.id;
+  select * into res from public.item_reservations where exchange_id = e.id;
   select * into decided from public.stalled_review_decisions where exchange_id = e.id;
+  select * into recovered from public.stalled_item_recoveries where exchange_id = e.id;
   return jsonb_build_object('exchangeId', e.id, 'kind', e.kind, 'state', e.state, 'communityId', e.community_id,
     'providerId', e.provider_id, 'receiverId', e.receiver_id, 'completedAt', e.completed_at,
     'participant', auth.uid() in (e.provider_id, e.receiver_id),
@@ -86,9 +130,15 @@ begin
     'recordGaps', to_jsonb(private.stalled_review_gaps(e.id, record_evidence)),
     'decision', case when decided.exchange_id is null then null else jsonb_build_object('outcome', decided.outcome, 'reason', decided.reason,
       'evidence', decided.evidence, 'reviewReason', decided.review_reason, 'decidedBy', decided.decided_by, 'decidedAt', decided.decided_at) end,
+    'custodyUnresolved', coalesce(res.custody_unresolved, false),
+    'recovery', case when recovered.exchange_id is null then null else jsonb_build_object('reason', recovered.reason,
+      'decidedBy', recovered.decided_by, 'decidedAt', recovered.decided_at) end,
     'canDecide', decided.exchange_id is null and public.is_active_member(e.community_id) and public.is_community_administrator(e.community_id)
       and auth.uid() not in (e.provider_id, e.receiver_id) and exists(select 1 from public.exchange_review_items q where q.exchange_id = e.id)
-      and ((e.kind = 'item' and e.state in ('return_pending', 'checked_out', 'returned')) or (e.kind = 'help' and e.state = 'completion_pending')));
+      and ((e.kind = 'item' and e.state in ('return_pending', 'checked_out', 'returned')) or (e.kind = 'help' and e.state = 'completion_pending')),
+    'canRecover', e.kind = 'item' and e.state = 'closed_without_completion' and coalesce(res.custody_unresolved, false)
+      and recovered.exchange_id is null and public.is_active_member(e.community_id) and public.is_community_administrator(e.community_id)
+      and auth.uid() not in (e.provider_id, e.receiver_id));
 end;
 $$;
 
@@ -104,6 +154,7 @@ begin
 end;
 $$;
 
+-- Open review items for the Community. A closed item stays listed until its custody is recovered.
 create function public.read_stalled_review_queue(p_community_id uuid) returns jsonb language plpgsql stable security definer set search_path = '' as $$
 begin
   if not public.is_community_administrator(p_community_id) then
@@ -115,8 +166,11 @@ begin
         jsonb_agg(q.reason order by q.reason) as reasons
       from public.exchange_review_items q join public.exchanges e on e.id = q.exchange_id
       where q.community_id = p_community_id and e.community_id = p_community_id
-        and e.state in ('return_pending', 'checked_out', 'returned', 'completion_pending')
-        and not exists(select 1 from public.stalled_review_decisions s where s.exchange_id = e.id)
+        and ((e.state in ('return_pending', 'checked_out', 'returned', 'completion_pending')
+            and not exists(select 1 from public.stalled_review_decisions s where s.exchange_id = e.id))
+          or (e.kind = 'item' and e.state = 'closed_without_completion'
+            and exists(select 1 from public.item_reservations r where r.exchange_id = e.id and r.custody_unresolved)
+            and not exists(select 1 from public.stalled_item_recoveries x where x.exchange_id = e.id)))
       group by e.id, e.kind, e.state) f), '[]'::jsonb);
 end;
 $$;
@@ -177,11 +231,12 @@ begin
   else
     update public.exchanges set state = 'closed_without_completion' where id = e.id;
   end if;
-  insert into public.exchange_events(exchange_id, community_id, kind, actor_id) values(e.id, e.community_id, 'stalled_review_decided', actor);
+  insert into public.exchange_events(exchange_id, community_id, kind, actor_id)
+    values(e.id, e.community_id, e.kind || '_stalled_review_decided', actor);
   insert into public.community_events(community_id, actor_id, kind, intent_id)
-    values(e.community_id, actor, 'stalled_review_decided', md5(p_intent_id::text || ':stalled-review')::uuid) returning id into event;
+    values(e.community_id, actor, e.kind || '_stalled_review_decided', md5(p_intent_id::text || ':stalled-review')::uuid) returning id into event;
   insert into public.notification_outbox(event_id, community_id, recipient_id, channel, kind)
-    select event, e.community_id, recipient, channel, 'stalled_review_decided'
+    select event, e.community_id, recipient, channel, e.kind || '_stalled_review_decided'
     from unnest(array[e.provider_id, e.receiver_id]) recipient cross join unnest(array['in_app', 'email']) channel;
   insert into public.notification_hints(recipient_id) values(e.provider_id), (e.receiver_id);
   outcome := private.stalled_review_view(e.id);
@@ -190,7 +245,50 @@ begin
 end;
 $$;
 
--- Completion effects shared by ordinary confirmation (issue 9, 13) and verified completion. Callers own the state checks.
+-- Recovery is a separate recorded decision: the item left the owner and is back in the owner's control.
+create function public.record_stalled_item_recovery(p_intent_id uuid, p_exchange_id uuid, p_reason text)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare actor uuid := auth.uid(); e public.exchanges; outcome jsonb; event uuid;
+  reason_text text := btrim(coalesce(p_reason, ''));
+  payload jsonb := jsonb_build_object('exchange', p_exchange_id, 'reason', p_reason);
+begin
+  select * into e from public.exchanges where id = p_exchange_id;
+  if not found or actor is null or not public.is_active_member(e.community_id) or not public.is_community_administrator(e.community_id)
+    or actor in (e.provider_id, e.receiver_id) then
+    raise exception using errcode = '42501', message = 'Only an active same-Community administrator who is not a participant records recovery.';
+  end if;
+  outcome := private.borrow_intent(actor, p_intent_id, 'record_stalled_item_recovery', payload);
+  if outcome is not null then return outcome; end if;
+  select * into e from public.exchanges where id = p_exchange_id for update;
+  perform 1 from public.memberships where community_id = e.community_id and user_id = actor and status = 'active' for share;
+  if not found then raise exception using errcode = '42501', message = 'Only an active same-Community administrator who is not a participant records recovery.'; end if;
+  if e.kind <> 'item' or e.state <> 'closed_without_completion'
+    or not exists(select 1 from public.stalled_review_decisions s where s.exchange_id = e.id and s.outcome = 'closed_without_completion') then
+    raise exception using errcode = '55000', message = 'Only a stalled item closed without completion can record recovery.';
+  end if;
+  if not exists(select 1 from public.item_reservations r where r.exchange_id = e.id and r.custody_unresolved) then
+    raise exception using errcode = '55000', message = 'This item has no unrecovered custody.';
+  end if;
+  if length(reason_text) not between 10 and 4000 then
+    raise exception using errcode = '22023', message = 'Record how the owner recovered the item, in at least 10 characters.';
+  end if;
+  insert into public.stalled_item_recoveries(exchange_id, community_id, reason, decided_by, intent_id)
+    values(e.id, e.community_id, reason_text, actor, p_intent_id);
+  update public.item_reservations set custody_unresolved = false where exchange_id = e.id;
+  insert into public.exchange_events(exchange_id, community_id, kind, actor_id) values(e.id, e.community_id, 'item_stalled_recovery_recorded', actor);
+  insert into public.community_events(community_id, actor_id, kind, intent_id)
+    values(e.community_id, actor, 'item_stalled_recovery_recorded', p_intent_id) returning id into event;
+  insert into public.notification_outbox(event_id, community_id, recipient_id, channel, kind)
+    select event, e.community_id, recipient, channel, 'item_stalled_recovery_recorded'
+    from unnest(array[e.provider_id, e.receiver_id]) recipient cross join unnest(array['in_app', 'email']) channel;
+  insert into public.notification_hints(recipient_id) values(e.provider_id), (e.receiver_id);
+  outcome := private.stalled_review_view(e.id);
+  insert into public.command_intents(actor_id, intent_id, command, payload, result) values(actor, p_intent_id, 'record_stalled_item_recovery', payload, outcome);
+  return outcome;
+end;
+$$;
+
+-- Completion effects shared by ordinary confirmation (issues 9, 13) and verified completion. Callers own the state checks.
 create function private.complete_item_exchange(p_exchange uuid, p_actor uuid, p_intent uuid) returns void
 language plpgsql security definer set search_path = '' as $$
 declare e public.exchanges; event uuid;
@@ -259,7 +357,7 @@ begin
 end;
 $$;
 
--- A verified decision is the only route past the Return-confirmation and transition guards. Ordinary paths are unchanged.
+-- A verified decision is the only route past the Return-confirmation guard. Ordinary paths are unchanged.
 create or replace function private.guard_item_return_transition() returns trigger language plpgsql set search_path = '' as $$
 declare r public.item_returns;
 begin
@@ -312,7 +410,7 @@ begin
 end;
 $$;
 
--- Unresolved item disputes leave the deadline cron's completion path and get their own review reason, so they cannot starve it.
+-- Unresolved item disputes leave the completion path and get their own review reason, so they cannot starve it.
 create or replace function private.queue_item_return_review(p_exchange uuid, p_reason text) returns boolean
 language plpgsql security definer set search_path = '' as $$
 declare e public.exchanges; r public.item_returns; due timestamptz; settings public.item_return_settings; item uuid; event uuid; recipients uuid[];
@@ -346,6 +444,8 @@ begin
 end;
 $$;
 
+-- The deadline worker finalizes completable Returns, then queues stalled ones. Rows already queued or under an open
+-- or unresolved Exchange issue are excluded from selection, so a stuck case cannot consume the batch limit each minute.
 create or replace function public.process_due_item_returns() returns jsonb language plpgsql security definer set search_path = '' as $$
 declare due record; finalized integer := 0; queued integer := 0; settings public.item_return_settings;
 begin
@@ -376,11 +476,11 @@ end;
 $$;
 
 revoke all on function private.stalled_review_gaps(uuid, jsonb), private.stalled_review_view(uuid), private.guard_stalled_review_decision(),
-  private.complete_item_exchange(uuid, uuid, uuid), private.complete_help_exchange(uuid, uuid, uuid)
+  private.guard_stalled_item_recovery(), private.complete_item_exchange(uuid, uuid, uuid), private.complete_help_exchange(uuid, uuid, uuid)
   from public, anon, authenticated;
 revoke all on function public.read_stalled_review(uuid), public.read_stalled_review_queue(uuid),
-  public.decide_stalled_review(uuid, uuid, text, text, jsonb) from public, anon;
+  public.decide_stalled_review(uuid, uuid, text, text, jsonb), public.record_stalled_item_recovery(uuid, uuid, text) from public, anon;
 grant execute on function public.read_stalled_review(uuid), public.read_stalled_review_queue(uuid),
-  public.decide_stalled_review(uuid, uuid, text, text, jsonb) to authenticated;
+  public.decide_stalled_review(uuid, uuid, text, text, jsonb), public.record_stalled_item_recovery(uuid, uuid, text) to authenticated;
 
 notify pgrst, 'reload schema';
