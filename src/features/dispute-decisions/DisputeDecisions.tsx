@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { supabase } from '../../lib/supabase/client';
 import { useBorrowingRead } from '../borrowing/useBorrowingRead';
+import { Photo } from '../evidence/HandoffPhotos';
 import { actOnDispute, readDecisions } from './api';
 import { historyLabels, nextStep, remedyKinds, roleLabel, statusLabels, type CaseAction, type DecisionCase, type DecisionView, type RemedyKind } from './model';
 
@@ -72,6 +73,9 @@ function ExchangeRecords({ view }: { view: DecisionView }) {
     {reservation?.custody_unresolved && <p className="dispute-block"><strong>Item custody unresolved.</strong> The item stays unavailable until an administrator records recovery. Closing the case does not release it.</p>}
     {reservation && !reservation.custody_unresolved && !reservation.blocking && <p>Item custody is resolved. The reservation no longer blocks the Listing.</p>}
     {handoff?.handed_off_at && <p>Handoff recorded {when(handoff.handed_off_at)}. Condition: {handoff.condition}. Accessories: {handoff.accessories || 'none'}.</p>}
+    {view.evidence.length > 0 && <section aria-label="Exchange photos"><h4>Photos</h4><div className="handoff-photo-grid">{view.evidence.map(photo => <figure key={photo.id}>
+      <Photo evidence={photo} casePhoto={photo.dispute_id !== null} alt={`${photo.purpose === 'return' ? 'Return' : photo.purpose === 'handoff' ? 'Handoff' : 'Case'} condition photo`}/>
+      <figcaption>{photo.purpose === 'return' ? 'Return' : photo.purpose === 'handoff' ? 'Handoff' : 'Case'} photo</figcaption></figure>)}</div></section>}
     {returnRecord && <><p>Return recorded by {returnRecord.recorded_by === view.provider_id ? 'the owner' : 'the borrower'} {when(returnRecord.returned_at)}. Condition: {returnRecord.condition}. Accessories: {returnRecord.accessories || 'none'}.</p>
       <p>Owner confirmation: {returnRecord.owner_confirmed_at ? when(returnRecord.owner_confirmed_at) : 'awaiting'}. Borrower confirmation: {returnRecord.borrower_confirmed_at ? when(returnRecord.borrower_confirmed_at) : 'awaiting'}.</p>
       {returnRecord.contested_at && <p className="dispute-block">Return contested by {returnRecord.contested_by === view.provider_id ? 'the owner' : 'the borrower'} {when(returnRecord.contested_at)}. Contested condition: {returnRecord.contested_condition}</p>}</>}

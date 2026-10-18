@@ -77,6 +77,13 @@ begin
 end;
 $$;
 
+-- Closed cases cannot change status, so corrections are read from the latest outcome action.
+create function private.dispute_effective_outcome(p_dispute uuid) returns text
+language sql stable security definer set search_path = '' as $$
+  select a.outcome from public.dispute_actions a where a.dispute_id = p_dispute and a.action in ('outcome_recorded', 'outcome_corrected')
+    order by a.created_at desc, a.id desc limit 1;
+$$;
+
 create function private.dispute_case_view(p_dispute uuid)
 returns jsonb language plpgsql stable security definer set search_path = '' as $$
 declare d public.disputes; remedy public.dispute_actions; outcome public.dispute_actions;
@@ -85,7 +92,8 @@ begin
   select * into remedy from public.dispute_actions where dispute_id = d.id and action = 'remedy_proposed' order by created_at desc, id desc limit 1;
   select * into outcome from public.dispute_actions where dispute_id = d.id and action in ('outcome_recorded', 'outcome_corrected')
     order by created_at desc, id desc limit 1;
-  return jsonb_build_object('id', d.id, 'exchange_id', d.exchange_id, 'issue_type', d.issue_type, 'status', d.status,
+  return jsonb_build_object('id', d.id, 'exchange_id', d.exchange_id, 'issue_type', d.issue_type,
+    'status', case when d.closed_at is null then d.status else private.dispute_effective_outcome(d.id) end,
     'reporter_id', d.reporter_id, 'respondent_id', d.respondent_id, 'created_at', d.created_at, 'closed_at', d.closed_at,
     'remedy', case when remedy.id is null then null else jsonb_build_object('id', remedy.id, 'kind', remedy.remedy_kind, 'terms', remedy.body,
       'proposer_id', remedy.actor_id, 'created_at', remedy.created_at,
@@ -128,9 +136,27 @@ begin
         'contested_condition', ret.contested_condition) end,
       'events', coalesce((select jsonb_agg(jsonb_build_object('kind', v.kind, 'actor_id', v.actor_id, 'created_at', v.created_at) order by v.created_at, v.id)
         from public.exchange_events v where v.exchange_id = e.id), '[]'::jsonb)),
+    'evidence', coalesce((select jsonb_agg(jsonb_build_object('id', v.id, 'object_path', v.object_path, 'purpose', v.purpose,
+      'dispute_id', v.dispute_id, 'mime_type', v.mime_type, 'created_at', v.created_at) order by v.created_at, v.id)
+      from public.exchange_evidence v where v.exchange_id = e.id and v.state = 'ready'), '[]'::jsonb),
     'cases', coalesce((select jsonb_agg(private.dispute_case_view(d.id) order by d.created_at, d.id)
       from public.disputes d where d.exchange_id = e.id), '[]'::jsonb));
 end;
+$$;
+
+-- Same-Community administrators see Handoff and Return photos only while a case exists on the Exchange.
+create or replace function public.can_access_exchange_evidence(p_path text, p_upload boolean default false)
+returns boolean language sql stable security definer set search_path = '' as $$
+  select exists(select 1 from public.exchange_evidence v join public.exchanges e on e.id = v.exchange_id
+    left join public.disputes d on d.id = v.dispute_id where v.object_path = p_path
+    and case when p_upload then v.uploader_id = auth.uid() and v.state = 'pending' and public.can_read_exchange(e.id)
+      and case when v.dispute_id is not null then d.closed_at is null
+        when v.purpose = 'return' then e.state in ('checked_out', 'return_pending')
+        else e.state in ('handoff_pending', 'checked_out') end
+    else ((case when v.dispute_id is null then public.can_read_exchange(e.id) else public.can_read_dispute(d.id) end)
+      and (v.state = 'ready' or v.uploader_id = auth.uid()))
+      or (v.state = 'ready' and public.is_community_administrator(e.community_id)
+        and exists(select 1 from public.disputes c where c.exchange_id = e.id)) end);
 $$;
 
 create function public.act_on_dispute(p_intent_id uuid, p_dispute_id uuid, p_action text, p_details jsonb default '{}'::jsonb)
@@ -233,7 +259,7 @@ begin
       if prior.outcome = chosen then raise exception using errcode = '22023', message = 'A correction must change the recorded outcome.'; end if;
       recorded := 'outcome_corrected';
       insert into public.dispute_actions(dispute_id, community_id, actor_id, action, from_status, to_status, outcome, body, corrects_id)
-        values(d.id, d.community_id, actor, recorded, d.status, d.status, chosen, text_body, prior.id);
+        values(d.id, d.community_id, actor, recorded, prior.outcome, chosen, chosen, text_body, prior.id);
     end if;
   else
     if text_body is null then raise exception using errcode = '22023', message = 'Record how the owner recovered the item.'; end if;
@@ -275,7 +301,7 @@ begin
   select * into h from public.item_handoffs where exchange_id = e.id;
   if e.state is distinct from 'returned' or h.handed_off_at is null or r.exchange_id is null or r.owner_confirmed_at is null
     or r.borrower_confirmed_at is null or r.contested_at is not null
-    or exists(select 1 from public.disputes d where d.exchange_id = e.id and (d.closed_at is null or d.status = 'unresolved')) then
+    or exists(select 1 from public.disputes d where d.exchange_id = e.id and (d.closed_at is null or private.dispute_effective_outcome(d.id) = 'unresolved')) then
     return false;
   end if;
   update public.exchanges set state = 'completed' where id = e.id;
@@ -292,7 +318,7 @@ begin
 end;
 $$;
 
-revoke all on function private.guard_dispute_action(), private.dispute_action_allowed(uuid, text), private.dispute_case_view(uuid)
+revoke all on function private.guard_dispute_action(), private.dispute_action_allowed(uuid, text), private.dispute_case_view(uuid), private.dispute_effective_outcome(uuid)
   from public, anon, authenticated;
 revoke all on function public.read_dispute_decisions(uuid), public.act_on_dispute(uuid, uuid, text, jsonb) from public, anon;
 grant execute on function public.read_dispute_decisions(uuid), public.act_on_dispute(uuid, uuid, text, jsonb) to authenticated;

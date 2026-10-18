@@ -18,9 +18,10 @@ export const decisionCaseSchema = z.object({
   history: z.array(historySchema),
   next_actions: z.array(z.enum(caseActions)),
 });
+const decisionEvidenceSchema = z.object({ id: z.uuid(), object_path: z.string(), purpose: z.enum(['handoff', 'return', 'dispute']), dispute_id: z.uuid().nullable(), mime_type: z.string(), created_at: z.string() });
 export const decisionViewSchema = z.object({
   exchange_id: z.uuid(), kind: z.enum(['item', 'help']), state: z.string(), completed_at: z.string().nullable(),
-  provider_id: z.uuid(), receiver_id: z.uuid(), participant: z.boolean(),
+  provider_id: z.uuid(), receiver_id: z.uuid(), participant: z.boolean(), evidence: z.array(decisionEvidenceSchema),
   records: z.object({
     handoff: z.object({ condition: z.string().nullable(), accessories: z.string().nullable(), handed_off_at: z.string().nullable() }).nullable(),
     reservation: z.object({ starts_on: z.string(), ends_on: z.string(), condition: z.string(), replacement_value: z.number(), custody_unresolved: z.boolean(), blocking: z.boolean() }).nullable(),

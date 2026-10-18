@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase/client';
 import { evidenceSchema, type Evidence } from '../handoff/model';
 
-export function Photo({ evidence, casePhoto = false, alt }: { evidence: Evidence; casePhoto?: boolean; alt?: string }) {
+export function Photo({ evidence, casePhoto = false, alt }: { evidence: Pick<Evidence, 'object_path'>; casePhoto?: boolean; alt?: string }) {
   const [url, setUrl] = useState('');
   useEffect(() => {
     let active = true; let objectUrl = '';

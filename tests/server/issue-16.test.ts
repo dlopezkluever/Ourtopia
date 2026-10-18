@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { after, test } from 'node:test';
-import { activeMember, admin, advanceHandoff, agreedRemedyWithBothSidesAgreed, approveBorrow, caseAction, completedItemFixture, decideBorrow, decisionView, disputeFixture, handoffFixture, helpDisputeFixture, itemReturn, receipt, recordReturn, reportIssue, requestItem, returnAction, reviewedDispute, settleFixtureNotices } from '../../scripts/verify/backend';
+import { activeMember, actor, admin, advanceHandoff, agreedRemedyWithBothSidesAgreed, approveBorrow, caseAction, checkedOutFixture, completedItemFixture, decideBorrow, decisionView, disputeFixture, handoffFixture, helpDisputeFixture, itemReturn, listingImageBytes, receipt, recordReturn, reportIssue, requestItem, returnAction, reviewedDispute, settleFixtureNotices } from '../../scripts/verify/backend';
 
 const suiteStarted = new Date().toISOString();
-after(() => settleFixtureNotices(['decision-primary', 'decision-one-sided', 'decision-contested', 'decision-stalled', 'decision-stalled-repair', 'decision-race', 'decision-completed', 'decision-unblock', 'decision-custody', 'decision-help', 'decision-atomic', 'decision-admin-return', 'decision-unresolved-return'], suiteStarted));
+after(() => settleFixtureNotices(['decision-primary', 'decision-one-sided', 'decision-contested', 'decision-stalled', 'decision-stalled-repair', 'decision-race', 'decision-completed', 'decision-unblock', 'decision-custody', 'decision-help', 'decision-atomic', 'decision-admin-return', 'decision-unresolved-return', 'decision-corrected-unresolved-return', 'decision-photo-admin', 'decision-photo-quiet'], suiteStarted));
 
 const outbox = async (disputeId: string, kind: string) => (await admin.from('notification_outbox').select('recipient_id,channel').eq('dispute_id', disputeId).eq('kind', kind)).data!.map(row => `${row.recipient_id}:${row.channel}`).sort();
 const both = (...ids: string[]) => ids.flatMap(id => [`${id}:email`, `${id}:in_app`]).sort();
@@ -71,7 +71,7 @@ test('Contested escalation reaches a reasoned unresolved outcome and a linked co
   assert.equal((await caseAction(f.owner, f.disputeId, 'correct_outcome', { outcome: 'unresolved', reason: 'Same' })).error?.code, '22023');
   assert.equal((await caseAction(f.owner, f.disputeId, 'correct_outcome', { outcome: 'resolved', reason: 'Bob later supplied a dated receipt for the repair.' })).error, null);
   view = await decisionView(f.bob, f.exchangeId);
-  assert.equal(view.cases[0].status, 'unresolved');
+  assert.equal(view.cases[0].status, 'resolved');
   assert.deepEqual({ outcome: view.cases[0].outcome?.outcome, corrected: view.cases[0].outcome?.corrected }, { outcome: 'resolved', corrected: true });
   assert.equal(view.cases[0].history.at(-1)?.corrects_id, outcomeRow);
   assert.deepEqual((await admin.from('trust_incidents').select('status').eq('source_id', f.disputeId)).data, [{ status: 'resolved' }, { status: 'resolved' }]);
@@ -95,7 +95,7 @@ test('A same-Community administrator sees the recorded Return while reviewing it
   receipt('issue-16-admin-return', { status: view.cases[0].status, return: view.records.return });
 });
 
-test('An unresolved administrator outcome keeps a returned item from completing', async () => {
+test('A corrected administrator outcome to resolved unblocks a returned item, and due processing completes it', async () => {
   const f = await handoffFixture('decision-unresolved-return'); await advanceHandoff(f);
   const pending = await recordReturn(f);
   const reported = await reportIssue(f.bob, f.exchangeId, 'The Return condition remains disputed.'); assert.equal(reported.error, null);
@@ -107,11 +107,37 @@ test('An unresolved administrator outcome keeps a returned item from completing'
 
   const confirmed = await returnAction(f.alice, f.exchangeId, pending.revision, 'confirm_return', { condition_matches: true });
   assert.equal(confirmed.error, null);
+  let view = await decisionView(f.alice, f.exchangeId);
+  assert.equal(view.state, 'returned'); assert.equal(view.cases[0].status, 'unresolved');
+  assert.deepEqual((await admin.from('exchange_events').select('kind').eq('exchange_id', f.exchangeId).eq('kind', 'item_completed')).data, []);
+
+  assert.equal((await caseAction(f.owner, disputeId, 'correct_outcome', { outcome: 'resolved', reason: 'Bob later supplied a dated receipt for the repair.' })).error, null);
+  view = await decisionView(f.alice, f.exchangeId);
+  assert.equal(view.cases[0].status, 'resolved'); assert.deepEqual({ outcome: view.cases[0].outcome?.outcome, corrected: view.cases[0].outcome?.corrected }, { outcome: 'resolved', corrected: true });
+  assert.equal((await admin.rpc('process_due_item_returns')).error, null);
+  assert.equal((await admin.from('exchanges').select('state').eq('id', f.exchangeId).single()).data?.state, 'completed');
+  assert.equal((await admin.from('exchange_events').select('kind').eq('exchange_id', f.exchangeId).eq('kind', 'item_completed')).data?.length, 1);
+  receipt('issue-16-unresolved-return', { state: 'completed', case: view.cases[0].status, completionEffects: 1 });
+});
+
+test('A case outcome corrected to unresolved keeps a returned item from completing, even when due processing runs', async () => {
+  const f = await handoffFixture('decision-corrected-unresolved-return'); await advanceHandoff(f);
+  const pending = await recordReturn(f);
+  const reported = await reportIssue(f.bob, f.exchangeId, 'The Return condition remains disputed.'); assert.equal(reported.error, null);
+  const disputeId = (reported.data as { id: string }).id;
+  assert.equal((await caseAction(f.bob, disputeId, 'request_review', { reason: 'We disagree about the returned condition.' })).error, null);
+  assert.equal((await caseAction(f.owner, disputeId, 'open_review', {})).error, null);
+  assert.equal((await caseAction(f.owner, disputeId, 'decide', { outcome: 'resolved', reason: 'Repair receipt verified.' })).error, null);
+  assert.equal((await caseAction(f.owner, disputeId, 'correct_outcome', { outcome: 'unresolved', reason: 'The submitted records cannot establish the condition.' })).error, null);
+  const corrected = await decisionView(f.owner, f.exchangeId);
+  assert.equal(corrected.cases[0].status, 'unresolved'); assert.equal(corrected.cases[0].outcome?.corrected, true);
+
+  assert.equal((await returnAction(f.alice, f.exchangeId, pending.revision, 'confirm_return', { condition_matches: true })).error, null);
+  assert.equal((await admin.rpc('process_due_item_returns')).error, null);
   const view = await decisionView(f.alice, f.exchangeId);
   assert.equal(view.state, 'returned'); assert.equal(view.cases[0].status, 'unresolved');
-  assert.deepEqual((await admin.from('qualifying_interactions').select('id').eq('exchange_id', f.exchangeId)).data, []);
   assert.deepEqual((await admin.from('exchange_events').select('kind').eq('exchange_id', f.exchangeId).eq('kind', 'item_completed')).data, []);
-  receipt('issue-16-unresolved-return', { state: view.state, case: view.cases[0].status, completionEffects: 0 });
+  receipt('issue-16-corrected-unresolved-return', { state: view.state, case: view.cases[0].status, completionEffects: 0 });
 });
 
 test('A stalled replacement agreement enters review only with a reason and only valid guards close it', async () => {
@@ -233,4 +259,24 @@ test('Invalid actions and unknown inputs leave no partial effects', async () => 
   assert.deepEqual((await admin.from('notification_outbox').select('id').eq('dispute_id', f.disputeId).neq('kind', 'item_dispute_opened')).data, []);
   assert.equal((await admin.from('disputes').select('status').eq('id', f.disputeId).single()).data?.status, 'issue_reported');
   receipt('issue-16-atomic', { invalid: '22023', partialEffects: 0 });
+});
+
+test('Same-Community administrators read Return photos only while a case exists on the Exchange', async () => {
+  const f = await disputeFixture('decision-photo-admin');
+  const outsider = await actor({ label: 'decision-photo-outsider' });
+  const path = `${randomUUID()}/${randomUUID()}.png`;
+  assert.equal((await admin.storage.from('exchange-evidence').upload(path, listingImageBytes, { contentType: 'image/png' })).error, null);
+  assert.equal((await admin.from('exchange_evidence').insert({ id: randomUUID(), exchange_id: f.exchangeId, community_id: f.community.id, uploader_id: f.bob.id,
+    purpose: 'return', object_path: path, mime_type: 'image/png', byte_size: listingImageBytes.length, state: 'ready' })).error, null);
+  assert.equal((await f.owner.client.storage.from('exchange-evidence').download(path)).error, null);
+  assert.ok((await decisionView(f.owner, f.exchangeId)).evidence.some(photo => photo.object_path === path));
+  assert.equal((await outsider.client.storage.from('exchange-evidence').download(path)).error === null, false);
+
+  const quiet = await checkedOutFixture('decision-photo-quiet');
+  const quietPath = `${randomUUID()}/${randomUUID()}.png`;
+  assert.equal((await admin.storage.from('exchange-evidence').upload(quietPath, listingImageBytes, { contentType: 'image/png' })).error, null);
+  assert.equal((await admin.from('exchange_evidence').insert({ id: randomUUID(), exchange_id: quiet.exchangeId, community_id: quiet.community.id, uploader_id: quiet.bob.id,
+    purpose: 'return', object_path: quietPath, mime_type: 'image/png', byte_size: listingImageBytes.length, state: 'ready' })).error, null);
+  assert.equal((await quiet.owner.client.storage.from('exchange-evidence').download(quietPath)).error === null, false);
+  receipt('issue-16-photo-access', { adminWithCase: 'allowed', adminWithoutCase: 'denied', outsider: 'denied' });
 });
