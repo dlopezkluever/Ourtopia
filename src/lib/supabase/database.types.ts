@@ -435,6 +435,38 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"exchange_thank_yous": {
+                  Row: {
+                    "author_id": string,"community_id": string,"created_at": string,"event_id": string,"exchange_id": string,"id": string,"message": string,"recipient_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "author_id": string,"community_id": string,"created_at"?: string,"event_id": string,"exchange_id": string,"id"?: string,"message": string,"recipient_id": string
+                  }
+                  Update: {
+                    "author_id"?: string,"community_id"?: string,"created_at"?: string,"event_id"?: string,"exchange_id"?: string,"id"?: string,"message"?: string,"recipient_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "exchange_thank_yous_community_id_fkey"
+      columns: ["community_id"]
+isOneToOne: false
+      referencedRelation: "communities"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "exchange_thank_yous_event_id_fkey"
+      columns: ["event_id"]
+isOneToOne: true
+      referencedRelation: "community_events"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "exchange_thank_yous_exchange_id_fkey"
+      columns: ["exchange_id"]
+isOneToOne: false
+      referencedRelation: "exchanges"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"exchanges": {
                   Row: {
                     "community_id": string,"completed_at": string | null,"created_at": string,"id": string,"kind": string,"provider_id": string,"receiver_id": string,"source_id": string,"source_kind": string,"state": string
@@ -491,6 +523,58 @@ isOneToOne: false
 isOneToOne: false
       referencedRelation: "help_need_posts"
       referencedColumns: ["id","community_id"]
+    }
+                  ]
+                },"help_completion_feed": {
+                  Row: {
+                    "community_id": string,"created_at": string,"exchange_id": string,"helper_id": string,"id": string,"requester_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "community_id": string,"created_at"?: string,"exchange_id": string,"helper_id": string,"id"?: string,"requester_id": string
+                  }
+                  Update: {
+                    "community_id"?: string,"created_at"?: string,"exchange_id"?: string,"helper_id"?: string,"id"?: string,"requester_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "help_completion_feed_community_id_fkey"
+      columns: ["community_id"]
+isOneToOne: false
+      referencedRelation: "communities"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "help_completion_feed_exchange_id_fkey"
+      columns: ["exchange_id"]
+isOneToOne: true
+      referencedRelation: "exchanges"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"help_completions": {
+                  Row: {
+                    "community_id": string,"disagreement": string | null,"disputed_by": string | null,"exchange_id": string,"first_confirmed_at": string,"first_confirmed_by": string,"helper_confirmed_at": string | null,"reminder_due_at": string,"requester_confirmed_at": string | null,"review_due_at": string,"revision": number
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "community_id": string,"disagreement"?: string | null,"disputed_by"?: string | null,"exchange_id": string,"first_confirmed_at": string,"first_confirmed_by": string,"helper_confirmed_at"?: string | null,"reminder_due_at": string,"requester_confirmed_at"?: string | null,"review_due_at": string,"revision"?: number
+                  }
+                  Update: {
+                    "community_id"?: string,"disagreement"?: string | null,"disputed_by"?: string | null,"exchange_id"?: string,"first_confirmed_at"?: string,"first_confirmed_by"?: string,"helper_confirmed_at"?: string | null,"reminder_due_at"?: string,"requester_confirmed_at"?: string | null,"review_due_at"?: string,"revision"?: number
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "help_completions_community_id_fkey"
+      columns: ["community_id"]
+isOneToOne: false
+      referencedRelation: "communities"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "help_completions_exchange_id_fkey"
+      columns: ["exchange_id"]
+isOneToOne: true
+      referencedRelation: "exchanges"
+      referencedColumns: ["id"]
     }
                   ]
                 },"help_exchange_details": {
@@ -1386,6 +1470,9 @@ isOneToOne: true
 "claim_test_billing":
 { Args: { "p_job_id": string }; Returns: Json
                            },
+"command_help_completion":
+{ Args: { "p_action": string,"p_disagreement"?: string,"p_exchange_id": string,"p_expected_revision": number,"p_intent_id": string }; Returns: Json
+                           },
 "command_item_handoff":
 { Args: { "p_action": string,"p_details"?: Json,"p_exchange_id": string,"p_expected_revision": number,"p_intent_id": string }; Returns: Json
                            },
@@ -1509,6 +1596,9 @@ isOneToOne: true
 "prepare_return_evidence":
 { Args: { "p_byte_size": number,"p_evidence_id": string,"p_exchange_id": string,"p_intent_id": string,"p_mime_type": string }; Returns: Json
                            },
+"process_due_help_completions":
+{ Args: Record<PropertyKey, never>; Returns: Json
+                           },
 "process_due_item_returns":
 { Args: Record<PropertyKey, never>; Returns: Json
                            },
@@ -1522,6 +1612,9 @@ isOneToOne: true
 { Args: { "p_dispute_id": string }; Returns: Json
                            },
 "read_exchange_disputes":
+{ Args: { "p_exchange_id": string }; Returns: Json
+                           },
+"read_help_completion":
 { Args: { "p_exchange_id": string }; Returns: Json
                            },
 "read_item_handoff":
@@ -1592,6 +1685,9 @@ isOneToOne: true
                            },
 "submit_vouch":
 { Args: { "p_application_id": string,"p_intent_id": string,"p_statement": string }; Returns: Json
+                           },
+"thank_exchange":
+{ Args: { "p_exchange_id": string,"p_intent_id": string,"p_message": string }; Returns: Json
                            },
 "vouch_workspace":
 { Args: { "p_community_id": string }; Returns: Json
