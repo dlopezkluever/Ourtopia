@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { supabase } from '../../lib/supabase/client';
 import { useBorrowingRead } from '../borrowing/useBorrowingRead';
 import { HandoffPhotos } from '../evidence/HandoffPhotos';
+import { MessageEvidence } from '../message-evidence/MessageEvidence';
 import { issueTypes, type DisputeCase, type DisputeView } from './model';
 import { readDisputes } from './api';
 
@@ -28,6 +29,7 @@ function CaseCard({ dispute, view, userId, refresh }: { dispute: DisputeCase; vi
   return <article className="dispute-card" aria-label="Structured case"><h2>{issueTypes[dispute.issue_type]}</h2><p>Case status. {dispute.status.replaceAll('_', ' ')}</p>
     <ol className="dispute-history">{dispute.responses.map(response => <li key={response.id}><strong>{response.author_id === userId ? 'You' : response.author_id === dispute.reporter_id ? 'Reporter' : 'Respondent'}</strong><time dateTime={response.created_at}>{new Date(response.created_at).toLocaleString()}</time><p>{response.body}</p></li>)}</ol>
     <HandoffPhotos userId={userId} exchangeId={view.exchange_id} disputeId={dispute.id} evidence={dispute.evidence} editable={editable} onChanged={refresh}/>
+    <MessageEvidence dispute={dispute} userId={userId}/>
     {editable && <form onSubmit={event => void respond(event)}><label>Your response<textarea required maxLength={4000} value={body} onChange={event => setBody(event.target.value)}/></label><button className="primary-button" disabled={busy}>Send response</button></form>}
     {error && <p role="alert">{error}</p>}
   </article>;

@@ -374,3 +374,14 @@ a.sidebar-nav { text-decoration: none; }
 .return-compare > div { min-width: 0; border: 1px solid #d4dfd7; border-radius: 12px; padding: 1rem; }
 .return-card select { width: 100%; min-height: 44px; padding: .5rem; border: 1px solid #899e91; border-radius: 8px; background: white; }
 .community-feed ul, .review-queue ul { margin: 1rem 0; padding-left: 1.2rem; line-height: 2; overflow-wrap: anywhere; }
+.message-evidence { margin: 1.5rem 0; display: grid; gap: .75rem; }
+.message-evidence-note { padding: .75rem 1rem; border-left: 4px solid var(--border); }
+.message-snapshots { display: grid; gap: 1rem; padding-left: 1.25rem; }
+.message-snapshots blockquote { margin: 0 0 .5rem; white-space: pre-wrap; }
+.message-snapshots dl { display: grid; grid-template-columns: 8rem minmax(0, 1fr); gap: .25rem .75rem; margin: 0; font-size: .9rem; }
+.message-snapshots dd { margin: 0; }
+.message-evidence fieldset { display: grid; gap: .75rem; border: 1px solid var(--border); border-radius: 12px; padding: 1rem; }
+.message-evidence .message-choice { display: flex; gap: .75rem; align-items: flex-start; min-height: 44px; }
+.message-choice input { width: 22px; height: 22px; flex: none; margin-top: .15rem; }
+.message-choice time { font-size: .85rem; margin-left: .25rem; }
+.message-choice-body { display: block; white-space: pre-wrap; }
