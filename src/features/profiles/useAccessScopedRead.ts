@@ -20,7 +20,8 @@ export function useAccessScopedRead<T>(userId: string, key: string, read: () => 
       }
     }
     void load(true);
-    const revalidate = () => void load(true);
+    // Focus and visibility revalidate in place so editors and file inputs stay mounted; a failed read still denies.
+    const revalidate = () => void load(false);
     const refresh = () => void load(true);
     const channel = supabase.channel(`profile-access-${userId}-${key}`).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'membership_access_hints', filter: `user_id=eq.${userId}` }, refresh);
     void supabase.auth.getSession().then(async ({ data }) => {
