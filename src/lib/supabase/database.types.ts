@@ -1483,7 +1483,7 @@ isOneToOne: true
 "process_due_item_returns":
 { Args: Record<PropertyKey, never>; Returns: Json
                            },
- "read_community_feed":
+"read_community_feed":
 { Args: { "p_community_id": string }; Returns: Json
                            },
 "read_exchange_disputes":
