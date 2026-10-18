@@ -14,6 +14,7 @@ export const protectedStorage = [
   { prefix: 'handoff-command-', onAccessLoss: 'prior-obligation' },
   { prefix: 'handoff-upload-', onAccessLoss: 'prior-obligation' },
   { prefix: 'dispute-command-', onAccessLoss: 'prior-obligation' },
+  { prefix: 'membership-intent-', onAccessLoss: 'sign-out-only' },
 ] as const;
 
 type Store = Pick<Storage, 'length' | 'key' | 'removeItem'>;
