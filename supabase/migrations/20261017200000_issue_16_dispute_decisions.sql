@@ -1,4 +1,3 @@
--- Remedies, settlement, review and adjudication for issue-8 cases. One append-only action history per case.
 create table public.dispute_actions (
   id uuid primary key default gen_random_uuid(),
   dispute_id uuid not null references public.disputes(id),
@@ -13,7 +12,6 @@ create table public.dispute_actions (
   outcome text check (outcome in ('resolved', 'unresolved')),
   body text check (body is null or length(btrim(body)) between 1 and 4000),
   corrects_id uuid references public.dispute_actions(id),
-  -- Commands insert after locking the case, so wall-clock order is the serialized order.
   created_at timestamptz not null default clock_timestamp(),
   check (case action
     when 'remedy_proposed' then remedy_kind is not null and body is not null and remedy_id is null
@@ -50,8 +48,6 @@ revoke all on public.dispute_actions from anon, authenticated;
 grant select on public.dispute_actions to authenticated;
 create policy dispute_action_read on public.dispute_actions for select to authenticated using (public.can_read_dispute(dispute_id));
 
--- The case state machine. Participants act only through their own Exchange access; adjudicators are active
--- same-Community administrators who are not Exchange participants.
 create function private.dispute_action_allowed(p_dispute uuid, p_action text)
 returns boolean language plpgsql stable security definer set search_path = '' as $$
 declare d public.disputes; e public.exchanges; remedy public.dispute_actions; agreed boolean; participant boolean; adjudicator boolean; is_open boolean;
@@ -107,8 +103,6 @@ begin
 end;
 $$;
 
--- Administrators see the case, its submissions and the Exchange records relevant to it. Handoff place and time,
--- Handoff photos and conversations stay participant-only.
 create function public.read_dispute_decisions(p_exchange_id uuid) returns jsonb
 language plpgsql stable security definer set search_path = '' as $$
 declare e public.exchanges; h public.item_handoffs; r public.item_reservations;
@@ -238,7 +232,6 @@ begin
     end if;
   else
     if text_body is null then raise exception using errcode = '22023', message = 'Record how the owner recovered the item.'; end if;
-    -- Recovery without a recorded Return cannot verify completion, so the open loan closes without it.
     if e.state in ('checked_out', 'return_pending') then
       update public.exchanges set state = 'closed_without_completion' where id = e.id;
     end if;

@@ -36,7 +36,6 @@ async function decide(page: Page, outcome: 'Resolved' | 'Unresolved', reason: st
   await card.getByRole('radio', { name: outcome, exact: true }).check(); await card.getByLabel('Reason for this outcome').fill(reason);
   await card.getByRole('button', { name: 'Record outcome' }).click(); await expect(card).toContainText(`Status ${outcome}`);
 }
-// Bob proposes, Alice agrees, Bob confirms, Alice confirms: every step in the browser.
 async function settleInBrowser(page: Page, browser: Browser, info: TestInfo, f: Awaited<ReturnType<typeof disputeFixture>>) {
   const bob = await open(page, f.bob.email, f.exchangeId); await proposeRepair(page);
   const { context, page: other } = await second(browser, info);
