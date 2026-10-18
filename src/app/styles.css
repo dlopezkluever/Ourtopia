@@ -391,3 +391,11 @@ a.sidebar-nav { text-decoration: none; }
 .message-choice input { width: 22px; height: 22px; flex: none; margin-top: .15rem; }
 .message-choice time { font-size: .85rem; margin-left: .25rem; }
 .message-choice-body { display: block; white-space: pre-wrap; }
+.access-notices { margin: 1rem auto 0; max-width: 60rem; padding: 0 1rem; }
+.access-notices p { border-left: 3px solid currentColor; padding: 0.5rem 0.75rem; }
+.moderation-panel, .moderation-index { max-width: 60rem; margin: 1.5rem auto; padding: 0 1rem; }
+.moderation-row { display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: space-between; align-items: center; }
+.moderation-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.moderation-members, .moderation-content, .moderation-log { list-style: none; padding: 0; }
+.moderation-members li, .moderation-content li { border-bottom: 1px solid currentColor; padding: 0.6rem 0; }
+.moderation-reason textarea { display: block; width: 100%; min-height: 4rem; }

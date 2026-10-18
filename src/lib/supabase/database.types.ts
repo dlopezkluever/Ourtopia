@@ -1057,6 +1057,33 @@ isOneToOne: false
       referencedColumns: ["id","community_id"]
     }
                   ]
+                },"moderation_actions": {
+                  Row: {
+                    "action": string,"actor_id": string,"community_id": string,"created_at": string,"event_id": string,"id": string,"intent_id": string,"reason": string,"subject_id": string,"subject_kind": string,"subject_user_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "action": string,"actor_id": string,"community_id": string,"created_at"?: string,"event_id": string,"id"?: string,"intent_id": string,"reason": string,"subject_id": string,"subject_kind": string,"subject_user_id": string
+                  }
+                  Update: {
+                    "action"?: string,"actor_id"?: string,"community_id"?: string,"created_at"?: string,"event_id"?: string,"id"?: string,"intent_id"?: string,"reason"?: string,"subject_id"?: string,"subject_kind"?: string,"subject_user_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "moderation_actions_community_id_fkey"
+      columns: ["community_id"]
+isOneToOne: false
+      referencedRelation: "communities"
+      referencedColumns: ["id"]
+    },
+                    {
+      foreignKeyName: "moderation_actions_event_id_fkey"
+      columns: ["event_id"]
+isOneToOne: true
+      referencedRelation: "community_events"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"notification_attempts": {
                   Row: {
                     "error": string | null,"finished_at": string | null,"id": string,"number": number,"outbox_id": string,"started_at": string
@@ -1571,6 +1598,17 @@ isOneToOne: true
                            },
 "member_profile":
 { Args: { "p_community_id": string,"p_subject": string }; Returns: Json
+                           },
+"moderate_content":
+{ Args: { "p_community_id": string,"p_intent_id": string,"p_reason": string,"p_subject_id": string,"p_subject_kind": string }; Returns: Json
+                           },
+"moderate_membership":
+{ Args: { "p_action": string,"p_community_id": string,"p_intent_id": string,"p_reason": string,"p_user_id": string }; Returns: Json
+                           },
+"moderation_roster":
+{ Args: { "p_community_id": string }; Returns: {
+              "email": string,"joined_at": string,"role": string,"status": string,"user_id": string
+            }[]
                            },
 "my_help_exchanges":
 { Args: Record<PropertyKey, never>; Returns: Json[]

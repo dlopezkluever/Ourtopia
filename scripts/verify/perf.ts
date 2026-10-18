@@ -25,6 +25,7 @@ import { helpCompletionSchema, helpExchangeSchema, helpPostSchema } from '../../
 
 const { values } = parseArgs({ options: { issue: { type: 'string' }, base: { type: 'string' }, head: { type: 'string' }, pairs: { type: 'string', default: '10' } } });
 if (values.issue === '16') await verifyIssue16(values);
+else if (values.issue === '20') await verifyIssue20(values);
 else if (values.issue === '17') await verifyIssue17(values);
 else if (values.issue === '8') await verifyIssue8(values);
 else if (values.issue === '9') await verifyIssue9(values);
@@ -1520,5 +1521,76 @@ async function verifyIssue17(values: PerfArguments) {
   finally {
     await browser.close(); await Promise.all(servers.map(server => new Promise<void>(done => { if (server.exitCode !== null) done(); else { server.once('exit', () => done()); server.kill(); } })));
     assert.equal(trunkRoot, resolve('.pilot-evidence', 'perf-trunk-17')); if (existsSync(trunkRoot)) rmSync(trunkRoot, { recursive: true });
+  }
+}
+
+async function verifyIssue20(values: PerfArguments) {
+  const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+  assert.equal(values.head, head); assert.ok(values.base);
+  const base = values.base; const pairs = Number(values.pairs); assert.ok(Number.isInteger(pairs) && pairs >= 10);
+  const tree = execFileSync('git', ['ls-tree', '-r', '--name-only', base], { encoding: 'utf8' }).split('\n');
+  assert.ok(!tree.some(p => p.startsWith('src/features/moderation/')), 'Trunk must lack the added action.');
+  assert.equal(execFileSync('git', ['diff', base, head, '--', 'package-lock.json'], { encoding: 'utf8' }), '');
+  const directory = `${process.env.EVIDENCE_DIR ?? '.pilot-evidence'}/perf`; mkdirSync(directory, { recursive: true });
+  const trunkRoot = resolve('.pilot-evidence', 'perf-trunk-20'); assert.ok(!existsSync(trunkRoot));
+  const samples: { index: number; side: string; readinessMs: number; queryMs: number }[] = [];
+  const actions: { index: number; commandMs: number; visibleMs: number; queryMs: number }[] = [];
+  const servers: ReturnType<typeof spawn>[] = []; const startup: Record<string, number> = {};
+  const port = Number(process.env.APP_PORT ?? 5173) + 1;
+  const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH ?? (process.platform === 'win32' ? 'C:/Program Files/Google/Chrome/Application/chrome.exe' : undefined) });
+  const persist = (result: unknown) => writeFileSync(`${directory}/samples.json`, JSON.stringify({ head, base, pairs, samples, actions, startup, host: { cores: cpus().length, totalMemory: totalmem(), freeMemory: freemem(), loadAverage: loadavg() }, result }, null, 2));
+  async function serve(side: string, root: string, at: number) {
+    const started = performance.now();
+    const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', root, '--host', '127.0.0.1', '--port', String(at), '--strictPort'], { stdio: 'ignore', windowsHide: true }); servers.push(server);
+    const deadline = Date.now() + 60000;
+    while (Date.now() < deadline) {
+      if (server.exitCode !== null) throw new Error(`${side} exited ${server.exitCode}`);
+      if (await fetch(`http://127.0.0.1:${at}`).then(r => r.ok, () => false)) { startup[side] = performance.now() - started; return; }
+      await new Promise(done => setTimeout(done, 100));
+    }
+    throw new Error(`${side} exceeded 60-second startup budget`);
+  }
+  try {
+    for (const file of tree.filter(p => /^(src\/|vite.config.ts$|index.html$|package.json$)/.test(p))) {
+      const target = join(trunkRoot, file); mkdirSync(resolve(target, '..'), { recursive: true }); writeFileSync(target, execFileSync('git', ['show', `${base}:${file}`]));
+    }
+    copyFileSync('.env.local', join(trunkRoot, '.env.local'));
+    await serve('trunk', trunkRoot, port); await serve('head', '.', port + 1);
+    for (let index = 0; index < pairs; index++) {
+      const f = await handoffFixture(`perf20-${index}`);
+      for (const [side, at] of [['trunk', port], ['head', port + 1]] satisfies [string, number][]) {
+        const context = await browser.newContext({ baseURL: `http://127.0.0.1:${at}`, viewport: { width: 1440, height: 1000 } });
+        try {
+          const page = await context.newPage(); await page.goto('/'); await page.getByLabel('Email address').fill(f.bob.email); await page.getByLabel('Password', { exact: true }).fill(password);
+          await page.getByRole('button', { name: 'Sign in', exact: true }).last().click();
+          const home = page.getByRole('heading', { name: `Welcome to ${f.community.name}.` }); await expect(home).toBeVisible();
+          const readyAt = performance.now(); await page.reload(); await expect(home).toBeVisible(); const readinessMs = performance.now() - readyAt;
+          const readAt = performance.now(); const read = await f.bob.client.rpc('read_item_handoff', { p_exchange_id: f.exchangeId }); const queryMs = performance.now() - readAt;
+          assert.equal(read.error, null);
+          samples.push({ index, side, readinessMs, queryMs }); persist({ failures: 0, phase: 'paired readiness and authorized obligation read' });
+          if (side === 'head') {
+            const commandAt = performance.now();
+            const moderated = await f.owner.client.rpc('moderate_membership', { p_intent_id: randomUUID(), p_community_id: f.community.id, p_user_id: f.bob.id, p_action: 'suspend', p_reason: 'Perf fixture.' });
+            const commandMs = performance.now() - commandAt; assert.equal(moderated.error, null);
+            const visibleAt = performance.now(); await page.goto('/'); await expect(page.getByRole('region', { name: 'Membership restrictions' })).toBeVisible(); const visibleMs = performance.now() - visibleAt;
+            const durableAt = performance.now(); const durable = await f.owner.client.rpc('moderation_roster', { p_community_id: f.community.id }); const durableQueryMs = performance.now() - durableAt;
+            assert.equal(durable.error, null);
+            actions.push({ index, commandMs, visibleMs, queryMs: durableQueryMs }); persist({ failures: 0, phase: 'suspension persisted, shown to the affected member, and read by the administrator' });
+          }
+        } finally { await context.close(); }
+      }
+    }
+    const median = (a: number[]) => { const sorted = [...a].sort((a, b) => a - b); const mid = Math.floor(sorted.length / 2); return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2; };
+    const summary = (side: string) => ({ readinessMedianMs: median(samples.filter(s => s.side === side).map(s => s.readinessMs)), queryMedianMs: median(samples.filter(s => s.side === side).map(s => s.queryMs)) });
+    const baseline = summary('trunk'); const current = summary('head'); const added = { commandMedianMs: median(actions.map(a => a.commandMs)), visibleMedianMs: median(actions.map(a => a.visibleMs)) };
+    const queries = [...samples.filter(s => s.side === 'head').map(s => s.queryMs), ...actions.map(a => a.queryMs)].sort((a, b) => a - b); const queryP95Ms = queries[Math.ceil(queries.length * .95) - 1];
+    const checks = { readiness: current.readinessMedianMs <= Math.max(1.2 * baseline.readinessMedianMs, baseline.readinessMedianMs + 100), read: current.queryMedianMs <= Math.max(1.2 * baseline.queryMedianMs, baseline.queryMedianMs + 100), command: added.commandMedianMs <= 1000, visible: added.visibleMedianMs <= 2000, query: queryP95Ms <= 3000, startup: Object.values(startup).every(v => v <= 60000) };
+    persist({ failures: 0, baseline, head: current, added, queryP95Ms, checks });
+    writeFileSync(`${directory}/report.md`, `P20 at ${head}.\n\n${pairs} interleaved trunk/head pairs against ${base}. Trunk has no moderation action, so both sides use the shared readiness and authorized obligation read as Bob. Head additionally measures the guarded moderate_membership command, the affected member's restriction notice, and a fresh administrator roster read.\n\nTrunk readiness median ${baseline.readinessMedianMs.toFixed(0)} ms; head ${current.readinessMedianMs.toFixed(0)} ms. Command median ${added.commandMedianMs.toFixed(0)} ms; visible median ${added.visibleMedianMs.toFixed(0)} ms; query p95 ${queryP95Ms.toFixed(0)} ms.\n\nChecks: ${JSON.stringify(checks)}\n`);
+    assert.ok(Object.values(checks).every(Boolean), JSON.stringify(checks)); process.stdout.write(`${JSON.stringify({ baseline, head: current, added, queryP95Ms, checks })}\n`);
+  } catch (error) { persist({ error: error instanceof Error ? error.message : String(error) }); throw error; }
+  finally {
+    await browser.close(); await Promise.all(servers.map(server => new Promise<void>(done => { if (server.exitCode !== null) done(); else { server.once('exit', () => done()); server.kill(); } })));
+    if (existsSync(trunkRoot)) rmSync(trunkRoot, { recursive: true });
   }
 }
