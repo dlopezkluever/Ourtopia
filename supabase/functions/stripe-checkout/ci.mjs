@@ -28,7 +28,9 @@ try {
   await run('environment', process.execPath, ['scripts/verify/local-env.mjs']);
   await run('migrations', process.execPath, ['scripts/verify/migrations.mjs', '--disposable-project', 'ourtopia-issue-22']);
   await run('types', process.execPath, ['scripts/verify/database-types.mjs']);
-  await run('types-diff', 'git', ['diff', '--exit-code', '--', 'src/lib/supabase/database.types.ts']);
+  const generatedTypesDiff = execFileSync('git', ['diff', '--unified=0', '--', 'src/lib/supabase/database.types.ts'], { encoding: 'utf8' });
+  if (generatedTypesDiff) { process.stderr.write(generatedTypesDiff); throw new Error('Generated database types differ from the checked-in output.'); }
+  process.stdout.write('types-diff: exit 0\n');
   await run('stripe-image', 'docker', ['pull', 'stripe/stripe-cli:v1.53.1']);
   const listener = spawn('docker', ['run', '--rm', '--name', 'ourtopia-stripe-ci', '--network', 'host', '-e', 'STRIPE_API_KEY', 'stripe/stripe-cli:v1.53.1', 'listen', '--events', 'customer.subscription.created,customer.subscription.updated,customer.subscription.deleted', '--forward-to', 'http://127.0.0.1:55321/functions/v1/stripe-webhook'], {
     env: { ...process.env, STRIPE_API_KEY: process.env.STRIPE_TEST_SECRET_KEY }, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,

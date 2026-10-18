@@ -235,6 +235,44 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"dispute_actions": {
+                  Row: {
+                    "action": string,"actor_id": string,"body": string | null,"community_id": string,"corrects_id": string | null,"created_at": string,"dispute_id": string,"from_status": string,"id": string,"outcome": string | null,"remedy_id": string | null,"remedy_kind": string | null,"to_status": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "action": string,"actor_id": string,"body"?: string | null,"community_id": string,"corrects_id"?: string | null,"created_at"?: string,"dispute_id": string,"from_status": string,"id"?: string,"outcome"?: string | null,"remedy_id"?: string | null,"remedy_kind"?: string | null,"to_status": string
+                  }
+                  Update: {
+                    "action"?: string,"actor_id"?: string,"body"?: string | null,"community_id"?: string,"corrects_id"?: string | null,"created_at"?: string,"dispute_id"?: string,"from_status"?: string,"id"?: string,"outcome"?: string | null,"remedy_id"?: string | null,"remedy_kind"?: string | null,"to_status"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "dispute_actions_community_id_fkey"
+      columns: ["community_id"]
+isOneToOne: false
+      referencedRelation: "communities"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "dispute_actions_corrects_id_fkey"
+      columns: ["corrects_id"]
+isOneToOne: false
+      referencedRelation: "dispute_actions"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "dispute_actions_dispute_id_fkey"
+      columns: ["dispute_id"]
+isOneToOne: false
+      referencedRelation: "disputes"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "dispute_actions_remedy_id_fkey"
+      columns: ["remedy_id"]
+isOneToOne: false
+      referencedRelation: "dispute_actions"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"dispute_message_evidence": {
                   Row: {
                     "body": string,"community_id": string,"dispute_id": string,"id": string,"source_author_id": string,"source_created_at": string,"source_message_id": string,"submitted_at": string,"submitter_id": string
@@ -1312,6 +1350,9 @@ isOneToOne: true
             "accept_help_commitment":
 { Args: { "p_commitment_id": string,"p_intent_id": string }; Returns: Json
                            },
+"act_on_dispute":
+{ Args: { "p_action": string,"p_details"?: Json,"p_dispute_id": string,"p_intent_id": string }; Returns: Json
+                           },
 "can_access_exchange_evidence":
 { Args: { "p_path": string,"p_upload"?: boolean }; Returns: boolean
                            },
@@ -1473,6 +1514,9 @@ isOneToOne: true
                            },
 "read_community_feed":
 { Args: { "p_community_id": string }; Returns: Json
+                           },
+"read_dispute_decisions":
+{ Args: { "p_exchange_id": string }; Returns: Json
                            },
 "read_dispute_message_evidence":
 { Args: { "p_dispute_id": string }; Returns: Json

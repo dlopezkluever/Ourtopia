@@ -470,6 +470,39 @@ export async function workflowEffects(communityId: string) {
   return { exchanges: exchanges.count, reservations: reservations.count, reputationEvents: reputation.count, qualifyingInteractions: interactions.count, borrowRequests: requests.count };
 }
 
+export async function caseAction(member: Awaited<ReturnType<typeof actor>>, disputeId: string, action: string, details: Record<string, string> = {}, intent = randomUUID()) {
+  return member.client.rpc('act_on_dispute', { p_intent_id: intent, p_dispute_id: disputeId, p_action: action, p_details: details });
+}
+export async function decisionView(member: Awaited<ReturnType<typeof actor>>, exchangeId: string) {
+  const result = await member.client.rpc('read_dispute_decisions', { p_exchange_id: exchangeId });
+  if (result.error) throw result.error;
+  const { decisionViewSchema } = await import('../../src/features/dispute-decisions/model');
+  return decisionViewSchema.parse(result.data);
+}
+export async function agreedRemedyWithBothSidesAgreed(f: Awaited<ReturnType<typeof disputeFixture>>, kind = 'repair', terms = 'Bob pays for a new case hinge by Friday.') {
+  const proposed = await caseAction(f.bob, f.disputeId, 'propose_remedy', { kind, terms });
+  if (proposed.error) throw proposed.error;
+  const remedyId = (proposed.data as { remedy: { id: string } }).remedy.id;
+  const agreed = await caseAction(f.alice, f.disputeId, 'agree_remedy', { remedy_id: remedyId });
+  if (agreed.error) throw agreed.error;
+  return remedyId;
+}
+export async function reviewedDispute(label: string) {
+  const f = await disputeFixture(label);
+  for (const [member, action, details] of [[f.bob, 'request_review', { reason: 'Alice says the crack was there before Handoff.' }], [f.owner, 'open_review', {}]] as const) {
+    const result = await caseAction(member, f.disputeId, action, details);
+    if (result.error) throw result.error;
+  }
+  return f;
+}
+export async function helpDisputeFixture(label = 'help-dispute') {
+  const f = await helpFixture(label, 1);
+  const post = await createHelpPost(f.author, f.community.id, 'need_post', helpNeedFields(1));
+  const exchange = await acceptHelp(f.author, await commitHelp(f.members[0], 'need_post', post.id));
+  const reported = await reportIssue(f.author, exchange.id, 'The helper left before the couch was upstairs.', 'other');
+  if (reported.error) throw reported.error;
+  return { ...f, helper: f.members[0], exchangeId: exchange.id, disputeId: (reported.data as { id: string }).id };
+}
 // Issue 9 Return fixtures. A checked-out loan comes from the real Handoff commands.
 export async function checkedOutFixture(label = 'return') {
   const f = await handoffFixture(label); await advanceHandoff(f);
