@@ -88,18 +88,18 @@ begin
   if e.kind = 'item' then
     select * into h from public.item_handoffs where exchange_id = e.id;
     select * into r from public.item_returns where exchange_id = e.id;
-    if h.exchange_id is null or h.handed_off_at is null then gaps := gaps || 'handoff'; end if;
-    if r.exchange_id is null or e.state = 'checked_out' then gaps := gaps || 'return';
-    elsif r.owner_confirmed_at is null and r.borrower_confirmed_at is null then gaps := gaps || 'confirmation';
+    if h.exchange_id is null or h.handed_off_at is null then gaps := array_append(gaps, 'handoff'); end if;
+    if r.exchange_id is null or e.state = 'checked_out' then gaps := array_append(gaps, 'return');
+    elsif r.owner_confirmed_at is null and r.borrower_confirmed_at is null then gaps := array_append(gaps, 'confirmation');
     end if;
-    if (r.exchange_id is not null and r.contested_at is not null) or conflict then gaps := gaps || 'conflict'; end if;
-    if coalesce(p_evidence->>'return_record', '') <> 'true' or coalesce(p_evidence->>'condition', '') <> 'true' then gaps := gaps || 'evidence'; end if;
+    if (r.exchange_id is not null and r.contested_at is not null) or conflict then gaps := array_append(gaps, 'conflict'); end if;
+    if coalesce(p_evidence->>'return_record', '') <> 'true' or coalesce(p_evidence->>'condition', '') <> 'true' then gaps := array_append(gaps, 'evidence'); end if;
   else
     select * into c from public.help_completions where exchange_id = e.id;
-    if c.exchange_id is null or (c.helper_confirmed_at is null and c.requester_confirmed_at is null) then gaps := gaps || 'confirmation'; end if;
-    if conflict then gaps := gaps || 'conflict'; end if;
+    if c.exchange_id is null or (c.helper_confirmed_at is null and c.requester_confirmed_at is null) then gaps := array_append(gaps, 'confirmation'); end if;
+    if conflict then gaps := array_append(gaps, 'conflict'); end if;
     if coalesce(p_evidence->>'work_record', '') <> 'true' or not exists(select 1 from public.exchange_events x
-      where x.exchange_id = e.id and x.kind = 'help_scheduled') then gaps := gaps || 'evidence'; end if;
+      where x.exchange_id = e.id and x.kind = 'help_scheduled') then gaps := array_append(gaps, 'evidence'); end if;
   end if;
   return gaps;
 end;
