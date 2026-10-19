@@ -2,7 +2,7 @@ import { test, expect, type Page, type TestInfo } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { actor, admin, borrowingFixture, completedItemFixture, drillDetails, handoffFixture, messageEvidenceFixture, password, seedReputationEvent, advanceHandoff, uploadListingImage } from '../../scripts/verify/backend';
+import { actor, admin, borrowingFixture, completedItemFixture, drillDetails, handoffFixture, messageEvidenceFixture, password, seedReputationEvent, advanceHandoff, uploadListingImage, helpFixture, createHelpPost, helpNeedFields, commitHelp, acceptHelp, helpScheduleFields } from '../../scripts/verify/backend';
 import { randomUUID } from 'node:crypto';
 
 async function signIn(page: Page, email: string) {
@@ -28,6 +28,12 @@ async function removeMember(owner: Owner, communityId: string, userId: string, a
 
 test('lane 1 owner suspends a borrower with an open item loan, the borrower sees the restriction, and reinstatement restores the page', async ({ page }, info) => {
   const f = await handoffFixture(`journey-lane-1-${info.project.name}`);
+  const help = await helpFixture(`journey-lane-1-help-${info.project.name}`, 1);
+  const helper = help.members[0];
+  const post = await createHelpPost(help.author, help.community.id, 'need_post', helpNeedFields(1));
+  const helpExchange = await acceptHelp(help.author, await commitHelp(helper, 'need_post', post.id));
+  const scheduled = await helper.client.rpc('schedule_help_exchange', { p_intent_id: randomUUID(), p_exchange_id: helpExchange.id, p_fields: helpScheduleFields() });
+  if (scheduled.error) throw scheduled.error;
   await signIn(page, f.owner.email);
   await page.goto(`/moderation/${f.community.id}`);
   await expect(page.getByRole('heading', { name: 'Moderation', exact: true })).toBeVisible();
@@ -38,8 +44,22 @@ test('lane 1 owner suspends a borrower with an open item loan, the borrower sees
   await signIn(page, f.bob.email);
   await expect(page.getByRole('region', { name: 'Membership restrictions' })).toContainText('Repeated late returns.');
   await page.goto(`/handoffs/${f.exchangeId}`);
-  await expect(page.getByRole('alert')).toHaveCount(0);
-  await save(page, info, 1, { exchangeId: f.exchangeId, state: 'suspended' });
+  await expect(page.getByRole('button', { name: 'Acknowledge terms' })).toBeVisible({ timeout: 10000 });
+  await page.getByRole('checkbox', { name: /I acknowledge the return date/ }).check();
+  await page.getByRole('button', { name: 'Acknowledge terms' }).click();
+  await expect(page.getByRole('status')).toContainText('Arranging Handoff', { timeout: 10000 });
+  await expect(page.getByRole('link', { name: 'Borrow Requests' })).toBeVisible();
+  await save(page, info, 1, { exchangeId: f.exchangeId, state: 'suspended', structuredAction: 'acknowledge_terms' });
+  await signOut(page);
+  await removeMember(help.owner, help.community.id, helper.id, 'suspend', randomUUID(), 'Repeated late returns.');
+  await signIn(page, helper.email);
+  await page.goto(`/help/${help.community.id}`);
+  const helpCard = page.getByRole('region', { name: `Help Exchange with ${help.author.email}` });
+  await expect(helpCard.getByRole('button', { name: 'Confirm completed help' })).toBeVisible({ timeout: 10000 });
+  await helpCard.getByRole('button', { name: 'Confirm completed help' }).click();
+  await expect(helpCard.getByText(/Waiting for the other participant to confirm/)).toBeVisible({ timeout: 10000 });
+  await expect(page.getByRole('button', { name: /Offer to help|Request this help/ })).toHaveCount(0);
+  await save(page, info, 1, { helpExchangeId: helpExchange.id, state: 'suspended', structuredAction: 'confirm_help_completion' }, 'help-obligation');
   await signOut(page);
   await signIn(page, f.owner.email);
   await page.goto(`/moderation/${f.community.id}`);

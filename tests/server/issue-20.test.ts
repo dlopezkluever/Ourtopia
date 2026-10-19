@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { test } from 'node:test';
-import { actor, admin, advanceHandoff, applyInvite, borrowingFixture, completedItemFixture, decideApplication, decideBorrow, drillDetails, handoffFixture, issueInvite, messageEvidenceFixture, receipt, reportIssue, requestItem, seedReputationEvent } from '../../scripts/verify/backend';
+import { actor, admin, advanceHandoff, applyInvite, borrowingFixture, completedItemFixture, decideApplication, decideBorrow, drillDetails, handoffFixture, issueInvite, messageEvidenceFixture, receipt, reportIssue, requestItem, seedReputationEvent, handoffAction, handoffTerms, helpFixture, createHelpPost, helpNeedFields, commitHelp, acceptHelp, caseAction, disputeFixture } from '../../scripts/verify/backend';
 
 type Actor = Awaited<ReturnType<typeof actor>>;
 const moderate = (moderator: Actor, communityId: string, userId: string, action: string, reason: string, intent = randomUUID()) =>
@@ -28,11 +28,48 @@ test('Suspension stops new Listings and reinstatement restores them; retries ret
   receipt('issue-20-suspend-reinstate', { suspended: suspended.data, reinstated: reinstated.data });
 });
 
-test('Suspended borrowers keep the structured obligation channel for their open Exchange', async () => {
+test('Suspended borrowers keep structured actions on their open Exchange while new activity is denied', async () => {
   const f = await handoffFixture('moderation-obligation');
   assert.equal((await moderate(f.owner, f.community.id, f.bob.id, 'suspend', 'Under review.')).error, null);
   assert.equal((await f.bob.client.from('exchanges').select('id').eq('id', f.exchangeId)).data?.length, 1);
   assert.equal((await f.bob.client.rpc('read_item_handoff', { p_exchange_id: f.exchangeId })).error, null);
+  assert.equal((await handoffAction(f.bob, f.exchangeId, 0, 'acknowledge_terms', handoffTerms)).error, null);
+  assert.equal((await f.bob.client.rpc('submit_borrow_request', { p_intent_id: randomUUID(), p_listing_id: f.listing.id, p_starts_on: '2027-03-01', p_ends_on: '2027-03-03' })).error?.code, '42501');
+});
+
+test('Suspended Help Exchange participants can confirm completion but cannot start new Help activity', async () => {
+  const f = await helpFixture('moderation-help-obligation', 1);
+  const [helper] = f.members;
+  const post = await createHelpPost(f.author, f.community.id, 'need_post', helpNeedFields(1));
+  const exchange = await acceptHelp(f.author, await commitHelp(helper, 'need_post', post.id));
+  assert.equal((await helper.client.rpc('schedule_help_exchange', { p_intent_id: randomUUID(), p_exchange_id: exchange.id, p_fields: { starts_at: '2027-03-01T10:00:00Z', duration_minutes: 60, meeting_point: 'Library' } })).error, null);
+  assert.equal((await moderate(f.owner, f.community.id, helper.id, 'suspend', 'Under review.')).error, null);
+  assert.equal((await helper.client.rpc('command_help_completion', { p_intent_id: randomUUID(), p_exchange_id: exchange.id, p_expected_revision: 0, p_action: 'confirm', p_disagreement: null })).error, null);
+  assert.equal((await helper.client.rpc('create_help_post', { p_intent_id: randomUUID(), p_community_id: f.community.id, p_post_kind: 'listing', p_fields: { title: 'Another offer', description: 'Available', category: 'moving', skill: 'Moving', skill_level: 'beginner', availability: 'Anytime', geographic_constraints: 'Nearby', scheduling_preferences: 'Flexible' } })).error?.code, '42501');
+});
+
+test('Suspended Dispute participants can respond to their open case', async () => {
+  const f = await disputeFixture('moderation-dispute-obligation');
+  assert.equal((await moderate(f.owner, f.community.id, f.bob.id, 'suspend', 'Under review.')).error, null);
+  assert.equal((await caseAction(f.bob, f.disputeId, 'propose_remedy', { kind: 'repair', terms: 'Replace the case hinge.' })).error, null);
+});
+
+test('Removed participants retain narrow access to prior obligations and cannot act on an unrelated Exchange', async () => {
+  const f = await handoffFixture('moderation-removed-obligation');
+  const unrelated = await handoffFixture('moderation-removed-unrelated');
+  assert.equal((await moderate(f.owner, f.community.id, f.bob.id, 'remove', 'Reviewed.')).error, null);
+  assert.equal((await handoffAction(f.bob, f.exchangeId, 0, 'acknowledge_terms', handoffTerms)).error, null);
+  assert.equal((await handoffAction(f.bob, unrelated.exchangeId, 0, 'acknowledge_terms', handoffTerms)).error?.code, '42501');
+  const help = await helpFixture('moderation-removed-help', 1);
+  const helper = help.members[0];
+  const post = await createHelpPost(help.author, help.community.id, 'need_post', helpNeedFields(1));
+  const exchange = await acceptHelp(help.author, await commitHelp(helper, 'need_post', post.id));
+  assert.equal((await helper.client.rpc('schedule_help_exchange', { p_intent_id: randomUUID(), p_exchange_id: exchange.id, p_fields: { starts_at: '2027-03-01T10:00:00Z', duration_minutes: 60, meeting_point: 'Library' } })).error, null);
+  assert.equal((await moderate(help.owner, help.community.id, helper.id, 'remove', 'Reviewed.')).error, null);
+  assert.equal((await helper.client.rpc('command_help_completion', { p_intent_id: randomUUID(), p_exchange_id: exchange.id, p_expected_revision: 0, p_action: 'confirm', p_disagreement: null })).error, null);
+  const dispute = await disputeFixture('moderation-removed-dispute');
+  assert.equal((await moderate(dispute.owner, dispute.community.id, dispute.bob.id, 'remove', 'Reviewed.')).error, null);
+  assert.equal((await caseAction(dispute.bob, dispute.disputeId, 'propose_remedy', { kind: 'repair', terms: 'Replace the case hinge.' })).error, null);
 });
 
 test('Removal is terminal: the row cannot be restored by a command or by editing it, and a new Invite reapplies', async () => {

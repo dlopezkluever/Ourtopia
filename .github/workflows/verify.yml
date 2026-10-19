@@ -103,7 +103,7 @@ jobs:
       - run: npm run verify:perf -- --issue 9 --base ecbb87b9c8da936ba4ada0a2491838374982da61 --head $(git rev-parse HEAD) --pairs 10
       - run: npm run verify:perf -- --issue 17 --base ecbb87b9c8da936ba4ada0a2491838374982da61 --head $(git rev-parse HEAD) --pairs 10
       - run: npm run verify:perf -- --issue 18 --base c1425eb1369a9551e595b3e6d5e1769aec1f11de --head $(git rev-parse HEAD) --pairs 10
-      - run: npm run verify:perf -- --issue 20 --base df03076ce7639347c388d2593ccf52da107a496c --head $(git rev-parse HEAD) --pairs 10
+      - run: npm run verify:perf -- --issue 20 --base a93f46b2846dda57dbaca76c26feb798cd47273b --head $(git rev-parse HEAD) --pairs 10
       - if: always()
         run: npx supabase stop --project-id ourtopia-issue-2
   billing-live:
