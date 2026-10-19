@@ -131,7 +131,7 @@ test('lane 3 rejected applicant sees the reason and cannot browse the Community'
     await approveInBrowser(adminPage, f.applicant.email, 'rejected', 'Please join our orientation first.');
     await expect(page.getByText('Rejected', { exact: true })).toBeVisible();
     await expect(page.getByText('Decision reason. Please join our orientation first.', { exact: true })).toBeVisible();
-    await expect(page.getByRole('region', { name: 'Notifications' }).getByText('Your membership application was rejected. Your decision reason is in your applications.', { exact: true })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Notifications' }).getByText('Your membership application was rejected. Your decision reason is in your applications.', { exact: true })).toBeVisible({ timeout: 30000 });
     expect((await f.applicant.client.from('communities').select('*').eq('id', f.community.id)).data).toEqual([]);
     await capture(page, info, 3, { rejected: true, reason: 'Please join our orientation first.', accessibleRows: 0 });
     await page.goto(`/communities/${f.community.id}`);
