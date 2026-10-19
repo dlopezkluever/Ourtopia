@@ -230,13 +230,16 @@ test('A stalled Return whose confirmations now match completes ordinarily and ca
 test('A contested Return whose issue was decided resolved reaches review and completes on a cited decision', async () => {
   const f = await checkedOutFixture('stalled-contested-resolved');
   const recorded = await recordReturn(f);
+  // A contested Return is immutable, so its review window is aged before the contest and the worker is run directly afterwards.
+  const aged = await admin.from('item_returns').update({ review_due_at: new Date(Date.now() - 60000).toISOString() }).eq('exchange_id', f.exchangeId);
+  assert.equal(aged.error, null);
   const contest = await returnAction(f.alice, f.exchangeId, recorded.revision, 'contest_return', { condition: 'The chuck is cracked.', issue_type: 'damage' });
   assert.equal(contest.error, null);
   const dispute = await admin.from('disputes').select('id').eq('exchange_id', f.exchangeId).single();
   assert.equal(dispute.error, null);
 
   // While the issue is open the contested Return stays out of the missing-confirmation queue and cannot be verified.
-  await queueStalledReturn(f.exchangeId);
+  assert.equal((await admin.rpc('process_due_item_returns')).error, null);
   assert.deepEqual((await admin.from('exchange_review_items').select('reason').eq('exchange_id', f.exchangeId)).data, []);
 
   for (const [member, action, details] of [[f.bob, 'request_review', { reason: 'Alice says the crack was there before Handoff.' }], [f.owner, 'open_review', {}],
@@ -244,7 +247,7 @@ test('A contested Return whose issue was decided resolved reaches review and com
     const result = await caseAction(member, dispute.data!.id, action, details);
     assert.equal(result.error, null);
   }
-  await queueStalledReturn(f.exchangeId);
+  assert.equal((await admin.rpc('process_due_item_returns')).error, null);
   assert.deepEqual((await admin.from('exchange_review_items').select('reason').eq('exchange_id', f.exchangeId)).data, [{ reason: 'missing_return_confirmation' }]);
   assert.equal(await stateOf(f.exchangeId), 'return_pending');
 
