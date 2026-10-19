@@ -40,6 +40,15 @@ async function approveInBrowser(page: Page, email: string, decision = 'approved'
   await expect(page.getByLabel(`Decision for ${email}`, { exact: true })).toBeHidden();
 }
 
+// Notice delivery is asynchronous: the background notice worker sends the row and the administrator console
+// only refetches on mount, focus or a 5 second poll. Reload and retry within a budget that covers both.
+async function expectDeliveredNotice(page: Page, label: string) {
+  await expect(async () => {
+    await page.reload();
+    await expect(page.getByText(label, { exact: true })).toBeVisible({ timeout: 3000 });
+  }).toPass({ timeout: 45000, intervals: [1000, 2000, 3000] });
+}
+
 test('lane 1 trunk regression records Invite absence and head grants access only after approval', async ({ page, browser }, info) => {
   const base = 'a0eff460f5707d128141857d275f21c1a111ac1c';
   const root = `.pilot-evidence/trunk-${info.project.name}`;
@@ -100,8 +109,8 @@ test('lane 2 administrator issues Invite invitee verifies applies and sees audit
     expect(application.data?.status).toBe('pending');
     expect((await admin.from('memberships').select('status').eq('community_id', community.id).eq('user_id', application.data!.applicant_id)).data).toEqual([{ status: 'pending' }]);
     await approveInBrowser(page, email);
-    await expect(page.getByText('Membership application · In app · Delivered · 1 attempt', { exact: true })).toBeVisible();
-    await expect(page.getByText('Membership application · Email · Delivered · 1 attempt', { exact: true })).toBeVisible();
+    await expectDeliveredNotice(page, 'Membership application · In app · Delivered · 1 attempt');
+    await expectDeliveredNotice(page, 'Membership application · Email · Delivered · 1 attempt');
     await expect(applicantPage.getByText('Approved', { exact: true })).toBeVisible();
     await expect(applicantPage.getByRole('region', { name: 'Notifications' }).getByText('Your membership application was approved.', { exact: true })).toBeVisible();
     await applicantPage.getByRole('link', { name: 'Open Community' }).click();
@@ -273,7 +282,7 @@ test('lane 9 failed email retries keep approval and one durable delivered notice
   expect(await deliverOne(admin, send, email.data!.id)).toBeNull();
   const response = await fetch(`${process.env.TEST_MAILBOX_URL}/api/v1/search?query=${encodeURIComponent(`to:${f.applicant.email}`)}`);
   expect((await response.json() as { messages: unknown[] }).messages).toHaveLength(1);
-  await expect(page.getByText('Membership approved · Email · Delivered · 2 attempts', { exact: true })).toBeVisible();
+  await expectDeliveredNotice(page, 'Membership approved · Email · Delivered · 2 attempts');
   await capture(page, info, 9, { outboxId: email.data!.id, approval: decision.data, deliveredEmails: 1 });
 });
 
