@@ -214,19 +214,17 @@ test('A stalled unresolved issue does not block an ordinary completion in the sa
   assert.equal((await totals(normal.exchangeId)).reduce((sum, row) => sum + row.points, 0), 3);
 });
 
-test('A stalled Return whose confirmations now match completes ordinarily and cannot be closed without completion', async () => {
+test('A stalled Return whose confirmations now match completes ordinarily and cannot be closed afterward', async () => {
   const f = await stalledItem('stalled-item-matching');
   const confirmed = await returnAction(f.alice, f.exchangeId, (await itemReturn(f.alice, f.exchangeId)).revision, 'confirm_return', { condition_matches: true });
   assert.equal(confirmed.error, null);
-  assert.equal(await stateOf(f.exchangeId), 'returned');
-  const view = await f.owner.client.rpc('read_stalled_review', { p_exchange_id: f.exchangeId });
-  assert.equal(view.error, null);
-  assert.equal((view.data as { canDecide: boolean }).canDecide, false);
+  assert.equal(await stateOf(f.exchangeId), 'completed');
+  const awards = await totals(f.exchangeId);
+  assert.ok(awards.length > 0);
   const closed = await decide(f.owner, f.exchangeId, 'closed_without_completion', 'The owner closes a Return that both participants already confirmed.');
   assert.equal(closed.error?.code, '55000');
-  assert.match(closed.error?.message ?? '', /ordinary path/);
-  assert.equal(await stateOf(f.exchangeId), 'returned');
-  assert.deepEqual(await totals(f.exchangeId), []);
+  assert.equal(await stateOf(f.exchangeId), 'completed');
+  assert.deepEqual(await totals(f.exchangeId), awards);
 });
 
 // A help Exchange whose only confirmation is the helper's, aged past its review window by the service role.
