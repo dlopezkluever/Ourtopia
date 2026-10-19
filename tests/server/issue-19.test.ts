@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { test } from 'node:test';
-import { acceptHelp, admin, adminReturned, approveBorrow, checkedOutFixture, commitHelp, completeReturn, createHelpPost, helpFixture, helpNeedFields, helpScheduleFields, itemReturn, recordReturn, requestItem, returnAction, unresolvedDecidedDispute } from '../../scripts/verify/backend';
+import { acceptHelp, admin, adminReturned, approveBorrow, caseAction, checkedOutFixture, commitHelp, completeReturn, createHelpPost, helpFixture, helpNeedFields, helpScheduleFields, itemReturn, recordReturn, requestItem, returnAction, unresolvedDecidedDispute } from '../../scripts/verify/backend';
 import { deliverOne } from '../../supabase/functions/notifications/worker';
 
 type Member = Awaited<ReturnType<typeof checkedOutFixture>>['owner'];
@@ -225,6 +225,33 @@ test('A stalled Return whose confirmations now match completes ordinarily and ca
   assert.equal(closed.error?.code, '55000');
   assert.equal(await stateOf(f.exchangeId), 'completed');
   assert.deepEqual(await totals(f.exchangeId), awards);
+});
+
+test('A contested Return whose issue was decided resolved reaches review and completes on a cited decision', async () => {
+  const f = await checkedOutFixture('stalled-contested-resolved');
+  const recorded = await recordReturn(f);
+  const contest = await returnAction(f.alice, f.exchangeId, recorded.revision, 'contest_return', { condition: 'The chuck is cracked.', issue_type: 'damage' });
+  assert.equal(contest.error, null);
+  const dispute = await admin.from('disputes').select('id').eq('exchange_id', f.exchangeId).single();
+  assert.equal(dispute.error, null);
+
+  // While the issue is open the contested Return stays out of the missing-confirmation queue and cannot be verified.
+  await queueStalledReturn(f.exchangeId);
+  assert.deepEqual((await admin.from('exchange_review_items').select('reason').eq('exchange_id', f.exchangeId)).data, []);
+
+  for (const [member, action, details] of [[f.bob, 'request_review', { reason: 'Alice says the crack was there before Handoff.' }], [f.owner, 'open_review', {}],
+    [f.owner, 'decide', { outcome: 'resolved', reason: 'The crack predates the loan; the Return condition is accepted.' }]] as const) {
+    const result = await caseAction(member, dispute.data!.id, action, details);
+    assert.equal(result.error, null);
+  }
+  await queueStalledReturn(f.exchangeId);
+  assert.deepEqual((await admin.from('exchange_review_items').select('reason').eq('exchange_id', f.exchangeId)).data, [{ reason: 'missing_return_confirmation' }]);
+  assert.equal(await stateOf(f.exchangeId), 'return_pending');
+
+  const verified = await decide(f.owner, f.exchangeId, 'verified_completion', 'The issue was decided resolved and the Return is recorded.', verifiedEvidence);
+  assert.equal(verified.error, null);
+  assert.equal(verified.data.state, 'completed');
+  assert.equal((await totals(f.exchangeId)).length, 2);
 });
 
 // A help Exchange whose only confirmation is the helper's, aged past its review window by the service role.

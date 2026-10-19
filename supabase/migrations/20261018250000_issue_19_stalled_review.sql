@@ -92,7 +92,10 @@ begin
     if r.exchange_id is null or e.state = 'checked_out' then gaps := array_append(gaps, 'return');
     elsif r.owner_confirmed_at is null and r.borrower_confirmed_at is null then gaps := array_append(gaps, 'confirmation');
     end if;
-    if (r.exchange_id is not null and r.contested_at is not null) or conflict then gaps := array_append(gaps, 'conflict'); end if;
+    -- A contested Return conflicts until its Exchange issue is closed with a resolved outcome; `conflict` already covers open and unresolved issues.
+    if (r.exchange_id is not null and r.contested_at is not null and not exists(select 1 from public.disputes d where d.exchange_id = e.id)) or conflict then
+      gaps := array_append(gaps, 'conflict');
+    end if;
     if coalesce(p_evidence->>'return_record', '') <> 'true' or coalesce(p_evidence->>'condition', '') <> 'true' then gaps := array_append(gaps, 'evidence'); end if;
   else
     select * into c from public.help_completions where exchange_id = e.id;
@@ -451,6 +454,14 @@ begin
 end;
 $$;
 
+-- An uncontested Return, or a contested one whose Exchange issues are all closed as resolved, is waiting only on a confirmation.
+create function private.return_contest_settled(p_exchange uuid, p_contested_at timestamptz) returns boolean
+language sql stable security definer set search_path = '' as $$
+  select p_contested_at is null or (exists(select 1 from public.disputes d where d.exchange_id = p_exchange)
+    and not exists(select 1 from public.disputes d where d.exchange_id = p_exchange
+      and (d.closed_at is null or private.dispute_effective_outcome(d.id) = 'unresolved')));
+$$;
+
 -- Unresolved item disputes leave the completion path and get their own review reason, so they cannot starve it.
 create or replace function private.queue_item_return_review(p_exchange uuid, p_reason text) returns boolean
 language plpgsql security definer set search_path = '' as $$
@@ -460,7 +471,7 @@ begin
   select * into e from public.exchanges where id = p_exchange and kind = 'item' for update;
   select * into r from public.item_returns where exchange_id = e.id;
   select private.item_return_due(ends_on) into due from public.item_reservations where exchange_id = e.id;
-  if not ((p_reason = 'missing_return_confirmation' and e.state = 'return_pending' and r.contested_at is null
+  if not ((p_reason = 'missing_return_confirmation' and e.state = 'return_pending' and private.return_contest_settled(e.id, r.contested_at)
       and (r.owner_confirmed_at is null or r.borrower_confirmed_at is null) and r.review_due_at <= clock_timestamp())
     or (p_reason = 'overdue_return' and e.state = 'checked_out' and due + settings.review_after <= clock_timestamp()
       and exists(select 1 from public.item_handoffs h where h.exchange_id = e.id and h.handed_off_at is not null))
@@ -499,8 +510,8 @@ begin
     if private.finalize_item_exchange(due.id, due.provider_id, md5(due.id::text || ':finalize')::uuid) then finalized := finalized + 1; end if;
   end loop;
   for due in (select e.id, 'missing_return_confirmation' as reason from public.exchanges e join public.item_returns r on r.exchange_id = e.id
-      where e.state = 'return_pending' and r.contested_at is null and (r.owner_confirmed_at is null or r.borrower_confirmed_at is null)
-        and r.review_due_at <= clock_timestamp()
+      where e.state = 'return_pending' and private.return_contest_settled(e.id, r.contested_at)
+        and (r.owner_confirmed_at is null or r.borrower_confirmed_at is null) and r.review_due_at <= clock_timestamp()
         and not exists(select 1 from public.exchange_review_items q where q.exchange_id = e.id and q.reason = 'missing_return_confirmation')
     union all select e.id, 'overdue_return' from public.exchanges e join public.item_reservations res on res.exchange_id = e.id
       join public.item_handoffs h on h.exchange_id = e.id
@@ -516,7 +527,7 @@ begin
 end;
 $$;
 
-revoke all on function private.stalled_review_gaps(uuid, jsonb), private.stalled_review_view(uuid), private.guard_stalled_review_decision(),
+revoke all on function private.return_contest_settled(uuid, timestamptz), private.stalled_review_gaps(uuid, jsonb), private.stalled_review_view(uuid), private.guard_stalled_review_decision(),
   private.guard_stalled_item_recovery(), private.complete_item_exchange(uuid, uuid, uuid, text), private.complete_help_exchange(uuid, uuid, uuid, text),
   private.settle_exchange_completion(uuid, text), private.stalled_normal_path_ready(uuid)
   from public, anon, authenticated;
