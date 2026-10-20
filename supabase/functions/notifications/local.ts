@@ -18,7 +18,7 @@ export function localDelivery() {
   const client = createClient(url.href, values.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
   const send: EmailSender = async message => {
     const messageId = `${message.idempotencyKey}@ourtopia.test`;
-    const existing = await fetch(`${mailbox.origin}/api/v1/search?query=${encodeURIComponent(`message-id:${messageId}`)}`);
+    const existing = await fetch(`${mailbox.origin}/api/v1/search?query=${encodeURIComponent(`message-id:${messageId}`)}`, { signal: AbortSignal.timeout(20000) });
     if (!existing.ok) throw new Error('Local inbox search failed.');
     if (((await existing.json()) as { messages: unknown[] }).messages.length > 0) return;
     const response = await fetch(`${mailbox.origin}/api/v1/send`, {
