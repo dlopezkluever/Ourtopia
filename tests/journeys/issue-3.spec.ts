@@ -32,6 +32,14 @@ async function applyInBrowser(page: Page, inviteId: string) {
   await expect(page.getByText('Pending administrator approval', { exact: true })).toBeVisible();
 }
 
+// Delivery is driven explicitly through the same claim and finish commands the worker uses, so the assertions
+// do not depend on the background poller's scheduling or on the console's periodic refetch.
+async function drainNoticeDelivery() {
+  const { send } = localDelivery();
+  let delivered: unknown;
+  do { delivered = await deliverOne(admin, send); } while (delivered);
+}
+
 async function approveInBrowser(page: Page, email: string, decision = 'approved', reason = '') {
   await expect(page.getByLabel(`Decision for ${email}`, { exact: true })).toBeVisible();
   await page.getByLabel(`Decision for ${email}`, { exact: true }).selectOption(decision);
@@ -100,8 +108,11 @@ test('lane 2 administrator issues Invite invitee verifies applies and sees audit
     expect(application.data?.status).toBe('pending');
     expect((await admin.from('memberships').select('status').eq('community_id', community.id).eq('user_id', application.data!.applicant_id)).data).toEqual([{ status: 'pending' }]);
     await approveInBrowser(page, email);
+    await drainNoticeDelivery();
+    await page.reload();
     await expect(page.getByText('Membership application · In app · Delivered · 1 attempt', { exact: true })).toBeVisible();
     await expect(page.getByText('Membership application · Email · Delivered · 1 attempt', { exact: true })).toBeVisible();
+    await applicantPage.reload();
     await expect(applicantPage.getByText('Approved', { exact: true })).toBeVisible();
     await expect(applicantPage.getByRole('region', { name: 'Notifications' }).getByText('Your membership application was approved.', { exact: true })).toBeVisible();
     await applicantPage.getByRole('link', { name: 'Open Community' }).click();
