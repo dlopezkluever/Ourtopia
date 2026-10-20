@@ -49,6 +49,14 @@ async function expectDeliveredNotice(page: Page, label: string) {
   }).toPass({ timeout: 45000, intervals: [1000, 2000, 3000] });
 }
 
+// The applicant page only refetches on mount, focus or a poll, so retry assertions across reloads.
+async function expectAfterReload(page: Page, check: () => Promise<void>) {
+  await expect(async () => {
+    await page.reload();
+    await check();
+  }).toPass({ timeout: 45000, intervals: [1000, 2000, 3000] });
+}
+
 test('lane 1 trunk regression records Invite absence and head grants access only after approval', async ({ page, browser }, info) => {
   const base = 'a0eff460f5707d128141857d275f21c1a111ac1c';
   const root = `.pilot-evidence/trunk-${info.project.name}`;
@@ -111,7 +119,7 @@ test('lane 2 administrator issues Invite invitee verifies applies and sees audit
     await approveInBrowser(page, email);
     await expectDeliveredNotice(page, 'Membership application · In app · Delivered · 1 attempt');
     await expectDeliveredNotice(page, 'Membership application · Email · Delivered · 1 attempt');
-    await expect(applicantPage.getByText('Approved', { exact: true })).toBeVisible();
+    await expectAfterReload(applicantPage, () => expect(applicantPage.getByText('Approved', { exact: true })).toBeVisible({ timeout: 3000 }));
     await expect(applicantPage.getByRole('region', { name: 'Notifications' }).getByText('Your membership application was approved.', { exact: true })).toBeVisible();
     await applicantPage.getByRole('link', { name: 'Open Community' }).click();
     await expect(applicantPage.getByRole('heading', { name: 'Welcome to Maple Street Welcome.' })).toBeVisible();
@@ -129,7 +137,7 @@ test('lane 3 rejected applicant sees the reason and cannot browse the Community'
   try {
     const adminPage = await administrator.newPage(); await signIn(adminPage, f.owner.email);
     await approveInBrowser(adminPage, f.applicant.email, 'rejected', 'Please join our orientation first.');
-    await expect(page.getByText('Rejected', { exact: true })).toBeVisible();
+    await expectAfterReload(page, () => expect(page.getByText('Rejected', { exact: true })).toBeVisible({ timeout: 3000 }));
     await expect(page.getByText('Decision reason. Please join our orientation first.', { exact: true })).toBeVisible();
     await expect(page.getByRole('region', { name: 'Notifications' }).getByText('Your membership application was rejected. Your decision reason is in your applications.', { exact: true })).toBeVisible({ timeout: 30000 });
     expect((await f.applicant.client.from('communities').select('*').eq('id', f.community.id)).data).toEqual([]);
