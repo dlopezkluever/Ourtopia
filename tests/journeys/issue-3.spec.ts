@@ -32,29 +32,20 @@ async function applyInBrowser(page: Page, inviteId: string) {
   await expect(page.getByText('Pending administrator approval', { exact: true })).toBeVisible();
 }
 
+// Delivery is driven explicitly through the same claim and finish commands the worker uses, so the assertions
+// do not depend on the background poller's scheduling or on the console's periodic refetch.
+async function drainNoticeDelivery() {
+  const { send } = localDelivery();
+  let delivered: unknown;
+  do { delivered = await deliverOne(admin, send); } while (delivered);
+}
+
 async function approveInBrowser(page: Page, email: string, decision = 'approved', reason = '') {
   await expect(page.getByLabel(`Decision for ${email}`, { exact: true })).toBeVisible();
   await page.getByLabel(`Decision for ${email}`, { exact: true }).selectOption(decision);
   await page.getByLabel(`Reason for ${email}`, { exact: true }).fill(reason);
   await page.getByRole('button', { name: `Confirm decision for ${email}`, exact: true }).click();
   await expect(page.getByLabel(`Decision for ${email}`, { exact: true })).toBeHidden();
-}
-
-// Notice delivery is asynchronous: the background notice worker sends the row and the administrator console
-// only refetches on mount, focus or a 5 second poll. Reload and retry within a budget that covers both.
-async function expectDeliveredNotice(page: Page, label: string) {
-  await expect(async () => {
-    await page.reload();
-    await expect(page.getByText(label, { exact: true })).toBeVisible({ timeout: 3000 });
-  }).toPass({ timeout: 45000, intervals: [1000, 2000, 3000] });
-}
-
-// The applicant page only refetches on mount, focus or a poll, so retry assertions across reloads.
-async function expectAfterReload(page: Page, check: () => Promise<void>) {
-  await expect(async () => {
-    await page.reload();
-    await check();
-  }).toPass({ timeout: 45000, intervals: [1000, 2000, 3000] });
 }
 
 test('lane 1 trunk regression records Invite absence and head grants access only after approval', async ({ page, browser }, info) => {
@@ -117,9 +108,12 @@ test('lane 2 administrator issues Invite invitee verifies applies and sees audit
     expect(application.data?.status).toBe('pending');
     expect((await admin.from('memberships').select('status').eq('community_id', community.id).eq('user_id', application.data!.applicant_id)).data).toEqual([{ status: 'pending' }]);
     await approveInBrowser(page, email);
-    await expectDeliveredNotice(page, 'Membership application · In app · Delivered · 1 attempt');
-    await expectDeliveredNotice(page, 'Membership application · Email · Delivered · 1 attempt');
-    await expectAfterReload(applicantPage, () => expect(applicantPage.getByText('Approved', { exact: true })).toBeVisible({ timeout: 3000 }));
+    await drainNoticeDelivery();
+    await page.reload();
+    await expect(page.getByText('Membership application · In app · Delivered · 1 attempt', { exact: true })).toBeVisible();
+    await expect(page.getByText('Membership application · Email · Delivered · 1 attempt', { exact: true })).toBeVisible();
+    await applicantPage.reload();
+    await expect(applicantPage.getByText('Approved', { exact: true })).toBeVisible();
     await expect(applicantPage.getByRole('region', { name: 'Notifications' }).getByText('Your membership application was approved.', { exact: true })).toBeVisible();
     await applicantPage.getByRole('link', { name: 'Open Community' }).click();
     await expect(applicantPage.getByRole('heading', { name: 'Welcome to Maple Street Welcome.' })).toBeVisible();
@@ -137,9 +131,9 @@ test('lane 3 rejected applicant sees the reason and cannot browse the Community'
   try {
     const adminPage = await administrator.newPage(); await signIn(adminPage, f.owner.email);
     await approveInBrowser(adminPage, f.applicant.email, 'rejected', 'Please join our orientation first.');
-    await expectAfterReload(page, () => expect(page.getByText('Rejected', { exact: true })).toBeVisible({ timeout: 3000 }));
+    await expect(page.getByText('Rejected', { exact: true })).toBeVisible();
     await expect(page.getByText('Decision reason. Please join our orientation first.', { exact: true })).toBeVisible();
-    await expect(page.getByRole('region', { name: 'Notifications' }).getByText('Your membership application was rejected. Your decision reason is in your applications.', { exact: true })).toBeVisible({ timeout: 30000 });
+    await expect(page.getByRole('region', { name: 'Notifications' }).getByText('Your membership application was rejected. Your decision reason is in your applications.', { exact: true })).toBeVisible();
     expect((await f.applicant.client.from('communities').select('*').eq('id', f.community.id)).data).toEqual([]);
     await capture(page, info, 3, { rejected: true, reason: 'Please join our orientation first.', accessibleRows: 0 });
     await page.goto(`/communities/${f.community.id}`);
@@ -290,7 +284,7 @@ test('lane 9 failed email retries keep approval and one durable delivered notice
   expect(await deliverOne(admin, send, email.data!.id)).toBeNull();
   const response = await fetch(`${process.env.TEST_MAILBOX_URL}/api/v1/search?query=${encodeURIComponent(`to:${f.applicant.email}`)}`);
   expect((await response.json() as { messages: unknown[] }).messages).toHaveLength(1);
-  await expectDeliveredNotice(page, 'Membership approved · Email · Delivered · 2 attempts');
+  await expect(page.getByText('Membership approved · Email · Delivered · 2 attempts', { exact: true })).toBeVisible();
   await capture(page, info, 9, { outboxId: email.data!.id, approval: decision.data, deliveredEmails: 1 });
 });
 
