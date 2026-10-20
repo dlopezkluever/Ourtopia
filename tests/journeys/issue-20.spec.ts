@@ -53,7 +53,7 @@ test('lane 1 owner suspends a borrower with an open item loan, the borrower sees
   await signOut(page);
   await removeMember(help.owner, help.community.id, helper.id, 'suspend', randomUUID(), 'Repeated late returns.');
   await signIn(page, helper.email);
-  await page.goto(`/help/${help.community.id}`);
+  await page.goto(`/help/${help.community.id}/need/${post.id}`);
   const helpCard = page.getByRole('region', { name: `Help Exchange with ${help.author.email}` });
   await expect(helpCard.getByRole('button', { name: 'Confirm completed help' })).toBeVisible({ timeout: 10000 });
   await helpCard.getByRole('button', { name: 'Confirm completed help' }).click();
