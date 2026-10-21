@@ -6,6 +6,7 @@ const sourceRecordSchema = z.object({
   kind: z.string().optional(),
   issueType: z.string().optional(),
   createdAt: z.string().datetime({ offset: true }).optional(),
+  participantKey: z.string().regex(/^[0-9a-f]{16}$/).optional(),
   completedAt: z.string().datetime({ offset: true }).nullable().optional(),
 });
 
@@ -53,6 +54,7 @@ export const pilotMetricsSchema = z.object({
     helpNeedPosts: sourceList,
     borrowRequests: sourceList,
     exchanges: z.array(sourceRecordSchema.extend({ kind: z.string() })),
+    completedParticipation: z.array(sourceRecordSchema.extend({ id: z.string().uuid(), status: z.enum(['contributor', 'receiver']), participantKey: z.string().regex(/^[0-9a-f]{16}$/), completedAt: z.string().datetime({ offset: true }) })),
     completedExchanges: z.array(sourceRecordSchema.extend({ kind: z.string(), completedAt: z.string().datetime({ offset: true }) })),
     disputes: z.array(sourceRecordSchema.extend({ issueType: z.string() })),
     verifiedDamageEvents: sourceList,
@@ -79,9 +81,9 @@ export function pilotMetricsCsv(metrics: PilotMetrics) {
   }
   rows.push(['Test subscriptions', String(metrics.counts.testSubscriptions)]);
   for (const [status, count] of Object.entries(metrics.billing.statuses)) rows.push([`Test subscription status: ${status}`, String(count)]);
-  rows.push([], ['Source records', 'Record ID', 'Status or kind', 'Date']);
+  rows.push([], ['Source records', 'Record ID', 'Status or kind', 'Date', 'Participant key']);
   for (const [sourceName, records] of Object.entries(metrics.sources)) {
-    for (const record of records) rows.push([sourceName, record.id ?? '', record.status ?? record.kind ?? record.issueType ?? '', record.completedAt ?? record.createdAt ?? '']);
+    for (const record of records) rows.push([sourceName, record.id ?? '', record.status ?? record.kind ?? record.issueType ?? '', record.completedAt ?? record.createdAt ?? '', record.participantKey ?? '']);
   }
   return rows.map(row => row.map(csvCell).join(',')).join('\r\n');
 }

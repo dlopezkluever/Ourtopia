@@ -71,6 +71,10 @@ test('pilot metrics count each completed Exchange and repeated participant once 
   assert.equal(metrics.counts.completedContributions, 3);
   assert.equal(metrics.counts.repeatParticipants, 2);
   assert.equal(metrics.sources.completedExchanges.length, 3);
+  const perPerson = new Map<string, Set<string>>();
+  for (const row of metrics.sources.completedParticipation) perPerson.set(row.participantKey, (perPerson.get(row.participantKey) ?? new Set()).add(row.id));
+  assert.equal([...perPerson.values()].filter(exchanges => exchanges.size > 1).length, metrics.counts.repeatParticipants);
+  assert.equal(metrics.sources.completedParticipation.filter(row => row.status === 'contributor').length, metrics.counts.completedContributions);
   receipt('issue-25-repeat-participation', { addedExchanges: completed, completed: metrics.counts.exchangesCompleted, repeatParticipants: metrics.counts.repeatParticipants });
 });
 
