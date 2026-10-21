@@ -1889,6 +1889,9 @@ isOneToOne: true
 "read_item_return":
 { Args: { "p_exchange_id": string }; Returns: Json
                            },
+"read_pilot_metrics":
+{ Args: { "p_community_id": string }; Returns: Json
+                           },
 "read_stalled_review":
 { Args: { "p_exchange_id": string }; Returns: Json
                            },
