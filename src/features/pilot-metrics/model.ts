@@ -44,6 +44,7 @@ export const pilotMetricsSchema = z.object({
     statuses: z.record(z.string(), z.number().int().nonnegative()),
   }),
   sources: z.object({
+    activeMembers: sourceList,
     invitations: sourceList,
     applications: sourceList,
     itemListings: sourceList,
@@ -58,7 +59,7 @@ export const pilotMetricsSchema = z.object({
     verifiedDamageCorrections: sourceList,
     vouches: sourceList,
     thankYous: sourceList,
-    testSubscriptions: z.array(sourceRecordSchema.extend({ status: z.string() })),
+    testSubscriptions: z.array(sourceRecordSchema.extend({ id: z.string().regex(/^sub_/), status: z.string() })),
   }),
 });
 

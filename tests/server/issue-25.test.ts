@@ -30,6 +30,8 @@ test('pilot totals use persisted records and only verified completion facts', as
   assert.equal(metrics.counts.completedContributions, 1);
   assert.equal(metrics.sources.completedExchanges.length, 1);
   assert.equal(metrics.sources.exchanges.length, 6);
+  assert.equal(metrics.sources.activeMembers.length, metrics.counts.activeMembers);
+  assert.equal(metrics.sources.testSubscriptions.length, metrics.counts.testSubscriptions);
   assert.equal(metrics.counts.itemListings, 1);
   assert.equal(metrics.counts.borrowRequestsApproved, 1);
 

@@ -70,8 +70,8 @@ begin
       (select count(*) from cases) as disputes,
       (select count(*) from cases d where d.status in ('issue_reported', 'repairing', 'replacement_agreed', 'disputed', 'admin_review', 'unresolved')) as unresolved_cases,
       (select count(*) from public.reputation_events r where r.community_id = p_community_id and r.rule = 'unresolved_damage' and r.corrects_event_id is null
-        and not exists (select 1 from public.reputation_events correction where correction.corrects_event_id = r.id)) as verified_damage_events,
-      (select count(*) from public.reputation_events correction join public.reputation_events original on original.id = correction.corrects_event_id
+        and not exists (select 1 from public.reputation_events correction where correction.corrects_event_id = r.id and correction.community_id = r.community_id)) as verified_damage_events,
+      (select count(*) from public.reputation_events correction join public.reputation_events original on original.id = correction.corrects_event_id and original.community_id = correction.community_id
         where correction.community_id = p_community_id and original.rule = 'unresolved_damage') as verified_damage_corrections,
       (select count(*) from public.vouches v where v.community_id = p_community_id) as vouches,
       (select count(*) from public.exchange_thank_yous t where t.community_id = p_community_id) as thank_yous,
@@ -114,6 +114,7 @@ begin
       ) b), '{}'::jsonb)
     ),
     'sources', jsonb_build_object(
+      'activeMembers', coalesce((select jsonb_agg(jsonb_build_object('id', m.user_id, 'status', m.role, 'createdAt', m.created_at) order by m.created_at, m.user_id) from public.memberships m where m.community_id = p_community_id and m.status = 'active'), '[]'::jsonb),
       'invitations', coalesce((select jsonb_agg(jsonb_build_object('id', i.id, 'status', case when i.redeemed_at is null then 'issued' else 'redeemed' end, 'createdAt', i.created_at) order by i.created_at) from public.invites i where i.community_id = p_community_id), '[]'::jsonb),
       'applications', coalesce((select jsonb_agg(jsonb_build_object('id', a.id, 'status', a.status, 'createdAt', a.created_at) order by a.created_at) from public.membership_applications a where a.community_id = p_community_id), '[]'::jsonb),
       'itemListings', coalesce((select jsonb_agg(jsonb_build_object('id', l.id, 'status', l.status, 'createdAt', l.created_at) order by l.created_at) from public.listings l where l.community_id = p_community_id), '[]'::jsonb),
@@ -125,13 +126,13 @@ begin
       'completedExchanges', coalesce((select jsonb_agg(jsonb_build_object('id', c.id, 'kind', c.kind, 'completedAt', c.completed_at) order by c.completed_at) from completed c), '[]'::jsonb),
       'disputes', coalesce((select jsonb_agg(jsonb_build_object('id', d.id, 'status', d.status, 'issueType', d.issue_type, 'createdAt', d.created_at) order by d.created_at) from cases d), '[]'::jsonb),
       'verifiedDamageEvents', coalesce((select jsonb_agg(jsonb_build_object('id', r.id, 'createdAt', r.created_at) order by r.created_at) from public.reputation_events r where r.community_id = p_community_id and r.rule = 'unresolved_damage' and r.corrects_event_id is null
-        and not exists (select 1 from public.reputation_events correction where correction.corrects_event_id = r.id)), '[]'::jsonb),
+        and not exists (select 1 from public.reputation_events correction where correction.corrects_event_id = r.id and correction.community_id = r.community_id)), '[]'::jsonb),
       'verifiedDamageCorrections', coalesce((select jsonb_agg(jsonb_build_object('id', correction.id, 'createdAt', correction.created_at) order by correction.created_at)
-        from public.reputation_events correction join public.reputation_events original on original.id = correction.corrects_event_id
+        from public.reputation_events correction join public.reputation_events original on original.id = correction.corrects_event_id and original.community_id = correction.community_id
         where correction.community_id = p_community_id and original.rule = 'unresolved_damage'), '[]'::jsonb),
       'vouches', coalesce((select jsonb_agg(jsonb_build_object('id', v.id, 'createdAt', v.created_at) order by v.created_at) from public.vouches v where v.community_id = p_community_id), '[]'::jsonb),
       'thankYous', coalesce((select jsonb_agg(jsonb_build_object('id', t.id, 'createdAt', t.created_at) order by t.created_at) from public.exchange_thank_yous t where t.community_id = p_community_id), '[]'::jsonb),
-      'testSubscriptions', coalesce((select jsonb_agg(jsonb_build_object('status', b.status) order by b.status) from billing b), '[]'::jsonb)
+      'testSubscriptions', coalesce((select jsonb_agg(jsonb_build_object('id', b.subscription_id, 'status', b.status) order by b.subscription_id) from billing b), '[]'::jsonb)
     )
   ) into v_metrics
   from counts c;
