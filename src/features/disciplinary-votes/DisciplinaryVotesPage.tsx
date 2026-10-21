@@ -39,8 +39,8 @@ function VoteCard({ vote, userId, isAdmin, refresh }: { vote: DisciplinaryVote; 
       {(['remove', 'retain'] as const).map(choice => <button key={choice} className="secondary-button" onClick={() => void act(() => castBallot(userId, vote.id, choice), 'Your ballot is recorded and cannot be changed.')}>{ballotLabels[choice]}</button>)}
     </fieldset>}
     {vote.my_ballot && <p role="status">Your ballot is recorded. It cannot be changed.</p>}
-    {isAdmin && vote.can_close && <button className="secondary-button" disabled={busy} onClick={() => void act(() => closeVote(userId, vote.id), 'The recorded result is available.')}>Record vote result</button>}
-    {isAdmin && vote.state === 'passed' && <form onSubmit={event => { event.preventDefault(); void act(() => enactRemoval(userId, vote.id, removalReason.trim()), 'The separate removal action was recorded.'); }}>
+    {isAdmin && userId !== vote.accused_id && vote.can_close && <button className="secondary-button" disabled={busy} onClick={() => void act(() => closeVote(userId, vote.id), 'The recorded result is available.')}>Record vote result</button>}
+    {isAdmin && userId !== vote.accused_id && vote.state === 'passed' && <form onSubmit={event => { event.preventDefault(); void act(() => enactRemoval(userId, vote.id, removalReason.trim()), 'The separate removal action was recorded.'); }}>
       <label>Reason for the separate removal action<textarea required maxLength={1000} value={removalReason} onChange={event => setRemovalReason(event.target.value)}/></label>
       <button className="secondary-button" disabled={busy || !removalReason.trim()}>Enact voted removal</button>
     </form>}

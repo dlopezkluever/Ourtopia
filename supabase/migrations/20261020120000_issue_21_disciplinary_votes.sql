@@ -208,7 +208,7 @@ begin
   insert into public.community_events(community_id, actor_id, kind, intent_id) values(vote.community_id, actor, 'disciplinary_vote_response', p_intent_id) returning id into event;
   insert into public.disciplinary_vote_responses(vote_id, author_id, body) values(vote.id, actor, btrim(p_body)) returning id into response_id;
   insert into public.notification_outbox(event_id, community_id, recipient_id, channel, kind)
-    select event, vote.community_id, opened_by, channel, 'disciplinary_vote_response' from unnest(array['in_app', 'email']) channel
+    select event, vote.community_id, vote.opened_by, channel, 'disciplinary_vote_response' from unnest(array['in_app', 'email']) channel
     on conflict (event_id, recipient_id, channel, kind) do nothing;
   outcome := jsonb_build_object('vote_id', vote.id, 'response_id', response_id, 'created_at', clock_timestamp());
   insert into public.command_intents(actor_id, intent_id, command, payload, result) values(actor, p_intent_id, 'submit_disciplinary_response', payload, outcome);
@@ -270,22 +270,25 @@ grant execute on function public.disciplinary_vote_result(integer, integer, inte
 
 create function private.close_disciplinary_vote(p_vote_id uuid, p_actor uuid, p_worker boolean, p_intent_id uuid)
 returns jsonb language plpgsql security definer set search_path = '' as $$
-declare vote public.disciplinary_votes; intent uuid; payload jsonb; prior public.command_intents; remove_count integer; retain_count integer; turnout_count integer; result jsonb; event uuid; outcome jsonb;
+declare vote public.disciplinary_votes; intent uuid; v_payload jsonb; prior public.command_intents; remove_count integer; retain_count integer; turnout_count integer; v_result jsonb; event uuid; outcome jsonb;
 begin
   if p_intent_id is null then raise exception using errcode = '22023', message = 'An intent identity is required.'; end if;
   intent := p_intent_id;
-  payload := jsonb_build_object('vote_id', p_vote_id);
+  v_payload := jsonb_build_object('vote_id', p_vote_id);
   perform pg_advisory_xact_lock(hashtextextended(p_actor::text || intent::text, 0));
   select * into prior from public.command_intents where actor_id = p_actor and intent_id = intent;
   if found then
-    if prior.command <> 'close_disciplinary_vote' or prior.payload <> payload then raise exception using errcode = '23505', message = 'This intent was already used with different details.'; end if;
+    if prior.command <> 'close_disciplinary_vote' or prior.payload <> v_payload then raise exception using errcode = '23505', message = 'This intent was already used with different details.'; end if;
     return prior.result;
   end if;
   select * into vote from public.disciplinary_votes where id = p_vote_id for update;
   if not found then raise exception using errcode = '22023', message = 'Vote unavailable.'; end if;
+  if not p_worker and p_actor = vote.accused_id then
+    raise exception using errcode = '42501', message = 'The accused member cannot close their own removal vote.';
+  end if;
   if vote.state <> 'open' then
     select ci.result into outcome from public.command_intents ci
-      where ci.command = 'close_disciplinary_vote' and ci.payload = payload and ci.result->>'vote_id' = vote.id::text
+      where ci.command = 'close_disciplinary_vote' and ci.payload = v_payload and ci.result->>'vote_id' = vote.id::text
       order by ci.created_at desc limit 1;
     if not found then
       outcome := jsonb_build_object('vote_id', vote.id, 'state', vote.state, 'eligible_count', vote.eligible_count,
@@ -293,7 +296,7 @@ begin
         'remove_votes', vote.remove_votes, 'retain_votes', vote.retain_votes, 'closed_at', vote.closed_at, 'event_id', null);
     end if;
     insert into public.command_intents(actor_id, intent_id, command, payload, result)
-      values(p_actor, intent, 'close_disciplinary_vote', payload, outcome);
+      values(p_actor, intent, 'close_disciplinary_vote', v_payload, outcome);
     return outcome;
   end if;
   if clock_timestamp() < vote.closes_at then raise exception using errcode = '55000', message = 'This vote cannot close before its deadline.'; end if;
@@ -303,19 +306,19 @@ begin
   select count(*) filter(where choice = 'remove')::integer, count(*) filter(where choice = 'retain')::integer
     into remove_count, retain_count from public.disciplinary_vote_ballots where vote_id = vote.id;
   turnout_count := remove_count + retain_count;
-  result := public.disciplinary_vote_result(vote.eligible_count, remove_count, retain_count);
+  v_result := public.disciplinary_vote_result(vote.eligible_count, remove_count, retain_count);
   insert into public.community_events(community_id, actor_id, kind, intent_id) values(vote.community_id, p_actor, 'disciplinary_vote_closed', intent) returning id into event;
-  update public.disciplinary_votes set state = result->>'state', turnout = turnout_count,
+  update public.disciplinary_votes set state = v_result->>'state', turnout = turnout_count,
     remove_votes = remove_count, retain_votes = retain_count, closed_at = clock_timestamp() where id = vote.id returning * into vote;
   insert into public.command_intents(actor_id, intent_id, command, payload, result)
-    values(p_actor, intent, 'close_disciplinary_vote', payload, jsonb_build_object('vote_id', vote.id, 'state', vote.state,
+    values(p_actor, intent, 'close_disciplinary_vote', v_payload, jsonb_build_object('vote_id', vote.id, 'state', vote.state,
       'eligible_count', vote.eligible_count, 'turnout', turnout_count, 'remove_votes', remove_count, 'retain_votes', retain_count,
-      'required_turnout', result->'required_turnout', 'closed_at', vote.closed_at, 'event_id', event));
+      'required_turnout', v_result->'required_turnout', 'closed_at', vote.closed_at, 'event_id', event));
   insert into public.notification_outbox(event_id, community_id, recipient_id, channel, kind)
     select event, vote.community_id, recipient, channel, 'disciplinary_vote_closed'
     from (select vote.accused_id as recipient union select voter_id from public.disciplinary_vote_electorate where vote_id = vote.id) people
     cross join unnest(array['in_app', 'email']) channel on conflict (event_id, recipient_id, channel, kind) do nothing;
-  return (select result from public.command_intents where actor_id = p_actor and intent_id = intent);
+  return (select ci.result from public.command_intents ci where ci.actor_id = p_actor and ci.intent_id = intent);
 end;
 $$;
 revoke all on function private.close_disciplinary_vote(uuid, uuid, boolean, uuid) from public, anon, authenticated;
@@ -327,6 +330,7 @@ begin
   select * into vote from public.disciplinary_votes where id = p_vote_id;
   if not found then raise exception using errcode = '42501', message = 'Vote unavailable.'; end if;
   perform public.require_current_membership(vote.community_id, true);
+  if auth.uid() = vote.accused_id then raise exception using errcode = '42501', message = 'The accused member cannot close their own removal vote.'; end if;
   return private.close_disciplinary_vote(p_vote_id, auth.uid(), false, p_intent_id);
 end;
 $$;
@@ -355,6 +359,7 @@ begin
   if not found then raise exception using errcode = '42501', message = 'Vote unavailable.'; end if;
   if p_intent_id is null then raise exception using errcode = '22023', message = 'An intent identity is required.'; end if;
   perform public.require_current_membership(vote.community_id, true);
+  if auth.uid() = vote.accused_id then raise exception using errcode = '42501', message = 'The accused member cannot enact their own removal.'; end if;
   perform pg_advisory_xact_lock(hashtextextended(actor::text || p_intent_id::text, 0));
   select * into prior from public.command_intents where actor_id = actor and intent_id = p_intent_id;
   if found then

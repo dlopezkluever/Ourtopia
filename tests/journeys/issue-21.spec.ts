@@ -107,6 +107,18 @@ test('lane 3 a separate administrator action enacts a passed result and preserve
   await save(page, info, 3, { action: action.data, reputationCount: before, obligationState: obligationBefore, membership: 'removed' });
 });
 
+test('an accused administrator sees no controls to close or enact their own removal vote', async ({ page }, info) => {
+  const f = await handoffFixture(`journey-accused-administrator-${info.project.name}`);
+  const voteId = await seedVote(f, f.bob.id, [f.owner, f.alice], ['remove', 'remove'], 'passed');
+  const promoted = await admin.from('memberships').update({ role: 'administrator' }).eq('community_id', f.community.id).eq('user_id', f.bob.id);
+  expect(promoted.error).toBeNull();
+  await signIn(page, f.bob.email); await page.goto('/votes');
+  await expect(page.getByText(/Recorded result Passed/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Record vote result' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Enact voted removal' })).toHaveCount(0);
+  await save(page, info, 11, { voteId, accusedAdministrator: true, ownVoteControlsHidden: true });
+});
+
 test('lane 4 literal threshold outcomes include rounded quorum, exact two-thirds, ties, empty electorate and no turnout', async ({ page }, info) => {
   const f = await handoffFixture(`journey-lane-4-${info.project.name}`);
   const cases = [[1, 1, 0, 'passed'], [4, 1, 0, 'failed'], [10, 2, 1, 'passed'], [10, 1, 2, 'failed'], [3, 1, 1, 'failed'], [0, 0, 0, 'failed'], [5, 0, 0, 'failed']] as const;

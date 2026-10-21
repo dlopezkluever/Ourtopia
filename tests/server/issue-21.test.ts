@@ -49,6 +49,7 @@ test('Opening freezes active voters, records evidence and deadline, and supports
   assert.equal((await f.owner.client.rpc('moderate_membership', { p_intent_id: randomUUID(), p_community_id: f.community.id, p_user_id: f.bob.id, p_action: 'suspend', p_reason: 'Temporary review.' })).error, null);
   const response = await f.bob.client.rpc('submit_disciplinary_response', { p_intent_id: randomUUID(), p_vote_id: result.vote_id, p_body: 'I dispute the allegation and provide my timeline.' });
   assert.equal(response.error, null, 'a suspended accused member retains the defense response right');
+  assert.ok((response.data as { response_id: string }).response_id, 'the accused response command records a response');
   const view = await f.bob.client.rpc('read_disciplinary_vote', { p_vote_id: result.vote_id });
   assert.equal((view.data as { can_respond: boolean }).can_respond, true);
   assert.equal((await f.bob.client.rpc('cast_disciplinary_ballot', { p_intent_id: randomUUID(), p_vote_id: result.vote_id, p_choice: 'retain' })).error?.code, '42501');
@@ -81,6 +82,8 @@ test('A delayed worker closes an expired vote once and records immutable counts 
   const closeIntent = randomUUID();
   const replay = await f.owner.client.rpc('close_disciplinary_vote', { p_intent_id: closeIntent, p_vote_id: voteId });
   assert.equal(replay.error, null);
+  assert.deepEqual(replay.data, { vote_id: voteId, state: 'failed', eligible_count: 2, turnout: 2, remove_votes: 1, retain_votes: 1,
+    required_turnout: 1, closed_at: recorded.data?.closed_at, event_id: (replay.data as { event_id: string }).event_id });
   assert.deepEqual((await f.owner.client.rpc('close_disciplinary_vote', { p_intent_id: closeIntent, p_vote_id: voteId })).data, replay.data);
   const anotherVote = await dueVote(f, f.alice.id, [f.owner, f.bob], []);
   assert.equal((await admin.rpc('process_due_disciplinary_votes')).error, null);
@@ -114,6 +117,18 @@ test('A passing recorded vote permits only a separate audited removal action', a
     reservation: (await admin.from('item_reservations').select('exchange_id').eq('exchange_id', f.exchangeId)).data?.length,
   }, obligationBefore);
   receipt('issue-21-enact-removal', { result: result.data, action: action.data, reputationBefore: reputationBefore ?? 0, obligationsUnchanged: obligationBefore });
+});
+
+test('An accused administrator cannot close or enact their own removal vote', async () => {
+  const f = await handoffFixture('disciplinary-accused-administrator');
+  assert.equal((await admin.from('memberships').update({ role: 'administrator' }).eq('community_id', f.community.id).eq('user_id', f.bob.id)).error, null);
+  const voteId = await dueVote(f, f.bob.id, [f.owner, f.alice], ['remove', 'remove']);
+  const deniedClose = await f.bob.client.rpc('close_disciplinary_vote', { p_intent_id: randomUUID(), p_vote_id: voteId });
+  assert.equal(deniedClose.error?.code, '42501');
+  assert.equal((await admin.rpc('process_due_disciplinary_votes')).error, null);
+  const deniedEnact = await f.bob.client.rpc('enact_disciplinary_removal', { p_intent_id: randomUUID(), p_vote_id: voteId, p_reason: 'Self removal attempt.' });
+  assert.equal(deniedEnact.error?.code, '42501');
+  assert.equal((await admin.from('memberships').select('status').eq('community_id', f.community.id).eq('user_id', f.bob.id).single()).data?.status, 'active');
 });
 
 test('The persisted threshold policy handles rounded quorum, exact two-thirds, ties, zero electorate and no turnout', async () => {
