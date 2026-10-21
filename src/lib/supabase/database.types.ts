@@ -255,6 +255,118 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"disciplinary_vote_ballots": {
+                  Row: {
+                    "cast_at": string,"choice": string,"event_id": string,"intent_id": string,"vote_id": string,"voter_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "cast_at"?: string,"choice": string,"event_id": string,"intent_id": string,"vote_id": string,"voter_id": string
+                  }
+                  Update: {
+                    "cast_at"?: string,"choice"?: string,"event_id"?: string,"intent_id"?: string,"vote_id"?: string,"voter_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "disciplinary_vote_ballots_event_id_fkey"
+      columns: ["event_id"]
+isOneToOne: true
+      referencedRelation: "community_events"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "disciplinary_vote_ballots_vote_id_voter_id_fkey"
+      columns: ["vote_id","voter_id"]
+isOneToOne: true
+      referencedRelation: "disciplinary_vote_electorate"
+      referencedColumns: ["vote_id","voter_id"]
+    }
+                  ]
+                },"disciplinary_vote_electorate": {
+                  Row: {
+                    "vote_id": string,"voter_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "vote_id": string,"voter_id": string
+                  }
+                  Update: {
+                    "vote_id"?: string,"voter_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "disciplinary_vote_electorate_vote_id_fkey"
+      columns: ["vote_id"]
+isOneToOne: false
+      referencedRelation: "disciplinary_votes"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"disciplinary_vote_evidence": {
+                  Row: {
+                    "author_id": string,"body": string,"created_at": string,"id": string,"vote_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "author_id": string,"body": string,"created_at"?: string,"id"?: string,"vote_id": string
+                  }
+                  Update: {
+                    "author_id"?: string,"body"?: string,"created_at"?: string,"id"?: string,"vote_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "disciplinary_vote_evidence_vote_id_fkey"
+      columns: ["vote_id"]
+isOneToOne: false
+      referencedRelation: "disciplinary_votes"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"disciplinary_vote_responses": {
+                  Row: {
+                    "author_id": string,"body": string,"created_at": string,"id": string,"vote_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "author_id": string,"body": string,"created_at"?: string,"id"?: string,"vote_id": string
+                  }
+                  Update: {
+                    "author_id"?: string,"body"?: string,"created_at"?: string,"id"?: string,"vote_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "disciplinary_vote_responses_vote_id_fkey"
+      columns: ["vote_id"]
+isOneToOne: false
+      referencedRelation: "disciplinary_votes"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"disciplinary_votes": {
+                  Row: {
+                    "accused_id": string,"closed_at": string | null,"closes_at": string,"community_id": string,"eligible_count": number,"event_id": string,"id": string,"opened_at": string,"opened_by": string,"reason": string,"remove_votes": number | null,"retain_votes": number | null,"state": string,"turnout": number | null
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "accused_id": string,"closed_at"?: string | null,"closes_at": string,"community_id": string,"eligible_count": number,"event_id": string,"id"?: string,"opened_at"?: string,"opened_by": string,"reason": string,"remove_votes"?: number | null,"retain_votes"?: number | null,"state"?: string,"turnout"?: number | null
+                  }
+                  Update: {
+                    "accused_id"?: string,"closed_at"?: string | null,"closes_at"?: string,"community_id"?: string,"eligible_count"?: number,"event_id"?: string,"id"?: string,"opened_at"?: string,"opened_by"?: string,"reason"?: string,"remove_votes"?: number | null,"retain_votes"?: number | null,"state"?: string,"turnout"?: number | null
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "disciplinary_votes_community_id_fkey"
+      columns: ["community_id"]
+isOneToOne: false
+      referencedRelation: "communities"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "disciplinary_votes_event_id_fkey"
+      columns: ["event_id"]
+isOneToOne: true
+      referencedRelation: "community_events"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"dispute_actions": {
                   Row: {
                     "action": string,"actor_id": string,"body": string | null,"community_id": string,"corrects_id": string | null,"created_at": string,"dispute_id": string,"from_status": string,"id": string,"outcome": string | null,"remedy_id": string | null,"remedy_kind": string | null,"to_status": string
@@ -1079,14 +1191,14 @@ isOneToOne: false
                   ]
                 },"moderation_actions": {
                   Row: {
-                    "action": string,"actor_id": string,"community_id": string,"created_at": string,"event_id": string,"id": string,"intent_id": string,"reason": string,"subject_id": string,"subject_kind": string,"subject_user_id": string
+                    "action": string,"actor_id": string,"community_id": string,"created_at": string,"disciplinary_vote_id": string | null,"event_id": string,"id": string,"intent_id": string,"reason": string,"subject_id": string,"subject_kind": string,"subject_user_id": string
                   }
                   ComputedFields: never
                   Insert: {
-                    "action": string,"actor_id": string,"community_id": string,"created_at"?: string,"event_id": string,"id"?: string,"intent_id": string,"reason": string,"subject_id": string,"subject_kind": string,"subject_user_id": string
+                    "action": string,"actor_id": string,"community_id": string,"created_at"?: string,"disciplinary_vote_id"?: string | null,"event_id": string,"id"?: string,"intent_id": string,"reason": string,"subject_id": string,"subject_kind": string,"subject_user_id": string
                   }
                   Update: {
-                    "action"?: string,"actor_id"?: string,"community_id"?: string,"created_at"?: string,"event_id"?: string,"id"?: string,"intent_id"?: string,"reason"?: string,"subject_id"?: string,"subject_kind"?: string,"subject_user_id"?: string
+                    "action"?: string,"actor_id"?: string,"community_id"?: string,"created_at"?: string,"disciplinary_vote_id"?: string | null,"event_id"?: string,"id"?: string,"intent_id"?: string,"reason"?: string,"subject_id"?: string,"subject_kind"?: string,"subject_user_id"?: string
                   }
                   Relationships: [
                     {
@@ -1094,6 +1206,12 @@ isOneToOne: false
       columns: ["community_id"]
 isOneToOne: false
       referencedRelation: "communities"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "moderation_actions_disciplinary_vote_id_fkey"
+      columns: ["disciplinary_vote_id"]
+isOneToOne: false
+      referencedRelation: "disciplinary_votes"
       referencedColumns: ["id"]
     },{
       foreignKeyName: "moderation_actions_event_id_fkey"
@@ -1541,6 +1659,9 @@ isOneToOne: true
 "can_read_conversation":
 { Args: { "p_conversation_id": string,"p_message_at"?: string }; Returns: boolean
                            },
+"can_read_disciplinary_vote":
+{ Args: { "p_vote_id": string }; Returns: boolean
+                           },
 "can_read_dispute":
 { Args: { "p_dispute_id": string }; Returns: boolean
                            },
@@ -1556,6 +1677,9 @@ isOneToOne: true
 "cancel_help_exchange":
 { Args: { "p_exchange_id": string,"p_intent_id": string,"p_reason": string }; Returns: Json
                            },
+"cast_disciplinary_ballot":
+{ Args: { "p_choice": string,"p_intent_id": string,"p_vote_id": string }; Returns: Json
+                           },
 "check_notification_claim":
 { Args: { "p_claim_token": string,"p_outbox_id": string }; Returns: boolean
                            },
@@ -1567,6 +1691,9 @@ isOneToOne: true
                            },
 "claim_test_billing":
 { Args: { "p_job_id": string }; Returns: Json
+                           },
+"close_disciplinary_vote":
+{ Args: { "p_intent_id": string,"p_vote_id": string }; Returns: Json
                            },
 "command_contribution_draft":
 { Args: { "p_action": string,"p_community_id": string,"p_expected_revision": number,"p_fields"?: Json,"p_intent_id": string,"p_kind": string,"p_owner_id": string }; Returns: Json
@@ -1626,8 +1753,14 @@ isOneToOne: true
 "decide_stalled_review":
 { Args: { "p_evidence"?: Json,"p_exchange_id": string,"p_intent_id": string,"p_outcome": string,"p_reason": string }; Returns: Json
                            },
+"disciplinary_vote_result":
+{ Args: { "p_eligible": number,"p_remove": number,"p_retain": number }; Returns: Json
+                           },
 "edit_help_post":
 { Args: { "p_fields": Json,"p_intent_id": string,"p_post_id": string,"p_post_kind": string }; Returns: Json
+                           },
+"enact_disciplinary_removal":
+{ Args: { "p_intent_id": string,"p_reason": string,"p_vote_id": string }; Returns: Json
                            },
 "expire_due_item_approvals":
 { Args: Record<PropertyKey, never>; Returns: number
@@ -1671,6 +1804,12 @@ isOneToOne: true
 "link_test_customer":
 { Args: { "p_claim_token": string,"p_customer_id": string,"p_job_id": string }; Returns: undefined
                            },
+"list_disciplinary_votes":
+{ Args: { "p_community_id": string }; Returns: Json[]
+                           },
+"list_my_defense_votes":
+{ Args: Record<PropertyKey, never>; Returns: Json[]
+                           },
 "member_directory":
 { Args: { "p_community_id": string }; Returns: {
               "completed_interactions": number,"email": string,"joined_at": string,"role": string,"score": number,"title": string,"user_id": string
@@ -1699,6 +1838,9 @@ isOneToOne: true
 "my_vouch_statements":
 { Args: Record<PropertyKey, never>; Returns: Json
                            },
+"open_disciplinary_vote":
+{ Args: { "p_accused_id": string,"p_community_id": string,"p_evidence": string,"p_intent_id": string,"p_reason": string }; Returns: Json
+                           },
 "prepare_dispute_evidence":
 { Args: { "p_byte_size": number,"p_dispute_id": string,"p_evidence_id": string,"p_intent_id": string,"p_mime_type": string }; Returns: Json
                            },
@@ -1714,6 +1856,9 @@ isOneToOne: true
 "prepare_return_evidence":
 { Args: { "p_byte_size": number,"p_evidence_id": string,"p_exchange_id": string,"p_intent_id": string,"p_mime_type": string }; Returns: Json
                            },
+"process_due_disciplinary_votes":
+{ Args: Record<PropertyKey, never>; Returns: Json
+                           },
 "process_due_help_completions":
 { Args: Record<PropertyKey, never>; Returns: Json
                            },
@@ -1722,6 +1867,9 @@ isOneToOne: true
                            },
 "read_community_feed":
 { Args: { "p_community_id": string }; Returns: Json
+                           },
+"read_disciplinary_vote":
+{ Args: { "p_vote_id": string }; Returns: Json
                            },
 "read_dispute_decisions":
 { Args: { "p_exchange_id": string }; Returns: Json
@@ -1809,6 +1957,9 @@ isOneToOne: true
                            },
 "submit_borrow_request":
 { Args: { "p_ends_on": string,"p_intent_id": string,"p_listing_id": string,"p_starts_on": string }; Returns: Json
+                           },
+"submit_disciplinary_response":
+{ Args: { "p_body": string,"p_intent_id": string,"p_vote_id": string }; Returns: Json
                            },
 "submit_dispute_messages":
 { Args: { "p_dispute_id": string,"p_intent_id": string,"p_message_ids": (string)[] }; Returns: Json
