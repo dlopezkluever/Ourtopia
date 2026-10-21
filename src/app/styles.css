@@ -402,7 +402,9 @@ a.sidebar-nav { text-decoration: none; }
 .moderation-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 .moderation-members, .moderation-content, .moderation-log { list-style: none; padding: 0; }
 .moderation-members li, .moderation-content li { border-bottom: 1px solid currentColor; padding: 0.6rem 0; }
-.disciplinary-votes-page { max-width: 60rem; margin: 1.5rem auto; padding: 0 1rem; }
+.disciplinary-votes-page { max-width: 60rem; margin: 1.5rem auto; padding: 0 1rem; min-width: 0; overflow-wrap: anywhere; }
+.disciplinary-votes-page select, .disciplinary-votes-page textarea { box-sizing: border-box; width: 100%; max-width: 100%; min-width: 0; }
+.disciplinary-votes-page > label { max-width: 100%; }
 .disciplinary-vote-form, .disciplinary-vote { margin: 1rem 0; padding: 1.25rem; border: 1px solid #d9d5cb; border-radius: 1rem; background: #fffdf8; }
 .disciplinary-vote form, .disciplinary-vote-form { display: grid; gap: 0.75rem; }
 .disciplinary-vote label, .disciplinary-vote-form label { display: block; margin: 0; }
