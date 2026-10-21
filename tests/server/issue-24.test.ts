@@ -50,7 +50,7 @@ test('Draft validation, discard, and revoked membership are authoritative on eve
   const args = { p_intent_id: randomUUID(), p_owner_id: member.id, p_community_id: community.id, p_kind: 'help_offer', p_expected_revision: 0, p_action: 'save', p_fields: { title: 'Unfinished help' } };
   for (const invalid of [{ p_kind: 'unknown' }, { p_action: 'unknown' }, { p_fields: { title: 'x'.repeat(25000) } }, { p_expected_revision: -1 }]) assert.equal((await member.client.rpc('command_contribution_draft', { ...args, ...invalid })).error?.code, '22023');
   assert.equal((await member.client.rpc('command_contribution_draft', args)).error, null);
-  for (const status of ['suspended', 'removed']) {
+  for (const status of ['suspended']) {
     assert.equal((await admin.from('memberships').update({ status }).eq('user_id', member.id).eq('community_id', community.id)).error, null);
     assert.equal((await member.client.rpc('command_contribution_draft', args)).error?.code, '42501');
     assert.equal((await member.client.rpc('command_contribution_draft', { ...args, p_intent_id: randomUUID(), p_expected_revision: 1, p_action: 'publish' })).error?.code, '42501');
@@ -59,6 +59,12 @@ test('Draft validation, discard, and revoked membership are authoritative on eve
   assert.equal((await admin.from('memberships').update({ status: 'active' }).eq('user_id', member.id).eq('community_id', community.id)).error, null);
   const discarded = await member.client.rpc('command_contribution_draft', { ...args, p_intent_id: randomUUID(), p_expected_revision: 1, p_action: 'discard', p_fields: {} });
   assert.equal(discarded.error, null); assert.equal(resultSchema.parse(discarded.data).draft.status, 'discarded'); assert.deepEqual(resultSchema.parse(discarded.data).draft.fields, {});
+  for (const status of ['removed']) {
+    assert.equal((await admin.from('memberships').update({ status }).eq('user_id', member.id).eq('community_id', community.id)).error, null);
+    assert.equal((await member.client.rpc('command_contribution_draft', args)).error?.code, '42501');
+    assert.equal((await member.client.rpc('command_contribution_draft', { ...args, p_intent_id: randomUUID(), p_expected_revision: 1, p_action: 'publish' })).error?.code, '42501');
+    assert.deepEqual((await member.client.from('contribution_drafts').select('*')).data, []);
+  }
 });
 
 test('A failure after nested publication rolls back the post, draft, child intent and audit together', async () => {

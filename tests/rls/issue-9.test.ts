@@ -53,7 +53,7 @@ test('Nonparticipants, administrators, inactive members and foreign accounts can
   assert.equal(listed.filter(row => row.kind.startsWith('item_')).length, 0);
   assert.equal(derivable(listed.flatMap(row => [row.next_attempt_at, row.reminder_due_at])), false);
   assert.ok(listed.some(row => row.kind.startsWith('borrow_')), 'the console still lists non-logistics notices');
-  for (const status of ['pending', 'rejected', 'suspended', 'removed']) {
+  for (const status of ['pending', 'rejected', 'suspended']) {
     assert.equal((await admin.from('memberships').update({ status }).eq('community_id', f.community.id).eq('user_id', f.carol.id)).error, null);
     assert.equal((await returnAction(f.carol, f.exchangeId, recorded.revision, 'confirm_return', { condition_matches: true })).error?.code, '42501');
     assert.deepEqual((await f.carol.client.from('item_returns').select('*').eq('exchange_id', f.exchangeId)).data, []);
@@ -79,6 +79,13 @@ test('Nonparticipants, administrators, inactive members and foreign accounts can
     assert.ok((await client.rpc('read_community_feed', { p_community_id: f.community.id })).error);
   }
   assert.equal((await f.carol.client.from('community_feed').select('id').eq('community_id', f.community.id)).data?.length, 1);
+  for (const status of ['removed']) {
+    assert.equal((await admin.from('memberships').update({ status }).eq('community_id', f.community.id).eq('user_id', f.carol.id)).error, null);
+    assert.equal((await returnAction(f.carol, f.exchangeId, recorded.revision, 'confirm_return', { condition_matches: true })).error?.code, '42501');
+    assert.deepEqual((await f.carol.client.from('item_returns').select('*').eq('exchange_id', f.exchangeId)).data, []);
+    assert.ok((await f.carol.client.storage.from('exchange-evidence').download(photo.object_path)).error);
+    assert.equal((await f.carol.client.rpc('read_community_feed', { p_community_id: f.community.id })).error?.code, '42501');
+  }
   receipt('issue-9-privacy-matrix', { receipts, console: 'no item_ rows', feed: feed.data });
 });
 

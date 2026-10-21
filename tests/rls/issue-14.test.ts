@@ -49,13 +49,13 @@ test('current membership and eligibility revoke every privileged read and mutati
   assert.equal((await submitVouch(f.sponsor, f.application.id, 'Stable statement.', intent)).error?.code, '42501');
   const revoked = await f.sponsor.client.rpc('vouch_workspace', { p_community_id: f.community.id });
   assert.deepEqual(revoked.data.applications, []); assert.equal(revoked.data.history.length, 1);
-  for (const status of ['suspended', 'removed', 'rejected', 'pending']) {
+  for (const status of ['suspended', 'rejected', 'pending', 'removed']) {
     await admin.from('memberships').update({ status }).eq('community_id', f.community.id).eq('user_id', f.sponsor.id).throwOnError();
     assert.deepEqual((await f.sponsor.client.from('vouches').select('*').eq('community_id', f.community.id)).data, []);
     assert.equal((await f.sponsor.client.rpc('vouch_workspace', { p_community_id: f.community.id })).error?.code, '42501');
     assert.equal((await submitVouch(f.sponsor, f.application.id, 'Stable statement.', intent)).error?.code, '42501');
   }
-  receipt('issue-14-rls-current-guards', { membershipStates: ['suspended', 'removed', 'rejected', 'pending'], deniedWithoutJwtRefresh: true });
+  receipt('issue-14-rls-current-guards', { membershipStates: ['suspended', 'rejected', 'pending', 'removed'], deniedWithoutJwtRefresh: true });
 });
 
 test('all command-owned rows deny direct client writes and anonymous command execution', async () => {
