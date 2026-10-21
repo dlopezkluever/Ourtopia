@@ -25,6 +25,7 @@ import { helpCompletionSchema, helpExchangeSchema, helpPostSchema } from '../../
 
 const { values } = parseArgs({ options: { issue: { type: 'string' }, base: { type: 'string' }, head: { type: 'string' }, pairs: { type: 'string', default: '10' } } });
 if (values.issue === '24') await verifyIssue24(values);
+else if (values.issue === '25') await verifyIssue25(values);
 else if (values.issue === '16') await verifyIssue16(values);
 else if (values.issue === '17') await verifyIssue17(values);
 else if (values.issue === '18') await verifyIssue18(values);
@@ -46,6 +47,80 @@ else if (values.issue === '3' || values.issue === '4' || values.issue === '5') a
 else await verifyIssue2(values);
 
 type PerfArguments = { issue?: string; base?: string; head?: string; pairs?: string };
+
+async function verifyIssue25(values: PerfArguments) {
+  const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+  assert.equal(values.head, head); assert.ok(values.base);
+  const base = values.base; const pairs = Number(values.pairs); assert.ok(Number.isInteger(pairs) && pairs >= 10);
+  assert.equal(execFileSync('git', ['diff', base, head, '--', 'package-lock.json'], { encoding: 'utf8' }), '');
+  const tree = execFileSync('git', ['ls-tree', '-r', '--name-only', base], { encoding: 'utf8' }).split('\n').filter(Boolean);
+  assert.ok(!tree.some(path => path.startsWith('src/features/pilot-metrics/')));
+  const evidence = `${process.env.EVIDENCE_DIR ?? '.pilot-evidence'}/perf`;
+  mkdirSync(evidence, { recursive: true });
+  const trunkRoot = resolve('.pilot-evidence', 'perf-trunk-25'); assert.ok(!existsSync(trunkRoot));
+  const samples: { pair: number; side: string; readinessMs: number; communityReadMs: number; metricsReadMs?: number; visibleMs?: number }[] = [];
+  const servers: ReturnType<typeof spawn>[] = [];
+  const port = Number(process.env.APP_PORT ?? 5173) + 12;
+  const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH ?? (process.platform === 'win32' ? 'C:/Program Files/Google/Chrome/Application/chrome.exe' : undefined) });
+  const persist = (result: unknown) => writeFileSync(`${evidence}/samples.json`, JSON.stringify({ head, base, pairs, samples, result, host: { cores: cpus().length, totalMemory: totalmem(), freeMemory: freemem(), loadAverage: loadavg() } }, null, 2));
+  async function serve(root: string, at: number) {
+    const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', root, '--host', '127.0.0.1', '--port', String(at), '--strictPort'], { stdio: 'ignore', windowsHide: true });
+    servers.push(server); const deadline = Date.now() + 60000;
+    while (Date.now() < deadline) {
+      assert.equal(server.exitCode, null);
+      if (await fetch(`http://127.0.0.1:${at}`).then(result => result.ok, () => false)) return;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    throw new Error('P25 probe exceeded 60-second startup budget.');
+  }
+  try {
+    for (const path of tree.filter(path => /^(src\/|vite.config.ts$|index.html$|package.json$)/.test(path))) {
+      const target = join(trunkRoot, path); mkdirSync(resolve(target, '..'), { recursive: true }); writeFileSync(target, execFileSync('git', ['show', `${base}:${path}`]));
+    }
+    copyFileSync('.env.local', join(trunkRoot, '.env.local'));
+    await serve(trunkRoot, port); await serve('.', port + 1);
+    for (let pair = 0; pair < pairs; pair++) {
+      const fixture = await membershipFixture(`perf25-${pair}`);
+      for (const [side, at] of [['trunk', port], ['head', port + 1]] satisfies [string, number][]) {
+        const context = await browser.newContext({ baseURL: `http://127.0.0.1:${at}`, viewport: { width: 1440, height: 1000 } });
+        try {
+          const page = await context.newPage(); await page.goto('/');
+          await page.getByLabel('Email address').fill(fixture.owner.email); await page.getByLabel('Password', { exact: true }).fill(password);
+          await page.getByRole('button', { name: 'Sign in', exact: true }).last().click();
+          const welcome = page.getByRole('heading', { name: `Welcome to ${fixture.community.name}.` }); await expect(welcome).toBeVisible();
+          const readyAt = performance.now(); await page.reload(); await expect(welcome).toBeVisible(); const readinessMs = performance.now() - readyAt;
+          const readAt = performance.now(); const community = await fixture.owner.client.from('communities').select('id,name').eq('id', fixture.community.id);
+          const communityReadMs = performance.now() - readAt; assert.equal(community.error, null); assert.equal(community.data?.[0]?.id, fixture.community.id);
+          if (side === 'trunk') samples.push({ pair, side, readinessMs, communityReadMs });
+          else {
+            const metricsAt = performance.now(); const metrics = await fixture.owner.client.rpc('read_pilot_metrics', { p_community_id: fixture.community.id });
+            const metricsReadMs = performance.now() - metricsAt; assert.equal(metrics.error, null);
+            const actionAt = performance.now(); await page.getByRole('link', { name: 'Pilot health and activity export' }).click();
+            await expect(page.getByRole('heading', { name: 'Pilot health' })).toBeVisible(); const visibleMs = performance.now() - actionAt;
+            samples.push({ pair, side, readinessMs, communityReadMs, metricsReadMs, visibleMs });
+          }
+          persist({ failures: 0 });
+        } finally { await context.close(); }
+      }
+    }
+    const median = (numbers: number[]) => { const sorted = [...numbers].sort((a, b) => a - b); return (sorted[Math.floor((sorted.length - 1) / 2)] + sorted[Math.floor(sorted.length / 2)]) / 2; };
+    const baseline = { readinessMs: median(samples.filter(row => row.side === 'trunk').map(row => row.readinessMs)), communityReadMs: median(samples.filter(row => row.side === 'trunk').map(row => row.communityReadMs)) };
+    const current = { readinessMs: median(samples.filter(row => row.side === 'head').map(row => row.readinessMs)), communityReadMs: median(samples.filter(row => row.side === 'head').map(row => row.communityReadMs)) };
+    const metricsReadMs = median(samples.filter(row => row.metricsReadMs !== undefined).map(row => row.metricsReadMs!));
+    const visibleMs = median(samples.filter(row => row.visibleMs !== undefined).map(row => row.visibleMs!));
+    const readinessBudget = Math.max(1.2 * baseline.readinessMs, baseline.readinessMs + 100);
+    const querySamples = samples.filter(row => row.metricsReadMs !== undefined).map(row => row.metricsReadMs!);
+    const sortedQueries = [...querySamples].sort((a, b) => a - b); const p95 = sortedQueries[Math.ceil(sortedQueries.length * .95) - 1];
+    const result = { baseline, head: current, readinessBudget, metricsReadMedianMs: metricsReadMs, metricsReadP95Ms: p95, visibleMedianMs: visibleMs, pass: current.readinessMs <= readinessBudget && metricsReadMs <= 3000 && p95 <= 3000 && visibleMs <= 2000 };
+    writeFileSync(`${evidence}/report.md`, `# Issue 25 performance\n\n- Head: ${head}\n- Base: ${base}\n- Paired runs: ${pairs}\n- Trunk metric route: absent at base; readiness and authorized Community read are compared on both sides.\n- Baseline: ${JSON.stringify(baseline)}\n- Head shared path: ${JSON.stringify(current)}\n- Head authorized metrics read median: ${metricsReadMs.toFixed(1)} ms\n- Head authorized metrics read p95: ${p95.toFixed(1)} ms\n- Metrics action to visible page median: ${visibleMs.toFixed(1)} ms\n- Limits: readiness ${readinessBudget.toFixed(1)} ms; metrics query 3000 ms; visible page 2000 ms.\n- Result: ${result.pass ? 'PASS' : 'FAIL'}\n`);
+    persist(result); assert.ok(result.pass, JSON.stringify(result));
+  } finally {
+    await browser.close();
+    for (const server of servers) if (server.exitCode === null) server.kill();
+    assert.equal(trunkRoot, resolve('.pilot-evidence', 'perf-trunk-25'));
+    if (existsSync(trunkRoot)) rmSync(trunkRoot, { recursive: true });
+  }
+}
 
 async function verifyIssue24(values: PerfArguments) {
   const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();

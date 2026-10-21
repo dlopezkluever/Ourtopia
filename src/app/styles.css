@@ -418,3 +418,21 @@ a.sidebar-nav { text-decoration: none; }
   .disciplinary-vote fieldset { display: grid; }
 }
 .moderation-reason textarea { display: block; width: 100%; min-height: 4rem; }
+.pilot-metrics { width: min(100% - 2rem, 64rem); margin: 2rem auto; min-width: 0; overflow-wrap: anywhere; }
+.pilot-metrics select, .pilot-metrics textarea, .pilot-metrics table { width: 100%; max-width: 100%; min-width: 0; }
+.pilot-metrics, .pilot-metrics * { min-width: 0; overflow-wrap: anywhere; }
+.pilot-metrics-header { display: grid; gap: .75rem; margin-bottom: 2rem; }
+.pilot-metrics-header h1, .pilot-metrics-header p { margin: 0; }
+.pilot-metrics-header .eyebrow { display: flex; align-items: center; gap: .45rem; }
+.pilot-metrics-header button { justify-self: start; display: inline-flex; align-items: center; gap: .5rem; min-height: 44px; }
+.pilot-metric-section { margin: 2rem 0; }
+.pilot-metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); gap: .75rem; margin: 1rem 0; }
+.pilot-metric-card { min-width: 0; padding: 1rem; border: 1px solid var(--border); border-radius: 12px; background: var(--card); }
+.pilot-metric-card dt { color: var(--muted-foreground, #62665f); }
+.pilot-metric-card dd { margin: .35rem 0 0; font-size: 1.8rem; font-weight: 700; }
+.pilot-simulated { padding: .9rem 1rem; border-left: 4px solid #986b35; background: #fff5df; }
+.pilot-milestones { padding-left: 1.25rem; }
+.pilot-milestones li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .4rem 1rem; padding: .6rem 0; border-bottom: 1px solid var(--border); }
+.pilot-metrics-footnote { margin: 2rem 0; color: var(--muted-foreground, #62665f); font-size: .9rem; }
+.pilot-metrics-link { display: inline-flex; align-items: center; min-height: 44px; margin: .5rem 0 1rem; padding: .5rem .75rem; border: 1px solid var(--border); border-radius: 8px; color: inherit; }
+@media (max-width: 640px) { .pilot-metrics { width: min(100% - 1.25rem, 64rem); } }
