@@ -114,7 +114,7 @@ begin
       ) b), '{}'::jsonb)
     ),
     'sources', jsonb_build_object(
-      'activeMembers', coalesce((select jsonb_agg(jsonb_build_object('id', m.user_id, 'status', m.role, 'createdAt', m.created_at) order by m.created_at, m.user_id) from public.memberships m where m.community_id = p_community_id and m.status = 'active'), '[]'::jsonb),
+      'activeMembers', coalesce((select jsonb_agg(jsonb_build_object('status', m.role, 'participantKey', left(encode(sha256(convert_to(p_community_id::text || ':' || m.user_id::text, 'UTF8')), 'hex'), 16), 'createdAt', m.created_at) order by m.created_at, m.user_id) from public.memberships m where m.community_id = p_community_id and m.status = 'active'), '[]'::jsonb),
       'invitations', coalesce((select jsonb_agg(jsonb_build_object('id', i.id, 'status', case when i.redeemed_at is null then 'issued' else 'redeemed' end, 'createdAt', i.created_at) order by i.created_at) from public.invites i where i.community_id = p_community_id), '[]'::jsonb),
       'applications', coalesce((select jsonb_agg(jsonb_build_object('id', a.id, 'status', a.status, 'createdAt', a.created_at) order by a.created_at) from public.membership_applications a where a.community_id = p_community_id), '[]'::jsonb),
       'itemListings', coalesce((select jsonb_agg(jsonb_build_object('id', l.id, 'status', l.status, 'createdAt', l.created_at) order by l.created_at) from public.listings l where l.community_id = p_community_id), '[]'::jsonb),

@@ -45,7 +45,7 @@ export const pilotMetricsSchema = z.object({
     statuses: z.record(z.string(), z.number().int().nonnegative()),
   }),
   sources: z.object({
-    activeMembers: sourceList,
+    activeMembers: z.array(sourceRecordSchema.extend({ status: z.string(), participantKey: z.string().regex(/^[0-9a-f]{16}$/) })),
     invitations: sourceList,
     applications: sourceList,
     itemListings: sourceList,

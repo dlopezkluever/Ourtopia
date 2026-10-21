@@ -31,6 +31,8 @@ test('pilot totals use persisted records and only verified completion facts', as
   assert.equal(metrics.sources.completedExchanges.length, 1);
   assert.equal(metrics.sources.exchanges.length, 6);
   assert.equal(metrics.sources.activeMembers.length, metrics.counts.activeMembers);
+  assert.ok(metrics.sources.activeMembers.every(row => !('id' in row)), 'active member sources carry only a pseudonymous key');
+  for (const member of [fixture.owner, fixture.alice, fixture.bob, fixture.carol]) assert.ok(!JSON.stringify(first.data).includes(member.id), 'raw member user ids are not exported');
   assert.equal(metrics.sources.testSubscriptions.length, metrics.counts.testSubscriptions);
   assert.equal(metrics.counts.itemListings, 1);
   assert.equal(metrics.counts.borrowRequestsApproved, 1);
