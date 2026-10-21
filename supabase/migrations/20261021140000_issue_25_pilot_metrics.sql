@@ -9,7 +9,9 @@ declare
   v_community public.communities;
   v_metrics jsonb;
 begin
-  perform public.require_current_membership(p_community_id, true);
+  if not public.is_community_administrator(p_community_id) then
+    raise exception using errcode = '42501', message = 'Community administration is required.';
+  end if;
 
   select c.* into v_community
   from public.communities c
