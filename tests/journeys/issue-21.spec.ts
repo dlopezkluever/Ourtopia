@@ -24,8 +24,24 @@ async function seedVote(f: Fixture, accusedId: string, voters: Member[], choices
   const event = await admin.from('community_events').insert({ community_id: f.community.id, actor_id: f.owner.id, kind: 'disciplinary_vote_opened', intent_id: intent }).select('id').single();
   if (event.error) throw event.error;
   const openedAt = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString();
-  const counts = { remove_votes: choices.filter(choice => choice === 'remove').length, retain_votes: choices.filter(choice => choice === 'retain').length };
-  const closed = state === 'open' ? { turnout: null, ...counts, closed_at: null } : { turnout: choices.length, ...counts, closed_at: new Date().toISOString() };
+  const removeVotes = choices.filter(choice => choice === 'remove').length;
+  const retainVotes = choices.filter(choice => choice === 'retain').length;
+  const closed = state === 'open'
+    ? { turnout: null, remove_votes: null, retain_votes: null, closed_at: null }
+    : {
+      turnout: choices.length,
+      remove_votes: removeVotes,
+      retain_votes: retainVotes,
+      closed_at: new Date().toISOString(),
+    };
+  if (state !== 'open') {
+    const passed = voters.length > 0
+      && choices.length >= Math.ceil(voters.length * 0.3)
+      && 3 * removeVotes >= 2 * choices.length;
+    if ((state === 'passed') !== passed) {
+      throw new Error(`Seed vote requested ${state} for ${voters.length} eligible voters and ${removeVotes}/${retainVotes} ballots.`);
+    }
+  }
   const vote = await admin.from('disciplinary_votes').insert({ community_id: f.community.id, accused_id: accusedId, opened_by: f.owner.id,
     reason: 'The member is alleged to have violated the Community safety rules.', opened_at: openedAt,
     closes_at: new Date(Date.parse(openedAt) + 7 * 24 * 60 * 60 * 1000).toISOString(), eligible_count: voters.length, event_id: event.data.id, state, ...closed,
@@ -63,7 +79,7 @@ test('lane 1 the delayed worker records a passed result at the seven-day deadlin
   await signIn(page, f.owner.email); await page.goto('/votes');
   await page.getByLabel('Administrator Community').selectOption(f.community.id);
   const closeButton = page.getByRole('button', { name: 'Record vote result' });
-  const recorded = page.getByRole('status').filter({ hasText: /Recorded result Passed\. Turnout 2\/2/ });
+  const recorded = page.getByRole('status').filter({ hasText: /Recorded result passed\. Turnout 2\/2/i });
   await expect(closeButton.or(recorded)).toBeVisible();
   if (await closeButton.isVisible()) await closeButton.click();
   await expect(recorded).toBeVisible();
@@ -95,7 +111,7 @@ test('lane 3 a separate administrator action enacts a passed result and preserve
   const before = (await admin.from('reputation_events').select('id').eq('recipient_id', f.bob.id)).data?.length;
   const obligationBefore = (await admin.from('exchanges').select('state').eq('id', f.exchangeId).single()).data?.state;
   await signIn(page, f.owner.email); await page.goto('/votes'); await page.getByLabel('Administrator Community').selectOption(f.community.id);
-  await expect(page.getByText(/Recorded result Passed/)).toBeVisible();
+  await expect(page.getByText(/Recorded result passed/i)).toBeVisible();
   await page.getByLabel('Reason for the separate removal action').fill('The administrator reviewed the passed vote.');
   await page.getByRole('button', { name: 'Enact voted removal' }).click();
   await expect(page.getByRole('status').filter({ hasText: 'The separate removal action was recorded.' })).toBeVisible();
@@ -113,7 +129,7 @@ test('an accused administrator sees no controls to close or enact their own remo
   const promoted = await admin.from('memberships').update({ role: 'administrator' }).eq('community_id', f.community.id).eq('user_id', f.bob.id);
   expect(promoted.error).toBeNull();
   await signIn(page, f.bob.email); await page.goto('/votes');
-  await expect(page.getByText(/Recorded result Passed/)).toBeVisible();
+  await expect(page.getByText(/Recorded result passed/i)).toBeVisible();
   await expect(page.getByRole('button', { name: 'Record vote result' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Enact voted removal' })).toHaveCount(0);
   await save(page, info, 11, { voteId, accusedAdministrator: true, ownVoteControlsHidden: true });
@@ -137,7 +153,7 @@ test('lane 5 later membership changes do not alter the frozen electorate or curr
   const opened = await admin.from('disciplinary_votes').select('id,eligible_count').eq('community_id', f.community.id).single();
   const late = await actor({ label: 'disciplinary-later-approval' });
   const invite = await issueInvite(f.owner, f.community.id, late.email); await decideApplication(f.owner, (await applyInvite(late, invite.id)).id);
-  expect((await admin.from('disciplinary_vote_electorate').select('voter_id').eq('vote_id', opened.data!.id)).data?.length).toBe(2);
+  expect((await admin.from('disciplinary_vote_electorate').select('voter_id').eq('vote_id', opened.data!.id)).data?.length).toBe(3);
   expect((await late.client.rpc('cast_disciplinary_ballot', { p_intent_id: randomUUID(), p_vote_id: opened.data!.id, p_choice: 'remove' })).error?.code).toBe('42501');
   await f.owner.client.rpc('moderate_membership', { p_intent_id: randomUUID(), p_community_id: f.community.id, p_user_id: f.alice.id, p_action: 'suspend', p_reason: 'Current authorization changed.' });
   expect((await f.alice.client.rpc('cast_disciplinary_ballot', { p_intent_id: randomUUID(), p_vote_id: opened.data!.id, p_choice: 'remove' })).error?.code).toBe('42501');
@@ -166,7 +182,7 @@ test('lane 7 a ballot submitted after deadline closure is rejected even when wor
   expect((await f.alice.client.rpc('cast_disciplinary_ballot', { p_intent_id: randomUUID(), p_vote_id: voteId, p_choice: 'remove' })).error?.code).toBe('42501');
   await signIn(page, f.owner.email); await page.goto('/votes'); await page.getByLabel('Administrator Community').selectOption(f.community.id);
   const closeButton = page.getByRole('button', { name: 'Record vote result' });
-  const recorded = page.getByText(/Recorded result Failed/);
+  const recorded = page.getByText(/Recorded result failed/i);
   await expect(closeButton.or(recorded)).toBeVisible();
   if (await closeButton.isVisible()) await closeButton.click();
   await expect(recorded).toBeVisible();

@@ -31,7 +31,8 @@ function VoteCard({ vote, userId, isAdmin, refresh }: { vote: DisciplinaryVote; 
     <section><h3>Submitted evidence</h3>{vote.evidence.map(item => <p key={item.id}>{item.body} <time dateTime={item.created_at}>{new Date(item.created_at).toLocaleString()}</time></p>)}</section>
     <section><h3>Accused member response</h3>{vote.responses.map(item => <p key={item.id}>{item.body} <time dateTime={item.created_at}>{new Date(item.created_at).toLocaleString()}</time></p>)}
       {responseAllowed && <form onSubmit={event => { event.preventDefault(); void act(() => respond(userId, vote.id, responseBody.trim()), 'Your response was submitted.'); }}>
-        <label>Your response<textarea required maxLength={4000} value={responseBody} onChange={event => setResponseBody(event.target.value)}/></label>
+        <label htmlFor={`response-${vote.id}`}>Your response</label>
+        <textarea id={`response-${vote.id}`} required maxLength={4000} value={responseBody} onChange={event => setResponseBody(event.target.value)}/>
         <button className="primary-button" disabled={busy || !responseBody.trim()}>Submit response</button>
       </form>}
     </section>
@@ -41,7 +42,8 @@ function VoteCard({ vote, userId, isAdmin, refresh }: { vote: DisciplinaryVote; 
     {vote.my_ballot && <p role="status">Your ballot is recorded. It cannot be changed.</p>}
     {isAdmin && userId !== vote.accused_id && vote.can_close && <button className="secondary-button" disabled={busy} onClick={() => void act(() => closeVote(userId, vote.id), 'The recorded result is available.')}>Record vote result</button>}
     {isAdmin && userId !== vote.accused_id && vote.state === 'passed' && <form onSubmit={event => { event.preventDefault(); void act(() => enactRemoval(userId, vote.id, removalReason.trim()), 'The separate removal action was recorded.'); }}>
-      <label>Reason for the separate removal action<textarea required maxLength={1000} value={removalReason} onChange={event => setRemovalReason(event.target.value)}/></label>
+      <label htmlFor={`removal-reason-${vote.id}`}>Reason for the separate removal action</label>
+      <textarea id={`removal-reason-${vote.id}`} required maxLength={1000} value={removalReason} onChange={event => setRemovalReason(event.target.value)}/>
       <button className="secondary-button" disabled={busy || !removalReason.trim()}>Enact voted removal</button>
     </form>}
     {error && <p role="alert">{error}</p>}{notice && <p role="status">{notice}</p>}
@@ -109,8 +111,10 @@ export function DisciplinaryVotesPage({ userId }: { userId: string }) {
     {isAdmin && <form className="disciplinary-vote-form" onSubmit={event => void createVote(event)}>
       <h2>Open a seven-day removal vote</h2>
       <label>Accused member<select required value={accusedId} onChange={event => setAccusedId(event.target.value)}><option value="">Choose a member</option>{members.filter(member => member.user_id !== userId).map(member => <option key={member.user_id} value={member.user_id}>{member.email} · {member.status}</option>)}</select></label>
-      <label>Reason<textarea required maxLength={1000} value={reason} onChange={event => setReason(event.target.value)}/></label>
-      <label>Submitted evidence<textarea required maxLength={4000} value={evidence} onChange={event => setEvidence(event.target.value)}/></label>
+      <label htmlFor="disciplinary-reason">Reason</label>
+      <textarea id="disciplinary-reason" required maxLength={1000} value={reason} onChange={event => setReason(event.target.value)}/>
+      <label htmlFor="disciplinary-evidence">Submitted evidence</label>
+      <textarea id="disciplinary-evidence" required maxLength={4000} value={evidence} onChange={event => setEvidence(event.target.value)}/>
       <p>Votes close exactly seven days after opening. The server enforces the deadline in UTC.</p>
       <button className="primary-button" disabled={busy || !accusedId || !reason.trim() || !evidence.trim()}>Open removal vote</button>
     </form>}
