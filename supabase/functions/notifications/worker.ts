@@ -54,6 +54,10 @@ const subjects: Record<string, string> = {
   item_stalled_review_decided: 'An administrator recorded the outcome of a stalled Return review',
   help_stalled_review_decided: 'An administrator recorded the outcome of a stalled Help Exchange review',
   item_stalled_recovery_recorded: 'An administrator recorded recovery of a stalled item loan',
+  disciplinary_vote_opened: 'A seven-day Community removal vote is open',
+  disciplinary_vote_ending_soon: 'A Community removal vote closes in 24 hours',
+  disciplinary_vote_response: 'The accused member submitted a response to a removal vote',
+  disciplinary_vote_closed: 'A Community removal vote has a recorded result',
 };
 
 export async function deliverOne(backend: DeliveryBackend, sendEmail: EmailSender, outboxId?: string) {
@@ -71,7 +75,7 @@ export async function deliverOne(backend: DeliveryBackend, sendEmail: EmailSende
     if (item.channel === 'email') await sendEmail({
       to: item.recipient_email,
       subject: subjects[item.kind] ?? 'You have an Ourtopia notification',
-      text: item.kind === 'item_need_responded' ? 'Sign in to Ourtopia and open Community requests to review the offered Listing and send a separate Borrow Request.' : item.kind === 'exchange_thank_you' ? 'Sign in to Ourtopia and open your Community profile to read the thank-you.' : item.kind.startsWith('item_dispute_') ? 'Sign in to Ourtopia and open Exchange issues to review the case.' : item.kind.startsWith('item_') ? 'Sign in to Ourtopia and open Handoffs to view the current schedule and status.' : item.kind.startsWith('help_') ? 'Sign in to Ourtopia to view the current status of your help Exchange.' : item.kind.startsWith('borrow_') ? 'Sign in to Ourtopia and open Borrow Requests to view the current status.' : 'Sign in to Ourtopia to view your notification and current status.',
+      text: item.kind === 'item_need_responded' ? 'Sign in to Ourtopia and open Community requests to review the offered Listing and send a separate Borrow Request.' : item.kind === 'exchange_thank_you' ? 'Sign in to Ourtopia and open your Community profile to read the thank-you.' : item.kind.startsWith('item_dispute_') ? 'Sign in to Ourtopia and open Exchange issues to review the case.' : item.kind.startsWith('disciplinary_vote_') ? 'Sign in to Ourtopia and open Disciplinary votes to review the allegation, response, ballot or recorded result available to you.' : item.kind.startsWith('item_') ? 'Sign in to Ourtopia and open Handoffs to view the current schedule and status.' : item.kind.startsWith('help_') ? 'Sign in to Ourtopia to view the current status of your help Exchange.' : item.kind.startsWith('borrow_') ? 'Sign in to Ourtopia and open Borrow Requests to view the current status.' : 'Sign in to Ourtopia to view your notification and current status.',
       idempotencyKey: item.id,
     });
   } catch {

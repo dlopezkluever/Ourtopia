@@ -30,6 +30,7 @@ else if (values.issue === '17') await verifyIssue17(values);
 else if (values.issue === '18') await verifyIssue18(values);
 else if (values.issue === '19') await verifyIssue19(values);
 else if (values.issue === '20') await verifyIssue20(values);
+else if (values.issue === '21') await verifyIssue21(values);
 else if (values.issue === '8') await verifyIssue8(values);
 else if (values.issue === '9') await verifyIssue9(values);
 else if (values.issue === '11') await verifyIssue11(values);
@@ -1840,6 +1841,81 @@ async function verifyIssue20(values: PerfArguments) {
     const checks = { readiness: current.readinessMedianMs <= Math.max(1.2 * baseline.readinessMedianMs, baseline.readinessMedianMs + 100), read: current.queryMedianMs <= Math.max(1.2 * baseline.queryMedianMs, baseline.queryMedianMs + 100), command: added.commandMedianMs <= 1000, visible: added.visibleMedianMs <= 2000, query: queryP95Ms <= 3000, startup: Object.values(startup).every(v => v <= 60000) };
     persist({ failures: 0, baseline, head: current, added, queryP95Ms, checks });
     writeFileSync(`${directory}/report.md`, `P20 at ${head}.\n\n${pairs} interleaved trunk/head pairs against ${base}. Trunk has no moderation action, so both sides use the shared readiness and authorized obligation read as Bob. Head additionally measures the guarded moderate_membership command, the affected member's restriction notice, and a fresh administrator roster read.\n\nTrunk readiness median ${baseline.readinessMedianMs.toFixed(0)} ms; head ${current.readinessMedianMs.toFixed(0)} ms. Command median ${added.commandMedianMs.toFixed(0)} ms; visible median ${added.visibleMedianMs.toFixed(0)} ms; query p95 ${queryP95Ms.toFixed(0)} ms.\n\nChecks: ${JSON.stringify(checks)}\n`);
+    assert.ok(Object.values(checks).every(Boolean), JSON.stringify(checks)); process.stdout.write(`${JSON.stringify({ baseline, head: current, added, queryP95Ms, checks })}\n`);
+  } catch (error) { persist({ error: error instanceof Error ? error.message : String(error) }); throw error; }
+  finally {
+    await browser.close(); await Promise.all(servers.map(server => new Promise<void>(done => { if (server.exitCode !== null) done(); else { server.once('exit', () => done()); server.kill(); } })));
+    if (existsSync(trunkRoot)) rmSync(trunkRoot, { recursive: true });
+  }
+}
+
+async function verifyIssue21(values: PerfArguments) {
+  const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+  assert.equal(values.head, head); assert.equal(values.base, 'ee1b3e1140aa0985b9405de57bfc806f5940ceb4');
+  const base = values.base; const pairs = Number(values.pairs); assert.ok(Number.isInteger(pairs) && pairs >= 10);
+  const tree = execFileSync('git', ['ls-tree', '-r', '--name-only', base], { encoding: 'utf8' }).split('\n');
+  assert.ok(!tree.some(path => path.startsWith('src/features/disciplinary-votes/')), 'The source baseline must lack disciplinary votes.');
+  assert.equal(execFileSync('git', ['diff', base, head, '--', 'package-lock.json'], { encoding: 'utf8' }), '');
+  const directory = `${process.env.EVIDENCE_DIR ?? '.pilot-evidence'}/perf`; mkdirSync(directory, { recursive: true });
+  const trunkRoot = resolve('.pilot-evidence', 'perf-trunk-21'); assert.ok(!existsSync(trunkRoot));
+  const samples: { index: number; side: string; readinessMs: number; queryMs: number }[] = [];
+  const actions: { index: number; commandMs: number; visibleMs: number; queryMs: number; voteId: string }[] = [];
+  const servers: ReturnType<typeof spawn>[] = []; const startup: Record<string, number> = {};
+  const port = Number(process.env.APP_PORT ?? 5173) + 1;
+  const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH ?? (process.platform === 'win32' ? 'C:/Program Files/Google/Chrome/Application/chrome.exe' : undefined) });
+  const persist = (result: unknown) => writeFileSync(`${directory}/samples.json`, JSON.stringify({ head, base, pairs, samples, actions, startup, host: { cores: cpus().length, totalMemory: totalmem(), freeMemory: freemem(), loadAverage: loadavg() }, result }, null, 2));
+  async function serve(side: string, root: string, at: number) {
+    const started = performance.now();
+    const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', root, '--host', '127.0.0.1', '--port', String(at), '--strictPort'], { stdio: 'ignore', windowsHide: true }); servers.push(server);
+    const deadline = Date.now() + 60000;
+    while (Date.now() < deadline) {
+      if (server.exitCode !== null) throw new Error(`${side} exited ${server.exitCode}`);
+      if (await fetch(`http://127.0.0.1:${at}`).then(response => response.ok, () => false)) { startup[side] = performance.now() - started; return; }
+      await new Promise(done => setTimeout(done, 100));
+    }
+    throw new Error(`${side} exceeded 60-second startup budget`);
+  }
+  try {
+    for (const file of tree.filter(path => /^(src\/|vite.config.ts$|index.html$|package.json$)/.test(path))) {
+      const target = join(trunkRoot, file); mkdirSync(resolve(target, '..'), { recursive: true }); writeFileSync(target, execFileSync('git', ['show', `${base}:${file}`]));
+    }
+    copyFileSync('.env.local', join(trunkRoot, '.env.local'));
+    await serve('trunk', trunkRoot, port); await serve('head', '.', port + 1);
+    for (let index = 0; index < pairs; index++) {
+      const f = await handoffFixture(`perf21-${index}`);
+      for (const [side, at] of [['trunk', port], ['head', port + 1]] satisfies [string, number][]) {
+        const context = await browser.newContext({ baseURL: `http://127.0.0.1:${at}`, viewport: { width: 1440, height: 1000 } });
+        try {
+          const page = await context.newPage(); await page.goto('/'); await page.getByLabel('Email address').fill(f.bob.email); await page.getByLabel('Password', { exact: true }).fill(password);
+          await page.getByRole('button', { name: 'Sign in', exact: true }).last().click();
+          const home = page.getByRole('heading', { name: `Welcome to ${f.community.name}.` }); await expect(home).toBeVisible();
+          const readyAt = performance.now(); await page.reload(); await expect(home).toBeVisible(); const readinessMs = performance.now() - readyAt;
+          const readAt = performance.now(); const read = await f.bob.client.rpc('read_item_handoff', { p_exchange_id: f.exchangeId }); const queryMs = performance.now() - readAt;
+          assert.equal(read.error, null); samples.push({ index, side, readinessMs, queryMs }); persist({ failures: 0, phase: 'paired readiness and authorized persisted read' });
+          if (side === 'head') {
+            await page.getByRole('button', { name: 'Sign out' }).click(); await page.getByLabel('Email address').fill(f.owner.email); await page.getByLabel('Password', { exact: true }).fill(password);
+            await page.getByRole('button', { name: 'Sign in', exact: true }).last().click(); await page.getByRole('button', { name: 'Sign out' }).waitFor(); await page.goto('/votes');
+            await page.getByLabel('Administrator Community').selectOption(f.community.id); await page.getByLabel('Accused member').selectOption(f.bob.id);
+            await page.getByLabel('Reason', { exact: true }).fill('Performance comparison vote.'); await page.getByLabel('Submitted evidence').fill('Performance sample evidence.');
+            const visibleAt = performance.now();
+            const response = page.waitForResponse(item => item.url().includes('/rest/v1/rpc/open_disciplinary_vote') && item.request().method() === 'POST');
+            const commandAt = performance.now(); await page.getByRole('button', { name: 'Open removal vote' }).click();
+            await expect(page.getByRole('status').filter({ hasText: 'The seven-day vote is open.' })).toBeVisible(); const visibleMs = performance.now() - visibleAt;
+            const commandResponse = await response; assert.equal(commandResponse.ok(), true); const commandMs = performance.now() - commandAt;
+            const durableAt = performance.now(); const durable = await admin.from('disciplinary_votes').select('id,state,eligible_count,closes_at').eq('community_id', f.community.id).single(); const durableQueryMs = performance.now() - durableAt;
+            assert.equal(durable.error, null); assert.equal(durable.data.state, 'open');
+            actions.push({ index, commandMs, visibleMs, queryMs: durableQueryMs, voteId: durable.data.id }); persist({ failures: 0, phase: 'vote opened and durably re-read' });
+          }
+        } finally { await context.close(); }
+      }
+    }
+    const median = (values: number[]) => { const sorted = [...values].sort((a, b) => a - b); const middle = Math.floor(sorted.length / 2); return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2; };
+    const summary = (side: string) => ({ readinessMedianMs: median(samples.filter(sample => sample.side === side).map(sample => sample.readinessMs)), queryMedianMs: median(samples.filter(sample => sample.side === side).map(sample => sample.queryMs)) });
+    const baseline = summary('trunk'); const current = summary('head'); const added = { commandMedianMs: median(actions.map(action => action.commandMs)), visibleMedianMs: median(actions.map(action => action.visibleMs)) };
+    const querySamples = [...samples.filter(sample => sample.side === 'head').map(sample => sample.queryMs), ...actions.map(action => action.queryMs)].sort((a, b) => a - b); const queryP95Ms = querySamples[Math.ceil(querySamples.length * 0.95) - 1];
+    const checks = { readiness: current.readinessMedianMs <= Math.max(1.2 * baseline.readinessMedianMs, baseline.readinessMedianMs + 100), read: current.queryMedianMs <= Math.max(1.2 * baseline.queryMedianMs, baseline.queryMedianMs + 100), command: added.commandMedianMs <= 1000, visible: added.visibleMedianMs <= 2000, query: queryP95Ms <= 3000, startup: Object.values(startup).every(value => value <= 60000) };
+    persist({ failures: 0, baseline, head: current, added, queryP95Ms, checks });
+    writeFileSync(`${directory}/report.md`, `P21 at ${head}.\n\n${pairs} interleaved trunk/head pairs against ${base}. Trunk predates disciplinary votes, so both sides use the same authenticated Community readiness and persisted Handoff read. Head additionally measures the vote opening command, visible confirmation and a fresh persisted vote read.\n\nTrunk ${JSON.stringify(baseline)}. Head ${JSON.stringify(current)}. Added ${JSON.stringify(added)}. Query p95 ${queryP95Ms} ms. Checks ${JSON.stringify(checks)}.\n\nNo email provider wait is timed. The vote notice is enqueued in the opening transaction and delivered after commit. Raw samples are in samples.json.\n`);
     assert.ok(Object.values(checks).every(Boolean), JSON.stringify(checks)); process.stdout.write(`${JSON.stringify({ baseline, head: current, added, queryP95Ms, checks })}\n`);
   } catch (error) { persist({ error: error instanceof Error ? error.message : String(error) }); throw error; }
   finally {
