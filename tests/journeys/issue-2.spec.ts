@@ -382,6 +382,8 @@ test('lane 10 mobile touch and desktop keyboard registration and home are usable
   await page.keyboard.press('Enter');
   await expect(page.getByRole('heading', { name: 'Welcome to Accessible Together.' })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  // Community home can return to its loading state after a membership realtime event; wait for the settled member label first.
+  await expect(page.locator('main')).toContainText('Administrator · Active member', { timeout: 30000 });
   const accessibility = await page.locator('main').ariaSnapshot();
   expect(accessibility).toContain('Administrator · Active member');
   await capture(page, info, 10);

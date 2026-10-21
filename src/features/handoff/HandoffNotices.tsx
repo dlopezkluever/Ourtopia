@@ -17,6 +17,8 @@ const messages: Record<string, string> = {
   item_returned: 'Both participants confirmed the Return.',
   item_completed: 'Your loan is complete. Your standing and history are updated.',
   item_return_review_queued: 'A stalled Return was sent to administrator review. It stays incomplete.',
+  item_stalled_review_decided: 'An administrator recorded the outcome of a stalled Return review.',
+  item_stalled_recovery_recorded: 'An administrator recorded recovery of a stalled item loan.',
 };
 export function HandoffNotices({ userId }: { userId: string }) {
   const [state] = useBorrowingRead(userId, 'handoff-notices', async () => {
