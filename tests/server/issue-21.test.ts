@@ -30,12 +30,12 @@ test('Opening freezes active voters, records evidence and deadline, and supports
   assert.equal(opened.error, null);
   const result = opened.data as { vote_id: string; opened_at: string; closes_at: string; eligible_count: number };
   assert.equal(Date.parse(result.closes_at) - Date.parse(result.opened_at), 7 * 24 * 60 * 60 * 1000);
-  assert.equal(result.eligible_count, 2);
+  assert.equal(result.eligible_count, 3);
   assert.deepEqual((await openVote(f.owner, f.community.id, f.bob.id, 'Repeated harassment.', 'Three dated reports were reviewed.', intent)).data, opened.data);
   assert.equal((await openVote(f.owner, f.community.id, f.bob.id, 'Changed reason.', 'Three dated reports were reviewed.', intent)).error?.code, '23505');
   const electorate = await admin.from('disciplinary_vote_electorate').select('voter_id').eq('vote_id', result.vote_id).order('voter_id');
   assert.equal(electorate.error, null);
-  assert.deepEqual(electorate.data?.map(row => row.voter_id).sort(), [f.alice.id, f.owner.id].sort());
+  assert.deepEqual(electorate.data?.map(row => row.voter_id).sort(), [f.alice.id, f.carol.id, f.owner.id].sort());
   const evidence = await f.alice.client.from('disciplinary_vote_evidence').select('body').eq('vote_id', result.vote_id);
   assert.deepEqual(evidence.data, [{ body: 'Three dated reports were reviewed.' }]);
 
