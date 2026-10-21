@@ -13,6 +13,6 @@ export function ReviewQueue({ userId }: { userId: string }) {
     <p>Stalled Returns wait here in their current state. Silence never completes an Exchange or grants points. Return condition, photos and logistics stay with the two participants.</p>
     {state.status === 'loading' ? <p role="status">Opening review queue...</p> : state.status === 'denied' ? <p role="alert">Review queue unavailable.</p>
       : state.data.length === 0 ? <p>No Exchanges are waiting for review.</p>
-      : <ul>{state.data.map(item => <li key={item.id}><strong>{reviewReasons[item.reason]}</strong> · {item.communities?.name ?? 'Community'} · queued <time dateTime={item.queued_at}>{localDeadline(item.queued_at)}</time></li>)}</ul>}
+      : <ul>{state.data.map(item => <li key={item.id}><a href={`/stalled/case/${item.exchange_id}`}><strong>{reviewReasons[item.reason]}</strong></a> ·{item.communities?.name ?? 'Community'} · queued <time dateTime={item.queued_at}>{localDeadline(item.queued_at)}</time></li>)}</ul>}
     <button className="text-button" onClick={refresh}>Refresh review queue</button></section>;
 }

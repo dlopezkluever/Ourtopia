@@ -10,6 +10,9 @@ export const noticeKinds: Record<string, { label: string; message: string }> = {
   borrow_expired: { label: 'Item approval expired', message: 'An item approval expired without acknowledgment. The reserved dates were released.' },
   vouch_requested: { label: 'Vouch request', message: 'An applicant requested your Vouch. Review their pending application in Vouches.' },
   vouch_submitted: { label: 'Vouch statement', message: 'A Vouch statement is ready to read in Vouches. Membership still requires separate approval.' },
+  item_stalled_review_decided: { label: 'Stalled Return decision', message: 'An administrator recorded the outcome of a stalled Return review.' },
+  help_stalled_review_decided: { label: 'Stalled Help decision', message: 'An administrator recorded the outcome of a stalled Help Exchange review.' },
+  item_stalled_recovery_recorded: { label: 'Item recovery recorded', message: 'An administrator recorded recovery of a stalled item loan.' },
   misconduct_verified: { label: 'Verified standing change', message: 'A verified standing change was recorded. Its reason is in your history.' },
   reputation_corrected: { label: 'Standing correction', message: 'A verified standing change was corrected. The original stays in your history with the linked correction.' },
 };
