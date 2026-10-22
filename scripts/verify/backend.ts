@@ -17,20 +17,23 @@ for (const file of ['.env.local', '.env.test.local']) {
 }
 const config = z.object({
   url: z.url(), anon: z.string().min(20), service: z.string().min(20),
-  mailbox: z.url(), secret: z.string().min(20),
+  mailbox: z.url(), secret: z.string().optional(),
 }).parse({
-  url: process.env.VITE_SUPABASE_URL,
-  anon: process.env.VITE_SUPABASE_ANON_KEY,
-  service: process.env.SUPABASE_SERVICE_ROLE_KEY,
+  url: process.env.PILOT_SUPABASE_URL ?? process.env.VITE_SUPABASE_URL,
+  anon: process.env.PILOT_ANON_KEY ?? process.env.VITE_SUPABASE_ANON_KEY,
+  service: process.env.PILOT_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY,
   mailbox: process.env.TEST_MAILBOX_URL ?? `http://127.0.0.1:${/\[local_smtp\][\s\S]*?^port\s*=\s*(\d+)/m.exec(readFileSync('supabase/config.toml', 'utf8'))?.[1]}`,
-  secret: process.env.TEST_JWT_SECRET,
+  secret: process.env.PILOT_JWT_SECRET ?? process.env.TEST_JWT_SECRET,
 });
-if (!['localhost', '127.0.0.1'].includes(new URL(config.url).hostname)) throw new Error('Verification requires a disposable local backend.');
+const pilotUrl = process.env.PILOT_SUPABASE_URL;
+if (pilotUrl && config.url !== pilotUrl) throw new Error('Pilot backend URL must match PILOT_SUPABASE_URL.');
+if (pilotUrl && new URL(pilotUrl).protocol !== 'https:') throw new Error('PILOT_SUPABASE_URL must use HTTPS.');
+if (!pilotUrl && !['localhost', '127.0.0.1'].includes(new URL(config.url).hostname)) throw new Error('Remote verification requires explicit PILOT_SUPABASE_URL.');
 const laneConfig = readFileSync('supabase/config.toml', 'utf8');
 const laneProject = /^project_id\s*=\s*"([^"]+)"/m.exec(laneConfig)?.[1];
 const laneApiPort = /\[api\][\s\S]*?^port\s*=\s*(\d+)/m.exec(laneConfig)?.[1];
 const laneInboxPort = /\[local_smtp\][\s\S]*?^port\s*=\s*(\d+)/m.exec(laneConfig)?.[1];
-if (!/^ourtopia-issue-\d+$/.test(laneProject ?? '') || new URL(config.url).port !== laneApiPort || new URL(config.mailbox).port !== laneInboxPort) throw new Error('Verification environment must match this disposable lane config.');
+if (!pilotUrl && (!/^ourtopia-issue-\d+$/.test(laneProject ?? '') || new URL(config.url).port !== laneApiPort || new URL(config.mailbox).port !== laneInboxPort)) throw new Error('Verification environment must match this disposable lane config.');
 
 export const backendUrl = config.url;
 export const anonKey = config.anon;
@@ -38,6 +41,7 @@ const options = { auth: { persistSession: false, autoRefreshToken: false, detect
 export const admin = createClient(config.url, config.service, options);
 export function publicClient() { return createClient(config.url, config.anon, options); }
 export function stripeWorker() {
+  if (!config.secret) throw new Error('Stripe worker tests require PILOT_JWT_SECRET or TEST_JWT_SECRET.');
   const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url');
   const payload = `${encode({ alg: 'HS256', typ: 'JWT' })}.${encode({ role: 'stripe_worker', iss: `${config.url}/auth/v1`, exp: Math.floor(Date.now() / 1000) + 3600 })}`;
   const token = `${payload}.${createHmac('sha256', config.secret).update(payload).digest('base64url')}`;
@@ -54,6 +58,7 @@ export async function actor({ verified = true, label = 'actor' } = {}) {
     const { error } = await client.auth.signInWithPassword({ email, password });
     if (error) throw error;
   } else {
+    if (!config.secret) throw new Error('Unverified actor tests require PILOT_JWT_SECRET or TEST_JWT_SECRET.');
     const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url');
     const body = `${encode({ alg: 'HS256', typ: 'JWT' })}.${encode({ sub: data.user.id, role: 'authenticated', aud: 'authenticated', iss: `${config.url}/auth/v1`, exp: Math.floor(Date.now() / 1000) + 3600, email, email_confirmed_at: new Date().toISOString() })}`;
     const token = `${body}.${createHmac('sha256', config.secret).update(body).digest('base64url')}`;
