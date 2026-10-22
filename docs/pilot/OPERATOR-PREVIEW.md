@@ -85,14 +85,14 @@ Expected output: each source migration is recorded as applied and the remote mig
 Set the variables from [the deployment configuration](DEPLOYMENT.md) in Supabase Function secrets. Use test-mode Stripe values and a verified email sender. The service-role key and provider keys must not enter GitHub workflow inputs or the static host.
 
 ```powershell
-npx supabase secrets set --project-ref $env:SUPABASE_PROJECT_REF --env-file deployment/pilot.secrets.env
+npx supabase secrets set --project-ref $env:SUPABASE_PROJECT_REF --env-file deployment/.env.pilot-secrets
 npx supabase functions deploy due-work --project-ref $env:SUPABASE_PROJECT_REF
 npx supabase functions deploy notifications --project-ref $env:SUPABASE_PROJECT_REF
 npx supabase functions deploy stripe-checkout --project-ref $env:SUPABASE_PROJECT_REF
-npx supabase functions deploy stripe-webhook --project-ref $env:SUPABASE_PROJECT_REF
+npx supabase functions deploy stripe-webhook --no-verify-jwt --project-ref $env:SUPABASE_PROJECT_REF
 ```
 
-Expected output: four successful deployments. `deployment/pilot.secrets.env` is a local ignored file created by the operator. Never commit it. Configure the notification URL and token in Supabase Vault and confirm the scheduled notification dispatcher can reach `due-work`.
+Expected output: four successful deployments. `--no-verify-jwt` applies to `stripe-webhook` only, because Stripe authenticates with its own `Stripe-Signature` header and the handler verifies the raw body; the other three keep gateway JWT verification. `deployment/.env.pilot-secrets` is a local ignored file created by the operator. Never commit it. Configure the notification URL and token in Supabase Vault and confirm the scheduled notification dispatcher can reach `due-work`.
 
 ## 6. Configure Auth, Storage, Realtime, and Cron
 
@@ -133,6 +133,12 @@ Expected output: `app`, `pwa manifest`, and `Supabase Auth settings` all report 
 Use the product UI with the operator's verified Alice account to create `Richmond Mutual Aid Collective`. Invite Bob. Bob verifies his own account and requests membership. Alice approves him. Create no fake members or Exchanges. Run the configured mobile and desktop acceptance workflow against the final HTTPS URL and save access-controlled traces and sanitized persisted-state receipts.
 
 Expected output: real records identify the Community and both memberships, and the end-to-end journey receipt agrees with the records. The issue remains open until this live evidence exists and receives independent review.
+
+## Authorization points
+
+Before any shared write, the operator explicitly approves the target project, the migration push, Function deployment, the email-provider connection, static hosting and domain configuration, and Stripe TEST-mode account actions. Values are entered directly into provider interfaces, never sent in chat or committed. Record the approval in the program's `gates.md` before deployment or shared migration.
+
+Separate approval is required before the live HTTPS lanes that create accounts or records, real email delivery, a Stripe TEST checkout and webhook drill, or the screen-reader pass. Hosted Supabase must have `pg_cron`, `vault`, `pg_net` and `pgcrypto` enabled before the migration push. Take a recoverable backup before the first push. Run the identical `tests/journeys/issue-26.spec.ts` lanes with `PILOT_BASE_URL` set; they create accounts, so use only a dedicated pilot project and test-only identities, never the real Community's data.
 
 ## Recovery
 

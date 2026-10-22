@@ -2,6 +2,8 @@
 
 This is a static PWA connected to Supabase. The pilot deployment has not been created. The operator must supply the account, project, domain, and provider credentials listed in [the operator preview](OPERATOR-PREVIEW.md).
 
+The ordered, code-referenced runbook and the full environment-variable inventory are in [deployment/README.md](../../deployment/README.md).
+
 ## Hosting choice
 
 Use Cloudflare Pages for the static `dist/` output. The app has no server-side rendering or Pages Functions requirement. Pages supports Git-backed builds, preview deployments, deployment rollback, and Free plan limits suitable for a one-Community pilot. Its managed hostname provides HTTPS. A custom hostname needs DNS and certificate setup. This choice is reversible because the app is a static Vite build and its Supabase connection is configured at build time. [Cloudflare Pages limits](https://developers.cloudflare.com/pages/platform/limits/) [Cloudflare Pages overview](https://developers.cloudflare.com/pages/)
@@ -50,7 +52,7 @@ Deploy these existing Supabase Edge Functions:
 - `stripe-checkout`
 - `stripe-webhook`
 
-Configure the secrets from the Edge Function row above. `due-work` and `notifications` use the service-role secret for server-to-server calls. Set the notification dispatcher Vault values `notification_worker_url` and `notification_worker_token` to the deployed `due-work` HTTPS URL and its bearer credential. Keep both values in Supabase Vault.
+Deploy `stripe-webhook` with `--no-verify-jwt` (Stripe authenticates by `Stripe-Signature`; the handler verifies the raw body) and keep gateway JWT verification on the other three. Configure the secrets from the Edge Function row above. `due-work` and `notifications` use the service-role secret for server-to-server calls. Set the notification dispatcher Vault values `notification_worker_url` and `notification_worker_token` to the deployed `due-work` HTTPS URL and its bearer credential. Keep both values in Supabase Vault.
 
 Configure the email provider with a verified sender in `EMAIL_FROM`. Send through the existing `notifications` function. Preserve its durable outbox retry and idempotency behavior. A provider success means the provider accepted the message, not that the recipient read it.
 
@@ -60,7 +62,7 @@ Configure a Stripe **test-mode** webhook at:
 https://PROJECT_REF.supabase.co/functions/v1/stripe-webhook
 ```
 
-Subscribe only to `customer.subscription.created`, `customer.subscription.updated`, and `customer.subscription.deleted`. Store the endpoint signing secret as `STRIPE_WEBHOOK_SECRET`. Do not enable live mode or configure live billing.
+Subscribe only to `customer.subscription.created`, `customer.subscription.updated`, and `customer.subscription.deleted`. Store the endpoint signing secret as `STRIPE_WEBHOOK_SECRET`. Checkout sends inline price data for a `$5 USD/month` TEST subscription; the code reads no Stripe Price ID. Do not enable live mode or configure live billing.
 
 ## Database services already defined by migrations
 

@@ -1,4 +1,6 @@
-# P26 evidence matrix
+# P26 evidence matrix (live HTTPS receipts by lane)
+
+Companion: [docs/pilot/ACCEPTANCE-MATRIX.md](../docs/pilot/ACCEPTANCE-MATRIX.md) names the individual local tests behind each row.
 
 This matrix separates existing CI behavior evidence from an HTTPS receipt. A test file listed here is an existing source of proof; it does not claim the current branch's local test has been run. Every live receipt below remains **POST-AUTHORIZATION**. P26 live lanes are the ten lanes in `tests/journeys/issue-26.spec.ts`, run on both desktop and mobile, supplemented by the specific upstream suites named per row. A generic P26 smoke is not a substitute for the focused journey.
 

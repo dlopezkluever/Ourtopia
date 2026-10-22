@@ -1,4 +1,6 @@
-# MVP acceptance evidence matrix
+# MVP acceptance evidence matrix (local evidence by named test)
+
+Companion: [deployment/evidence-matrix.md](../../deployment/evidence-matrix.md) maps the same scenarios to the live HTTPS receipt each P26 lane still owes.
 
 This matrix points to committed automated evidence already present at source head `0d3d17474080167ecbcf53c15d417da6a99cf3ea`. These suites are local-stack evidence. They do not prove an HTTPS deployment, a hosted Community, or browser and privacy behavior on the pilot project. No issue-26 behavioral suite was run because the coordinator has not granted the single full-backend and Playwright workload lease.
 

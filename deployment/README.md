@@ -1,8 +1,10 @@
 # P26 HTTPS pilot deployment runbook
 
+Document map: this file is the code-referenced runbook and environment inventory. [docs/pilot/DEPLOYMENT.md](../docs/pilot/DEPLOYMENT.md) is the hosting choice, configuration summary and rollback table. [docs/pilot/OPERATOR-PREVIEW.md](../docs/pilot/OPERATOR-PREVIEW.md) is the ordered operator command list with authorization points. [migration-diff.md](migration-diff.md) is the migration inventory. [docs/pilot/ACCEPTANCE-MATRIX.md](../docs/pilot/ACCEPTANCE-MATRIX.md) maps scenarios to named local tests and [evidence-matrix.md](evidence-matrix.md) maps them to the live HTTPS receipts still owed by each P26 lane.
+
 ## Status and boundary
 
-This packet prepares a future pilot deployment. No hosted project, domain, provider account, Stripe account, secret, or shared database has been created or changed. Every live action below is **POST-AUTHORIZATION**. Stop before creating or changing a shared environment until the operator approves [preview.md](preview.md) and provides the values named there through provider secret stores.
+This packet prepares a future pilot deployment. No hosted project, domain, provider account, Stripe account, secret, or shared database has been created or changed. Every live action below is **POST-AUTHORIZATION**. Stop before creating or changing a shared environment until the operator approves [the operator preview](../docs/pilot/OPERATOR-PREVIEW.md) and provides the values named there through provider secret stores.
 
 The app is a static Vite PWA. Supabase Edge Functions are `due-work`, `notifications`, `stripe-checkout`, and `stripe-webhook`. The current migrations already schedule the due database work and notification dispatcher. The dispatcher remains inert until its two Vault values are configured. Confirm hosted Supabase enables the required `pg_cron`, `vault`, `pg_net`, and `pgcrypto` extensions before migration replay.
 
@@ -43,7 +45,7 @@ The app is a static Vite PWA. Supabase Edge Functions are `due-work`, `notificat
 
 13. **Run authenticated evidence lanes.** Use [`.env.example`](.env.example) as a names-only checklist, then provide the needed values directly to the test process or its CI secret store. The names are `PILOT_BASE_URL`, `PILOT_SUPABASE_URL`, `PILOT_ANON_KEY`, `PILOT_SERVICE_ROLE_KEY`, and where unverified test actors or Stripe worker JWT signing are needed `PILOT_JWT_SECRET`. The P26 journey reads `PILOT_BASE_URL`; the backend helper reads the other `PILOT_*` values. Existing journeys use `TEST_APP_URL` for their HTTPS base URL through `playwright.config.ts`. These tests create records and accounts, so use only the authorized, dedicated pilot and test-only identities. Run the ten P26 lanes on desktop and mobile and preserve evidence privately.
 
-14. **Complete live checks.** Authenticated mobile and desktop HTTPS journeys, live Stripe TEST checkout/failure/cancel/retry, real email delivery and retry, actor-boundary probes, screen-reader review, and persisted-record reconciliation require a separate explicit operator authorization. Track each receipt in `deployment/evidence-matrix.md`. A checklist or local CI pass is not a live receipt.
+14. **Complete live checks.** Authenticated mobile and desktop HTTPS journeys, live Stripe TEST checkout/failure/cancel/retry, real email delivery and retry, actor-boundary probes, screen-reader review, and persisted-record reconciliation require a separate explicit operator authorization. Track each receipt in [evidence-matrix.md](evidence-matrix.md). A checklist or local CI pass is not a live receipt.
 
 ## Environment variable inventory
 
@@ -82,4 +84,4 @@ The repository `.gitignore` contains `.env*` with an explicit `.env.example` exc
 
 ## Operator sequence and held gates
 
-See [preview.md](preview.md) for the exact shared-environment delta and authorization points. No deployment, hosted migration, live Stripe call, provider delivery, or hosted account work is authorized in this preparation round.
+See [the operator preview](../docs/pilot/OPERATOR-PREVIEW.md) for the exact shared-environment commands, delta and authorization points. No deployment, hosted migration, live Stripe call, provider delivery, or hosted account work is authorized in this preparation round.
